@@ -1,0 +1,5 @@
+add_subdirectory(class)
+add_subdirectory(main)
+add_subdirectory(materialization)
+add_subdirectory(object)
+add_subdirectory(vm)

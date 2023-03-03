@@ -1,0 +1,276 @@
+#include "ClassFile.hpp"
+
+#include <llvm/Support/ErrorHandling.h>
+
+#include <jllvm/support/Bytes.hpp>
+
+using namespace jllvm;
+
+namespace
+{
+
+std::uint8_t deduceByteCount(std::uint8_t c)
+{
+    if (c <= 0x7F)
+    {
+        return 1;
+    }
+    if ((c & 0xE0) == 0b11000000)
+    {
+        return 2;
+    }
+    if ((c & 0xF0) == 0b11100000)
+    {
+        return 3;
+    }
+    llvm::report_fatal_error("Invalid JVM UTF-8 encoding");
+}
+
+std::string toUTF8(llvm::StringRef rawString)
+{
+    std::string result;
+    result.reserve(rawString.size());
+    for (const char* iter = rawString.begin(); iter != rawString.end();)
+    {
+        char firstByte = *iter;
+        switch (deduceByteCount(firstByte))
+        {
+            case 1:
+                iter++;
+                result.push_back(firstByte);
+                continue;
+            case 2:
+            {
+                iter++;
+                std::uint8_t secondByte = *iter++;
+                std::uint16_t codepoint = ((firstByte & 0x1f) << 6) + (secondByte & 0x3f);
+                if (codepoint == 0)
+                {
+                    result.push_back(0);
+                    continue;
+                }
+                result.push_back(firstByte);
+                result.push_back(secondByte);
+                continue;
+            }
+            case 3:
+            {
+                std::uint8_t u = *iter++;
+                std::uint8_t v = *iter++;
+                std::uint8_t w = *iter++;
+                if (iter == rawString.end() || deduceByteCount(*iter) != 3
+                    || (u != 0b11101101 && static_cast<std::uint8_t>(*iter) != 0b11101101))
+                {
+                    result.push_back(u);
+                    result.push_back(v);
+                    result.push_back(w);
+                    continue;
+                }
+                iter++;
+                std::uint8_t y = *iter++;
+                std::uint8_t z = *iter++;
+
+                std::uint32_t codepoint =
+                    0x10000 + ((v & 0x0f) << 16) + ((w & 0x3f) << 10) + ((y & 0x0f) << 6) + (z & 0x3f);
+                result.push_back((0b11110 << 3) | ((codepoint >> 18) & 0x7));
+                result.push_back((0b10 << 6) | ((codepoint >> 12) & 0x3F));
+                result.push_back((0b10 << 6) | ((codepoint >> 6) & 0x3F));
+                result.push_back((0b10 << 6) | (codepoint & 0x3F));
+                continue;
+            }
+            default: llvm_unreachable("Should have errored in deduceByteCount");
+        }
+    }
+    return result;
+}
+
+enum class ConstantPoolTag : std::uint8_t
+{
+    Class = 7,
+    FieldRef = 9,
+    MethodRef = 10,
+    InterfaceMethodRef = 11,
+    String = 8,
+    Integer = 3,
+    Float = 4,
+    Long = 5,
+    Double = 6,
+    NameAndType = 12,
+    Utf8 = 1,
+    MethodHandle = 15,
+    MethodType = 16,
+    Dynamic = 17,
+    InvokeDynamic = 18,
+    Module = 19,
+    Package = 20
+};
+
+ConstantPoolInfo parseConstantPoolInfo(llvm::ArrayRef<char>& bytes, llvm::StringSaver& stringSaver)
+{
+    auto tag = consume<ConstantPoolTag>(bytes);
+    switch (tag)
+    {
+        case ConstantPoolTag::Class: return ClassInfo{consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::FieldRef:
+            return FieldRefInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::MethodRef:
+            return MethodRefInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::InterfaceMethodRef:
+            return InterfaceMethodRefInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::String: return StringInfo{consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::Integer: return IntegerInfo{consume<std::int32_t>(bytes)};
+        case ConstantPoolTag::Float: return FloatInfo{consume<float>(bytes)};
+        case ConstantPoolTag::Long: return LongInfo{consume<std::int64_t>(bytes)};
+        case ConstantPoolTag::Double: return DoubleInfo{consume<double>(bytes)};
+        case ConstantPoolTag::NameAndType:
+            return NameAndTypeInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::Utf8:
+        {
+            auto length = consume<std::uint16_t>(bytes);
+            llvm::StringRef rawString = consumeRawString(length, bytes);
+            return Utf8Info{stringSaver.save(toUTF8(rawString))};
+        }
+        case ConstantPoolTag::MethodHandle:
+            return MethodHandleInfo{consume<MethodHandleInfo::Kind>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::MethodType: return MethodTypeInfo{consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::Dynamic: return DynamicInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::InvokeDynamic:
+            return InvokeDynamicInfo{consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::Module: return ModuleInfo{consume<std::uint16_t>(bytes)};
+        case ConstantPoolTag::Package: return PackageInfo{consume<std::uint16_t>(bytes)};
+    }
+    llvm_unreachable("Invalid tag");
+}
+
+std::pair<PoolIndex<Utf8Info>, llvm::ArrayRef<char>> parseAttributeInfo(llvm::ArrayRef<char>& bytes)
+{
+    auto nameIndex = consume<std::uint16_t>(bytes);
+    auto length = consume<std::uint32_t>(bytes);
+    auto raw = consumeRawString(length, bytes);
+    return {nameIndex, {raw.begin(), raw.end()}};
+}
+
+template <class T>
+T parseFieldOrMethodInfo(llvm::ArrayRef<char>& bytes, const ClassFile& classFile)
+{
+    auto accessFlags = consume<AccessFlag>(bytes);
+    auto nameIndex = consume<std::uint16_t>(bytes);
+    auto descriptorIndex = consume<std::uint16_t>(bytes);
+
+    AttributeMap attributes;
+    auto attributeCount = consume<std::uint16_t>(bytes);
+    for (std::size_t i = 0; i < attributeCount; i++)
+    {
+        auto [name, attrBytes] = parseAttributeInfo(bytes);
+        attributes.insert({name.resolve(classFile)->text, attrBytes});
+    }
+    return T(accessFlags, nameIndex, descriptorIndex, std::move(attributes));
+}
+
+} // namespace
+
+jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llvm::StringSaver& stringSaver)
+{
+    jllvm::ClassFile result;
+
+    auto magic = consume<std::uint32_t>(bytes);
+    if (magic != 0xCAFEBABE)
+    {
+        llvm::report_fatal_error("Error reading class file: Invalid file magic");
+    }
+    consume<std::uint16_t>(bytes); // major version
+    consume<std::uint16_t>(bytes); // minor version
+
+    auto constantPoolLength = consume<std::uint16_t>(bytes) - 1;
+    result.m_constantPool.resize(constantPoolLength);
+    for (std::size_t i = 0; i < constantPoolLength; i++)
+    {
+        result.m_constantPool[i] = parseConstantPoolInfo(bytes, stringSaver);
+        if (std::holds_alternative<DoubleInfo>(result.m_constantPool[i])
+            || std::holds_alternative<LongInfo>(result.m_constantPool[i]))
+        {
+            i++;
+        }
+    }
+    result.m_accessFlags = consume<AccessFlag>(bytes);
+    result.m_thisClass = consume<std::uint16_t>(bytes);
+    result.m_superClass = consume<std::uint16_t>(bytes);
+    result.m_interfaces.resize(consume<std::uint16_t>(bytes));
+    for (auto& elem : result.m_interfaces)
+    {
+        elem = consume<PoolIndex<ClassInfo>>(bytes).resolve(result)->nameIndex.resolve(result)->text;
+    }
+
+    auto fieldCount = consume<std::uint16_t>(bytes);
+    for (std::size_t i = 0; i < fieldCount; i++)
+    {
+        result.m_fields.push_back(parseFieldOrMethodInfo<FieldInfo>(bytes, result));
+    }
+
+    auto methodCount = consume<std::uint16_t>(bytes);
+    for (std::size_t i = 0; i < methodCount; i++)
+    {
+        result.m_methods.push_back(parseFieldOrMethodInfo<MethodInfo>(bytes, result));
+    }
+
+    auto attributeCount = consume<std::uint16_t>(bytes);
+    for (std::size_t i = 0; i < attributeCount; i++)
+    {
+        auto [name, attrBytes] = parseAttributeInfo(bytes);
+        result.m_attributes.insert({name.resolve(result)->text, attrBytes});
+    }
+
+    return result;
+}
+
+llvm::StringRef ClassFile::getThisClass() const
+{
+    return m_thisClass.resolve(*this)->nameIndex.resolve(*this)->text;
+}
+
+std::optional<llvm::StringRef> ClassFile::getSuperClass() const
+{
+    if (!m_superClass)
+    {
+        return std::nullopt;
+    }
+    return m_superClass.resolve(*this)->nameIndex.resolve(*this)->text;
+}
+
+Code Code::parse(llvm::ArrayRef<char> bytes)
+{
+    Code result;
+    result.m_maxStack = consume<std::uint16_t>(bytes);
+    result.m_maxLocals = consume<std::uint16_t>(bytes);
+    auto codeCount = consume<std::uint32_t>(bytes);
+    auto rawString = consumeRawString(codeCount, bytes);
+    result.m_code = llvm::ArrayRef(rawString.begin(), rawString.end());
+    auto exceptionTableCount = consume<std::uint16_t>(bytes);
+    result.m_exceptionTable.resize(exceptionTableCount);
+    for (auto& iter : result.m_exceptionTable)
+    {
+        iter = {consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes),
+                consume<PoolIndex<ClassInfo>>(bytes)};
+    }
+    return result;
+}
+
+llvm::StringRef FieldInfo::getName(const ClassFile& classFile) const
+{
+    return m_nameIndex.resolve(classFile)->text;
+}
+
+llvm::StringRef FieldInfo::getDescriptor(const jllvm::ClassFile& classFile) const
+{
+    return m_descriptorIndex.resolve(classFile)->text;
+}
+
+llvm::StringRef MethodInfo::getName(const ClassFile& classFile) const
+{
+    return m_nameIndex.resolve(classFile)->text;
+}
+
+llvm::StringRef MethodInfo::getDescriptor(const jllvm::ClassFile& classFile) const
+{
+    return m_descriptorIndex.resolve(classFile)->text;
+}
