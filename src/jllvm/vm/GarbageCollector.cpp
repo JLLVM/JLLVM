@@ -173,7 +173,7 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                     auto* object = reinterpret_cast<ObjectRepr*>(rp);
                     if (auto* replacement = mapping.lookup(object))
                     {
-                        _Unwind_SetGR(context, iter.registerNumber, reinterpret_cast<_Unwind_Word>(replacement));
+                        _Unwind_SetGR(context, iter.registerNumber, reinterpret_cast<std::uintptr_t>(replacement));
                     }
                     break;
                 }

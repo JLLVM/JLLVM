@@ -56,7 +56,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 std::string jniName =
                     "Java_" + escape(classFile->getThisClass()) + "_" + escape(methodInfo->getName(*classFile));
 
-                auto lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, jniName);
+                auto lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
                 if (!lookup)
                 {
                     llvm::consumeError(lookup.takeError());
@@ -65,7 +65,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     // type and the parentheses.
                     jniName +=
                         methodInfo->getDescriptor(*classFile).drop_front(1).take_while([](char c) { return c != ')'; });
-                    lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, jniName);
+                    lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
                     if (!lookup)
                     {
                         // TODO: Return callback throwing UnsatisfiedLinkError. Don't forget to update the stubs
@@ -133,7 +133,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     m_irLayer.add(m_jniBridges, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
 
                 llvm::JITTargetAddress bridgeMethod =
-                    llvm::cantFail(m_jniBridges.getExecutionSession().lookup({&m_jniBridges}, bridgeName)).getAddress();
+                    llvm::cantFail(m_jniBridges.getExecutionSession().lookup({&m_jniBridges}, m_interner(bridgeName)))
+                        .getAddress();
 
                 llvm::cantFail(m_stubsManager->updatePointer(key, bridgeMethod));
 

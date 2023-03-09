@@ -61,7 +61,7 @@ struct CppToLLVMType<T*>
 template <class F>
 class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
 {
-    llvm::orc::SymbolStringPtr m_symbol;
+    std::string m_symbol;
     llvm::orc::IRLayer& m_baseLayer;
     F m_f;
     llvm::DataLayout m_dataLayout;
@@ -82,16 +82,16 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
     }
 
 public:
-    LambdaMaterializationUnit(llvm::orc::SymbolStringPtr symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                              const llvm::DataLayout& dataLayout)
+    LambdaMaterializationUnit(std::string&& symbol, llvm::orc::IRLayer& baseLayer, const F& f,
+                              const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
         : llvm::orc::MaterializationUnit(
             [&]
             {
                 llvm::orc::SymbolFlagsMap result;
-                result[symbol] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
+                result[interner(symbol)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
                 return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
             }()),
-          m_symbol(symbol),
+          m_symbol(std::move(symbol)),
           m_baseLayer(baseLayer),
           m_f(f),
           m_dataLayout(dataLayout)
@@ -115,7 +115,7 @@ public:
         auto functionType = llvm::FunctionType::get(retType, parameters, false);
 
         llvm::Function* function =
-            llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, *m_symbol, module.get());
+            llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, m_symbol, module.get());
 
         auto* type = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), sizeof(F));
         auto* closure = new llvm::GlobalVariable(
@@ -169,10 +169,10 @@ private:
 /// specializing 'CppToLLVMType'.
 template <class F>
 std::unique_ptr<LambdaMaterializationUnit<F>>
-    createLambdaMaterializationUnit(llvm::orc::SymbolStringPtr symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                                    const llvm::DataLayout& dataLayout)
+    createLambdaMaterializationUnit(std::string symbol, llvm::orc::IRLayer& baseLayer, const F& f,
+                                    const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
 {
-    return std::make_unique<LambdaMaterializationUnit<F>>(symbol, baseLayer, f, dataLayout);
+    return std::make_unique<LambdaMaterializationUnit<F>>(std::move(symbol), baseLayer, f, dataLayout, interner);
 }
 
 } // namespace jllvm
