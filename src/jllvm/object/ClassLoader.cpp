@@ -175,10 +175,10 @@ const jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBu
             [](const ObjectType&) { return sizeof(void*); }, [](const ArrayType&) { return sizeof(void*); });
         instanceSize = llvm::alignTo(instanceSize, fieldSizeAndAlignment);
         fields.emplace_back(fieldInfo.getName(classFile), fieldInfo.getDescriptor(classFile),
-                            instanceSize + /*object header*/ sizeof(void*));
+                            instanceSize + sizeof(ObjectHeader));
         instanceSize += fieldSizeAndAlignment;
     }
-    instanceSize = llvm::alignTo(instanceSize, sizeof(void*));
+    instanceSize = llvm::alignTo(instanceSize, alignof(ObjectHeader));
 
     auto* result = ClassObject::create(m_classAllocator, vTableAssignment.vTableCount, instanceSize, methods, fields,
                                        interfaces, className, superClass);
