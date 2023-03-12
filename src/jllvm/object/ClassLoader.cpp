@@ -193,12 +193,42 @@ const jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBu
 const jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine className)
 {
     llvm::SmallString<32> str;
-    auto result = m_mapping.find(className.toStringRef(str));
+    llvm::StringRef classNameRef = className.toStringRef(str);
+    auto result = m_mapping.find(classNameRef);
     if (result != m_mapping.end())
     {
         return result->second;
     }
-    return nullptr;
+
+    if (classNameRef.front() != '[')
+    {
+        return nullptr;
+    }
+
+    // Extra optimization for loading array types. Since creating the class object for an array type has essentially
+    // no side effects on the execution of JVM bytecode we can always create the array object eagerly as long as its
+    // component type has been loaded. This leads to better code generation as no stubs or other similar code has to be
+    // generated to load array class objects.
+    // Get the first component type that is not an array.
+    llvm::StringRef arrayTypesRemoved = classNameRef.drop_while([](char c) { return c == '['; });
+    result = m_mapping.find(arrayTypesRemoved);
+    if (result == m_mapping.end())
+    {
+        // If the component type is not loaded we have to lazy load the array object anyway.
+        return nullptr;
+    }
+
+    // Otherwise we now just need to create all array objects for all dimensions that we stripped above.
+    ClassObject* curr = result->second;
+    std::size_t arrayTypesCount = classNameRef.size() - arrayTypesRemoved.size();
+    for (std::size_t i = 1; i <= arrayTypesCount; i++)
+    {
+        curr = ClassObject::createArray(m_classAllocator, curr, m_stringSaver);
+        // We are moving from right to left in the array type name, therefore always stripping one less array type
+        // descriptor ('['), from the class name.
+        m_mapping.insert({classNameRef.drop_front(arrayTypesCount - i), curr});
+    }
+    return curr;
 }
 
 const jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor)
