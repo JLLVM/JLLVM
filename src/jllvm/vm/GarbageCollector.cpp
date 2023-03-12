@@ -293,7 +293,9 @@ void jllvm::GarbageCollector::garbageCollect()
     auto nextObject = [](char* curr)
     {
         auto* object = reinterpret_cast<ObjectRepr*>(curr);
-        return curr + object->getSize();
+        curr += object->getSize();
+        curr += llvm::offsetToAlignedAddr(curr, llvm::Align(alignof(ObjectHeader)));
+        return curr;
     };
 
     [[maybe_unused]] std::size_t collectedObjects = 0;
@@ -317,6 +319,7 @@ void jllvm::GarbageCollector::garbageCollect()
         object->clearMark();
         auto* newStorage = m_bumpPtr;
         m_bumpPtr += objectSize;
+        m_bumpPtr += llvm::offsetToAlignedAddr(m_bumpPtr, llvm::Align(alignof(ObjectHeader)));
         std::memcpy(newStorage, object, objectSize);
         mapping[object] = reinterpret_cast<ObjectRepr*>(newStorage);
     }
@@ -389,7 +392,7 @@ void* jllvm::GarbageCollector::allocate(std::size_t size)
 
     void* result = m_bumpPtr;
     m_bumpPtr += size;
-    std::memset(result, 0, size);
+    m_bumpPtr += llvm::offsetToAlignedAddr(m_bumpPtr, llvm::Align(alignof(ObjectHeader)));
     return result;
 }
 
