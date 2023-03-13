@@ -687,6 +687,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.pop_back();
                 break;
             }
+            case OpCodes::BIPush:
+            {
+                int8_t byte = consume<std::int8_t>(current);
+                llvm::Value* res = builder.getInt32(byte);
+                operandStack.push_back(res);
+                break;
+            }
             case OpCodes::Dup:
             {
                 operandStack.push_back(operandStack.back());
