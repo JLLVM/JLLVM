@@ -57,14 +57,9 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
         *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
     m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(m_gc));
 
-    m_optimizeLayer.setCloneToNewContextOnEmit(true);
-    m_session->setDispatchTask(
-        [this](std::unique_ptr<llvm::orc::Task> t)
-        { m_threadPool.async([t = std::shared_ptr<llvm::orc::Task>(std::move(t))] { t->run(); }); });
-
     llvm::cantFail(m_main.define(createLambdaMaterializationUnit(
-        m_interner("jllvm_gc_alloc"), m_optimizeLayer, [&](std::uint32_t size) { return m_gc.allocate(size); },
-        m_dataLayout)));
+        "jllvm_gc_alloc", m_optimizeLayer, [&](std::uint32_t size) { return m_gc.allocate(size); }, m_dataLayout,
+        m_interner)));
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions)

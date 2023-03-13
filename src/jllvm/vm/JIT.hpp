@@ -43,8 +43,6 @@ class JIT
     ByteCodeCompileLayer m_byteCodeCompileLayer;
     ByteCodeOnDemandLayer m_byteCodeOnDemandLayer;
     JNIImplementationLayer m_jniLayer;
-    llvm::ThreadPool m_threadPool;
-
 
     GarbageCollector& m_gc;
 

@@ -124,9 +124,9 @@ class LazyClassLoaderHelper
                         llvm::cantFail(m_baseLayer.add(
                             m_implDylib, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
 
-                        auto address =
-                            llvm::cantFail(m_implDylib.getExecutionSession().lookup({&m_implDylib}, stubSymbol))
-                                .getAddress();
+                        auto address = llvm::cantFail(m_implDylib.getExecutionSession().lookup({&m_implDylib},
+                                                                                               m_interner(stubSymbol)))
+                                           .getAddress();
 
                         llvm::cantFail(m_stubsManager.updatePointer(stubSymbol, address));
 
@@ -194,8 +194,9 @@ public:
                     [=, *this]
                     {
                         m_classLoader.forName("L" + className + ";");
-                        auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib}, method))
-                                           .getAddress();
+                        auto address =
+                            llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib}, m_interner(method)))
+                                .getAddress();
                         llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
                         return address;
                     })),
