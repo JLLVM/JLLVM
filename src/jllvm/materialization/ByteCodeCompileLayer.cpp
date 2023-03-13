@@ -90,8 +90,6 @@ class LazyClassLoaderHelper
             return returnValueToIRConstant(builder, f(classObject));
         }
 
-        static char perFUniqueAddress = 0;
-
         std::string stubSymbol =
             ("<classLoad>" + fieldDescriptor + key)
                 .str();
@@ -215,7 +213,7 @@ public:
                                         llvm::StringRef fieldName, llvm::StringRef fieldType)
     {
         return returnConstantForClassObject(
-            builder, "L" + className + ";", fieldName + "" + fieldType,
+            builder, "L" + className + ";", fieldName + ";" + fieldType,
                                                 [=](const ClassObject* classObject)
             {
                 // TODO: Pretty sure this needs to also go through the inheritance hierarchy among other details.
@@ -227,7 +225,7 @@ public:
             });
     }
 
-    llvm::Value* getVtblOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
+    llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
                                llvm::StringRef typeDescriptor)
     {
         return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
@@ -244,14 +242,13 @@ public:
                                                                                  && method.getName() == methodName
                                                                                  && method.getType() == typeDescriptor;
                                                                       });
-                                                   if (iter != classObject->getMethods().end())
+                                                   if (iter != methods.end())
                                                    {
-                                                       break;
+                                                       return *iter->getVTableSlot();
                                                    }
                                                     classObject = classObject->getSuperClass();
-                                                } while (classObject != NULL);
-                                                assert(iter != classObject->getMethods().end());
-                                                return *(iter->getVTableSlot());
+                                                } while (classObject != nullptr);
+                                                llvm_unreachable("method not found");
                                             });
     }
 
@@ -717,7 +714,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::BIPush:
             {
-                int8_t byte = consume<std::int8_t>(current);
+                auto byte = consume<std::int8_t>(current);
                 llvm::Value* res = builder.getInt32(byte);
                 operandStack.push_back(res);
                 break;
@@ -910,6 +907,43 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::InvokeVirtual:
+            {
+                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
+
+                MethodType descriptor = parseMethodType(
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+                for (auto& iter : llvm::reverse(args))
+                {
+                    iter = operandStack.back();
+                    operandStack.pop_back();
+                }
+                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodName =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodType =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+                llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
+                llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
+                llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
+                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+                llvm::Value* vtblPositionInClassObject = builder.getInt16(sizeof(ClassObject));
+
+                llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
+                llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
+                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
+
+                auto* call =
+                    builder.CreateCall(descriptorToType(descriptor, false, builder.getContext()), callee, args);
+
+                if (descriptor.returnType != FieldType(BaseType::Void))
+                {
+                    operandStack.push_back(call);
+                }
+                break;
+            }
             case OpCodes::IStore:
             {
                 auto index = consume<std::uint8_t>(current);
@@ -1000,41 +1034,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 break;
             }
             case OpCodes::Return: builder.CreateRetVoid(); break;
-            case OpCodes::InvokeVirtual:
-                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
-
-                MethodType descriptor = parseMethodType(
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
-
-                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
-                for (auto& iter : llvm::reverse(args))
-                {
-                    iter = operandStack.back();
-                    operandStack.pop_back();
-                }
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Value* slot = helper.getVtblOffset(builder, "L" + className + ";", methodName, methodType);
-                llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
-                llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
-                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-                llvm::Value* vtblPositionInClassObject = builder.getInt16(sizeof(ClassObject));
-
-                llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
-                llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
-                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
-
-                auto* call =
-                    builder.CreateCall(descriptorToType(descriptor, false, builder.getContext()), callee, args);
-
-                if (descriptor.returnType != FieldType(BaseType::Void))
-                {
-                    operandStack.push_back(call);
-                }
-                break;
         }
     }
 }
