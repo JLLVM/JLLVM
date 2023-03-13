@@ -9,6 +9,8 @@
 
 #include <jllvm/class/Descriptors.hpp>
 
+#include "Object.hpp"
+
 namespace jllvm
 {
 
@@ -220,6 +222,12 @@ public:
     /// Constructor for creating the class objects for primitive types with a size and name.
     ClassObject(std::uint32_t instanceSize, llvm::StringRef name);
 
+    /// Byte offset from the start of the class object to the field area size member.
+    constexpr static std::size_t getFieldAreaSizeOffset()
+    {
+        return offsetof(ClassObject, m_fieldAreaSize);
+    }
+
     /// Size of an instance of this class object WITHOUT the object header.
     /// This essentially means it is the size of all fields, including any super classes, added up.
     /// For arrays this returns the size of the 'length' field and potentially the size of the padding between the
@@ -236,7 +244,7 @@ public:
     /// the length field.
     std::uint32_t getInstanceSize() const
     {
-        return m_fieldAreaSize + sizeof(void*);
+        return m_fieldAreaSize + sizeof(ObjectHeader);
     }
 
     /// Returns the methods of this class.
