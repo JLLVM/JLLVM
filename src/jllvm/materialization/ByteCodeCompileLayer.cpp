@@ -689,7 +689,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::BIPush:
             {
-                int8_t byte = consume<std::int8_t>(current);
+                auto byte = consume<std::int8_t>(current);
                 llvm::Value* res = builder.getInt32(byte);
                 operandStack.push_back(res);
                 break;
