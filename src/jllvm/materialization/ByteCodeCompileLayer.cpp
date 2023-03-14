@@ -60,6 +60,23 @@ llvm::FunctionCallee allocationFunction(llvm::Module* module)
     return function;
 }
 
+/// Truncates 'i32' args which is the type used internally on Javas operand stack for everything but 'long'
+/// to integer types of the bit-width of the callee (e.g. 'i8' for a 'byte' arg in Java).
+void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<llvm::Value*> args,
+                             llvm::FunctionType* functionType)
+{
+    for (auto [arg, argType] : llvm::zip(args, functionType->params()))
+    {
+        if (arg->getType() == argType)
+        {
+            continue;
+        }
+        assert(arg->getType()->isIntegerTy() && argType->isIntegerTy()
+               && arg->getType()->getIntegerBitWidth() > argType->getIntegerBitWidth());
+        arg = builder.CreateTrunc(arg, argType);
+    }
+}
+
 /// Helper class to fetch properties about a class while still doing lazy class loading.
 /// This works by taking callbacks which are either called immediately if a class object is already loaded, leading
 /// to better code generation, or otherwise creating stubs that when called load the given class object and return
@@ -906,8 +923,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
 
-                auto* call =
-                    builder.CreateCall(descriptorToType(descriptor, isStatic, builder.getContext()), callee, args);
+                llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
+                prepareArgumentsForCall(builder, args, functionType);
+
+                auto* call = builder.CreateCall(functionType, callee, args);
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
