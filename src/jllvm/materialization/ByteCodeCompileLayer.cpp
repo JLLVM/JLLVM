@@ -77,6 +77,30 @@ void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<l
     }
 }
 
+/// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' attribute
+/// we tell LLVM that if due to ABI, it has to extend these registers, to use sign extension.
+/// This attribute list can be applied to either a call or a function itself.
+llvm::AttributeList getABIAttributes(llvm::FunctionType* functionType)
+{
+    llvm::SmallVector<llvm::AttributeSet> paramAttrs(functionType->getNumParams());
+    for (auto&& [param, attrs] : llvm::zip(functionType->params(), paramAttrs))
+    {
+        if (!param->isIntegerTy())
+        {
+            continue;
+        }
+        attrs = attrs.addAttribute(functionType->getContext(), llvm::Attribute::SExt);
+    }
+
+    llvm::AttributeSet retAttrs;
+    if (functionType->getReturnType()->isIntegerTy())
+    {
+        retAttrs = retAttrs.addAttribute(functionType->getContext(), llvm::Attribute::SExt);
+    }
+
+    return llvm::AttributeList::get(functionType->getContext(), llvm::AttributeSet{}, retAttrs, paramAttrs);
+}
+
 /// Helper class to fetch properties about a class while still doing lazy class loading.
 /// This works by taking callbacks which are either called immediately if a class object is already loaded, leading
 /// to better code generation, or otherwise creating stubs that when called load the given class object and return
@@ -927,6 +951,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 prepareArgumentsForCall(builder, args, functionType);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
+                call->setAttributes(getABIAttributes(functionType));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
