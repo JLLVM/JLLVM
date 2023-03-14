@@ -786,9 +786,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
 
-                llvm::Value* field = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
+                llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
+                llvm::Value* field = builder.CreateLoad(type, fieldPtr);
+                if (field->getType()->isIntegerTy() && field->getType()->getIntegerBitWidth() < 32)
+                {
+                    // Sign extend to the operands stack i32 type.
+                    field = builder.CreateSExt(field, builder.getInt32Ty());
+                }
 
-                operandStack.push_back(builder.CreateLoad(type, field));
+                operandStack.push_back(field);
                 break;
             }
             case OpCodes::GetStatic:
@@ -801,9 +807,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
-                llvm::Value* field = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                operandStack.push_back(
-                    builder.CreateLoad(descriptorToType(parseFieldType(fieldType), builder.getContext()), field));
+                llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+                llvm::Type* type = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                llvm::Value* field = builder.CreateLoad(type, fieldPtr);
+                if (field->getType()->isIntegerTy() && field->getType()->getIntegerBitWidth() < 32)
+                {
+                    // Sign extend to the operands stack i32 type.
+                    field = builder.CreateSExt(field, builder.getInt32Ty());
+                }
+                operandStack.push_back(field);
                 break;
             }
             case OpCodes::Goto:
@@ -1067,10 +1079,19 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
 
-                llvm::Value* field =
+                llvm::Value* fieldPtr =
                     builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
 
-                builder.CreateStore(value, field);
+                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                if (value->getType() != llvmFieldType)
+                {
+                    // Truncated from the operands stack i32 type.
+                    assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
+                           && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
+                    value = builder.CreateTrunc(value, llvmFieldType);
+                }
+
+                builder.CreateStore(value, fieldPtr);
                 break;
             }
             case OpCodes::PutStatic:
@@ -1085,8 +1106,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
-                llvm::Value* field = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                builder.CreateStore(value, field);
+                llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+
+                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                if (value->getType() != llvmFieldType)
+                {
+                    // Truncated from the operands stack i32 type.
+                    assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
+                           && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
+                    value = builder.CreateTrunc(value, llvmFieldType);
+                }
+
+                builder.CreateStore(value, fieldPtr);
                 break;
             }
             case OpCodes::Pop:
