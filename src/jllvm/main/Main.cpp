@@ -12,7 +12,8 @@ namespace
 template <class T>
 auto trivialPrintFunction()
 {
-    return llvm::JITEvaluatedSymbol::fromPointer(+[](void*, void*, T value) { llvm::outs() << value << '\n'; });
+    return llvm::JITEvaluatedSymbol::fromPointer(+[](void*, void*, T value)
+                                                 { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; });
 }
 
 } // namespace
@@ -65,6 +66,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
             {vm.getInterner()("Java_Test_print__I"), trivialPrintFunction<std::int32_t>()},
             {vm.getInterner()("Java_Test_print__J"), trivialPrintFunction<std::int64_t>()},
             {vm.getInterner()("Java_Test_print__S"), trivialPrintFunction<std::int16_t>()},
+            {vm.getInterner()("Java_Test_print__C"), trivialPrintFunction<std::int16_t>()},
             {vm.getInterner()("Java_Test_print__Z"), trivialPrintFunction<bool>()},
         }));
     }
