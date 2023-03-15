@@ -10,5 +10,8 @@ class Test
         byte b = 6;
         // CHECK: 6
         print(b);
+        byte b2 = -15;
+        // CHECK: -15
+        print(b2);
     }
 }
