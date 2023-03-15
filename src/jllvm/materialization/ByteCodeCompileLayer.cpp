@@ -942,7 +942,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
                 llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
                 llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-                llvm::Value* vtblPositionInClassObject = builder.getInt16(sizeof(ClassObject));
+                llvm::Value* vtblPositionInClassObject = builder.getInt16(ClassObject::getVTableOffset());
 
                 llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
                 llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});

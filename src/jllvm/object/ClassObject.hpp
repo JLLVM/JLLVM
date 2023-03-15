@@ -296,6 +296,12 @@ public:
         return m_componentTypeAndIsPrimitive.getInt();
     }
 
+    /// Byte offset from the start of the class object to the start of the VTable.
+    constexpr static std::size_t getVTableOffset()
+    {
+        return sizeof(ClassObject);
+    }
+
     /// Returns the VTable slots for the class.
     VTableSlot* getVTable()
     {
