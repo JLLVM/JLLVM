@@ -77,7 +77,7 @@ class LazyClassLoaderHelper
     llvm::Triple m_triple;
 
     template <class F>
-    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, F&& f)
+    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::Twine key, F&& f)
     {
         auto returnValueToIRConstant = [](llvm::IRBuilder<>& builder, const auto& retVal)
         {
@@ -90,10 +90,8 @@ class LazyClassLoaderHelper
             return returnValueToIRConstant(builder, f(classObject));
         }
 
-        static char perFUniqueAddress = 0;
-
         std::string stubSymbol =
-            ("<classLoad>" + fieldDescriptor + std::to_string(reinterpret_cast<std::uintptr_t>(&perFUniqueAddress)))
+            ("<classLoad>" + fieldDescriptor + key)
                 .str();
         if (!m_stubsManager.findStub(stubSymbol, true))
         {
@@ -215,8 +213,8 @@ public:
                                         llvm::StringRef fieldName, llvm::StringRef fieldType)
     {
         return returnConstantForClassObject(
-            builder, "L" + className + ";",
-            [=](const ClassObject* classObject)
+            builder, "L" + className + ";", fieldName + ";" + fieldType,
+                                                [=](const ClassObject* classObject)
             {
                 // TODO: Pretty sure this needs to also go through the inheritance hierarchy among other details.
                 const Field* iter = llvm::find_if(
@@ -227,13 +225,40 @@ public:
             });
     }
 
+    llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
+                               llvm::StringRef typeDescriptor)
+    {
+        return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
+                                            [=](const ClassObject* classObject)
+                                            {
+                                                const Method* iter;
+                                                do
+                                                {
+                                                    llvm::ArrayRef<Method> methods = classObject->getMethods();
+                                                   iter =
+                                                        llvm::find_if(methods,
+                                                                      [&](const Method& method) {
+                                                                          return !method.isStatic()
+                                                                                 && method.getName() == methodName
+                                                                                 && method.getType() == typeDescriptor;
+                                                                      });
+                                                   if (iter != methods.end())
+                                                   {
+                                                       return *iter->getVTableSlot();
+                                                   }
+                                                    classObject = classObject->getSuperClass();
+                                                } while (classObject != nullptr);
+                                                llvm_unreachable("method not found");
+                                            });
+    }
+
     /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
     /// within the class 'className'.
     llvm::Value* getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef fieldName,
                                        llvm::StringRef fieldType)
     {
         return returnConstantForClassObject(
-            builder, "L" + className + ";",
+            builder, "L" + className + ";", fieldName + ";" + fieldType,
             [=](const ClassObject* classObject)
             {
                 // TODO: Pretty sure this needs to also go through the inheritance hierarchy among other details.
@@ -248,7 +273,7 @@ public:
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
     llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor)
     {
-        return returnConstantForClassObject(builder, fieldDescriptor,
+        return returnConstantForClassObject(builder, fieldDescriptor, "",
                                             [=](const ClassObject* classObject) { return classObject; });
     }
 };
@@ -889,6 +914,43 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     operandStack.push_back(call);
                 }
 
+                break;
+            }
+            case OpCodes::InvokeVirtual:
+            {
+                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
+
+                MethodType descriptor = parseMethodType(
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+                for (auto& iter : llvm::reverse(args))
+                {
+                    iter = operandStack.back();
+                    operandStack.pop_back();
+                }
+                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodName =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodType =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+                llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
+                llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
+                llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
+                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+                llvm::Value* vtblPositionInClassObject = builder.getInt16(sizeof(ClassObject));
+
+                llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
+                llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
+                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
+
+                auto* call =
+                    builder.CreateCall(descriptorToType(descriptor, false, builder.getContext()), callee, args);
+
+                if (descriptor.returnType != FieldType(BaseType::Void))
+                {
+                    operandStack.push_back(call);
+                }
                 break;
             }
             case OpCodes::IStore:
