@@ -988,8 +988,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
                 llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
 
-                auto* call =
-                    builder.CreateCall(descriptorToType(descriptor, false, builder.getContext()), callee, args);
+                llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
+                prepareArgumentsForCall(builder, args, functionType);
+                auto* call = builder.CreateCall(functionType, callee, args);
+                call->setAttributes(getABIAttributes(functionType));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {

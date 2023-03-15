@@ -22,6 +22,21 @@ class Test
         print(value);
     }
 
+    public void printValueI(byte value)
+    {
+        print(value);
+    }
+
+    public void printValueI(short value)
+    {
+        print(value);
+    }
+
+    public void printValueI(char value)
+    {
+        print(value);
+    }
+
     public static void main(String[] args)
     {
         // CHECK: 3
@@ -30,5 +45,13 @@ class Test
         printValue((short)4);
         // CHECK: 5
         printValue((char)5);
+
+        var t = new Test();
+        // CHECK: 6
+        t.printValueI((byte)6);
+        // CHECK: 7
+        t.printValueI((short)7);
+        // CHECK: 8
+        t.printValueI((char)8);
     }
 }
