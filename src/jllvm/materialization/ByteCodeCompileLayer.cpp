@@ -754,6 +754,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::IAdd:
+            {
+                llvm::Value* lhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                operandStack.push_back(builder.CreateAdd(lhs, rhs));
+                break;
+            }
             case OpCodes::IConstM1:
             {
                 operandStack.push_back(builder.getInt32(-1));
