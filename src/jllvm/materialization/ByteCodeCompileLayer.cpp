@@ -4,6 +4,7 @@
 #include <llvm/Support/Debug.h>
 
 #include <jllvm/class/Descriptors.hpp>
+#include <jllvm/object/Object.hpp>
 #include <jllvm/support/Bytes.hpp>
 
 #include <utility>
@@ -647,10 +648,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* classObject = helper.getClassObject(
                     builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
 
-                // Array object header consisting of a void*, a std::uint32_t and padding afterwards.
-                llvm::Value* bytesNeeded =
-                    builder.getInt32(llvm::alignTo(sizeof(void*) + sizeof(std::uint32_t), sizeof(void*)));
-                bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(void*))));
+                // Size required is the size of the array prior to the elements (equal to the offset to the elements)
+                // plus element count * element size.
+                llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
+                bytesNeeded =
+                    builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(Object*))));
 
                 // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
@@ -775,8 +777,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
 
                 // Size is first 4 bytes in the class object and does not include the object header.
+                llvm::Value* fieldAreaPtr = builder.CreateGEP(
+                    builder.getInt8Ty(), classObject, {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
                 llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), classObject);
-                size = builder.CreateAdd(size, builder.getInt32(sizeof(void*)));
+                size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
 
                 llvm::Module* module = function->getParent();
                 llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
@@ -938,7 +942,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
                 llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
                 llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-                llvm::Value* vtblPositionInClassObject = builder.getInt16(sizeof(ClassObject));
+                llvm::Value* vtblPositionInClassObject = builder.getInt16(ClassObject::getVTableOffset());
 
                 llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
                 llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
