@@ -57,7 +57,9 @@ llvm::FunctionCallee allocationFunction(llvm::Module* module)
     function = llvm::Function::Create(llvm::FunctionType::get(referenceType(module->getContext()),
                                                               {llvm::Type::getInt32Ty(module->getContext())}, false),
                                       llvm::GlobalValue::ExternalLinkage, "jllvm_gc_alloc", module);
-    function->addRetAttr(llvm::Attribute::NoAlias);
+    function->addFnAttrs(llvm::AttrBuilder(module->getContext())
+                             .addAllocSizeAttr(0, std::nullopt)
+                             .addAllocKindAttr(llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Zeroed));
     return function;
 }
 
