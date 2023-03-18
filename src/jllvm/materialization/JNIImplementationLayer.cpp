@@ -115,8 +115,17 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
                 llvm::Value* callee =
                     builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
-                llvm::Value* result =
+                llvm::CallInst* result =
                     builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
+                for (auto&& [index, type] : llvm::enumerate(argTypes))
+                {
+                    if (!type->isIntegerTy())
+                    {
+                        continue;
+                    }
+                    // Signextend integer args for ABI.
+                    result->addParamAttr(index, llvm::Attribute::SExt);
+                }
 
                 // TODO: Post-setup code here
 
