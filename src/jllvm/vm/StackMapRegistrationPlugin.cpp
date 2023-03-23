@@ -20,7 +20,12 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
     config.PrePrunePasses.emplace_back(
         [&](llvm::jitlink::LinkGraph& g)
         {
-            llvm::jitlink::Section* section = g.findSectionByName(".llvm_stackmaps");
+            llvm::StringRef stackMapSectionName = ".llvm_stackmaps";
+            if (g.getTargetTriple().isOSBinFormatMachO())
+            {
+                stackMapSectionName = "__LLVM_STACKMAPS,__llvm_stackmaps";
+            }
+            llvm::jitlink::Section* section = g.findSectionByName(stackMapSectionName);
             if (!section)
             {
                 return llvm::Error::success();
@@ -39,7 +44,12 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
     config.PostFixupPasses.emplace_back(
         [&](llvm::jitlink::LinkGraph& g)
         {
-            llvm::jitlink::Section* section = g.findSectionByName(".llvm_stackmaps");
+            llvm::StringRef stackMapSectionName = ".llvm_stackmaps";
+            if (g.getTargetTriple().isOSBinFormatMachO())
+            {
+                stackMapSectionName = "__LLVM_STACKMAPS,__llvm_stackmaps";
+            }
+            llvm::jitlink::Section* section = g.findSectionByName(stackMapSectionName);
             if (!section)
             {
                 return llvm::Error::success();

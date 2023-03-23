@@ -20,7 +20,14 @@ auto trivialPrintFunction()
 
 int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 {
-    llvm::SmallVector<const char*> llvmArgs{"jllvm", "-fixup-allow-gcptr-in-csr", "-max-registers-for-gc-values=1000"};
+    llvm::SmallVector<const char*> llvmArgs{"jllvm"};
+#ifndef __APPLE__
+    // libunwind (from LLVM), seemingly does not properly write to caller saved registers. We therefore disable this
+    // optimization.
+    llvmArgs.push_back("-fixup-allow-gcptr-in-csr");
+    llvmArgs.push_back("-max-registers-for-gc-values=1000");
+#endif
+
 #ifndef NDEBUG
     llvmArgs.push_back("-jllvm-gc-every-alloc=1");
 #endif
