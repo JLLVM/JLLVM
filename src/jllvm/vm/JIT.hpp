@@ -16,6 +16,7 @@
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
 #include <jllvm/materialization/ByteCodeOnDemandLayer.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
+#include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
 
 #include <memory>
@@ -67,6 +68,16 @@ public:
     void addJNISymbols(std::unique_ptr<llvm::orc::MaterializationUnit>&& materializationUnit)
     {
         m_jniLayer.define(std::move(materializationUnit));
+    }
+
+    /// Adds a new function object 'f' implementing the JNI function 'symbol'. This function object will then be called
+    /// if any Java code calls the native method corresponding to the JNI mangled name passed in as 'symbol'.
+    /// 'f' must be trivially copyable type.
+    template <class F>
+    void addJNISymbol(std::string symbol, const F& f)
+    {
+        m_jniLayer.define(
+            createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner));
     }
 
     /// Adds and registers a class file in the JIT. This has to be done prior to being able to lookup and execute
