@@ -1050,9 +1050,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::ISub:
             {
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
                 llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* lhs = operandStack.back();
                 operandStack.pop_back();
                 operandStack.push_back(builder.CreateSub(lhs, rhs));
                 break;

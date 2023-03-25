@@ -10,11 +10,16 @@ class Test
         int x = 3;
         int y = 2;
         int z = 1;
+        // CHECK-NOT:-
         // CHECK: 1
         print(x-y);
+        // CHECK-NOT:-
         // CHECK: 2
         print(x-1);
+        // CHECK-NOT:-
         // CHECK: 2147483647
         print(Integer.MIN_VALUE-z);
+        // CHECK: -1
+        print(y-x);
     }
 }
