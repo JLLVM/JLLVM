@@ -1048,6 +1048,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.pop_back();
                 break;
             }
+            case OpCodes::ISub:
+            {
+                llvm::Value* lhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                operandStack.push_back(builder.CreateSub(lhs, rhs));
+                break;
+            }
             case OpCodes::LDC:
             {
                 auto index = consume<std::uint8_t>(current);
