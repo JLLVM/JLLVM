@@ -941,6 +941,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::IMul:
+            {
+                llvm::Value* lhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                operandStack.push_back(builder.CreateMul(lhs, rhs));
+                break;
+            }
             case OpCodes::InvokeStatic:
             case OpCodes::InvokeSpecial:
             {
