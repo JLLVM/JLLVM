@@ -7,14 +7,13 @@
 jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
     : m_classLoader(
         std::move(classPath),
-        [&](const ClassFile* classFile, ClassObject* classObject)
+        [&](ClassObject* classObject)
         {
-            m_jit.add(classFile);
-            if (auto classInitializer = m_jit.lookup(classFile->getThisClass(), "<clinit>", "()V"))
+            if (auto classInitializer = m_jit.lookup(classObject->getClassName(), "<clinit>", "()V"))
             {
                 LLVM_DEBUG({
                     llvm::dbgs() << "Executing class initializer "
-                                 << mangleMethod(classFile->getThisClass(), "<clinit>", "()V") << '\n';
+                                 << mangleMethod(classObject->getClassName(), "<clinit>", "()V") << '\n';
                 });
                 reinterpret_cast<void (*)()>(classInitializer->getAddress())();
             }
@@ -46,7 +45,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                 }
             }
         },
-        [&] { return m_gc.allocateStatic(); }),
+        [this](const ClassFile* classFile) { m_jit.add(classFile); }, [&] { return m_gc.allocateStatic(); }),
       m_gc(/*small random value for now*/ 4096)
 {
 }
@@ -59,7 +58,7 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
         llvm::report_fatal_error("Failed to open " + path);
     }
 
-    const ClassObject& classObject = m_classLoader.add(std::move(*buffer));
+    const ClassObject& classObject = m_classLoader.addAndInitialize(std::move(*buffer));
     auto lookup = m_jit.lookup(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
     if (!lookup)
     {

@@ -97,28 +97,35 @@ jllvm::Visibility visibility(const jllvm::MethodInfo& methodInfo)
 
 } // namespace
 
-const jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&& memoryBuffer)
+jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&& memoryBuffer)
 {
     llvm::StringRef raw = m_memoryBuffers.emplace_back(std::move(memoryBuffer))->getBuffer();
     ClassFile& classFile = m_classFiles.emplace_back(ClassFile::parseFromFile({raw.begin(), raw.end()}, m_stringSaver));
 
     llvm::StringRef className = classFile.getThisClass();
-    if (const ClassObject* result = forNameLoaded("L" + className + ";"))
+    if (ClassObject* result = forNameLoaded("L" + className + ";"))
     {
         return *result;
     }
     LLVM_DEBUG({ llvm::dbgs() << "Creating class object for " << className << '\n'; });
+    m_classFileLoaded(&classFile);
 
-    const ClassObject* superClass = nullptr;
+    // Get super classes and interfaces but only in prepared states!
+    // We have a bit of a chicken-egg situation going on here. The JVM spec requires super class and interface
+    // initialization to only happen after the class object has been created and been marked as
+    // "currently initializing". We can't create the class object before knowing its v-table size though, which
+    // requires knowing about the super classes. We therefore only load super classes and interfaces in "prepared"
+    // state, initializing them later after the class object has been created.
+    ClassObject* superClass = nullptr;
     if (std::optional<llvm::StringRef> superClassName = classFile.getSuperClass())
     {
-        superClass = &forName("L" + *superClassName + ";");
+        superClass = &forName("L" + *superClassName + ";", State::Prepared);
     }
 
-    llvm::SmallVector<const ClassObject*> interfaces;
+    llvm::SmallVector<ClassObject*> interfaces;
     for (llvm::StringRef iter : classFile.getInterfaces())
     {
-        interfaces.push_back(&forName("L" + iter + ";"));
+        interfaces.push_back(&forName("L" + iter + ";", State::Prepared));
     }
 
     VTableAssignment vTableAssignment = assignVTableSlots(classFile, superClass);
@@ -182,15 +189,19 @@ const jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBu
 
     auto* result = ClassObject::create(m_classAllocator, vTableAssignment.vTableCount, instanceSize, methods, fields,
                                        interfaces, className, superClass);
-
     m_mapping.insert({("L" + className + ";").str(), result});
 
-    m_classObjectCreated(&classFile, result);
+    // 5.5 Initialization, step 7: Initialize super class and interfaces recursively.
+    if (superClass)
+    {
+        initialize(*superClass);
+    }
+    llvm::for_each(interfaces, [this](ClassObject* interface) { initialize(*interface); });
 
     return *result;
 }
 
-const jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine className)
+jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine className)
 {
     llvm::SmallString<32> str;
     llvm::StringRef classNameRef = className.toStringRef(str);
@@ -231,10 +242,15 @@ const jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine classNam
     return curr;
 }
 
-const jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor)
+jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor, State state)
 {
-    if (const ClassObject* result = forNameLoaded(fieldDescriptor))
+    if (ClassObject* result = forNameLoaded(fieldDescriptor))
     {
+        if (state == State::Initialized)
+        {
+            // If the state of the class object has to be initialized, initialize it.
+            initialize(*result);
+        }
         return *result;
     }
 
@@ -278,14 +294,22 @@ const jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescripto
 
     llvm::StringRef raw = result->getBuffer();
     ClassFile classFile = ClassFile::parseFromFile({raw.begin(), raw.end()}, m_stringSaver);
-    return add(std::move(result));
+    ClassObject& classObject = add(std::move(result));
+    switch (state)
+    {
+        case State::Prepared: m_uninitialized.insert(&classObject); break;
+        case State::Initialized: m_initializeClassObject(&classObject); break;
+    }
+    return classObject;
 }
 
 jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
-                                llvm::unique_function<void(const ClassFile*, ClassObject*)>&& classFileLoaded,
+                                llvm::unique_function<void(ClassObject*)>&& initializeClassObject,
+                                llvm::unique_function<void(const ClassFile*)>&& classFileLoaded,
                                 llvm::unique_function<void**()> allocateStatic)
     : m_classPaths(std::move(classPaths)),
-      m_classObjectCreated(std::move(classFileLoaded)),
+      m_initializeClassObject(std::move(initializeClassObject)),
+      m_classFileLoaded(std::move(classFileLoaded)),
       m_allocateStatic(std::move(allocateStatic))
 {
     m_mapping.insert({"B", &m_byte});
@@ -297,4 +321,11 @@ jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
     m_mapping.insert({"S", &m_short});
     m_mapping.insert({"Z", &m_boolean});
     m_mapping.insert({"V", &m_void});
+}
+
+const jllvm::ClassObject& jllvm::ClassLoader::addAndInitialize(std::unique_ptr<llvm::MemoryBuffer>&& memoryBuffer)
+{
+    ClassObject& classObject = add(std::move(memoryBuffer));
+    m_initializeClassObject(&classObject);
+    return classObject;
 }
