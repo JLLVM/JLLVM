@@ -201,10 +201,10 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     return *result;
 }
 
-jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine className)
+jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescriptor)
 {
     llvm::SmallString<32> str;
-    llvm::StringRef classNameRef = className.toStringRef(str);
+    llvm::StringRef classNameRef = fieldDescriptor.toStringRef(str);
     auto result = m_mapping.find(classNameRef);
     if (result != m_mapping.end())
     {
