@@ -847,9 +847,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::IAdd:
             {
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
                 llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* lhs = operandStack.back();
                 operandStack.pop_back();
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
                 break;
@@ -887,6 +887,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IConst5:
             {
                 operandStack.push_back(builder.getInt32(5));
+                break;
+            }
+            case OpCodes::IDiv:
+            {
+                llvm::Value* rhs = operandStack.back();
+                operandStack.pop_back();
+                llvm::Value* lhs = operandStack.back();
+                operandStack.pop_back();
+                operandStack.push_back(builder.CreateSDiv(lhs, rhs));
                 break;
             }
             case OpCodes::ILoad:
