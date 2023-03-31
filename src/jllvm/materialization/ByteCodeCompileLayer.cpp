@@ -256,17 +256,14 @@ public:
     llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                         llvm::StringRef fieldName, llvm::StringRef fieldType)
     {
-        return returnConstantForClassObject(
-            builder, "L" + className + ";", fieldName + ";" + fieldType,
-                                                [=](const ClassObject* classObject)
-            {
-                // TODO: Pretty sure this needs to also go through the inheritance hierarchy among other details.
-                const Field* iter = llvm::find_if(
-                    classObject->getFields(), [&](const Field& field)
-                    { return !field.isStatic() && field.getName() == fieldName && field.getType() == fieldType; });
-                assert(iter != classObject->getFields().end());
-                return iter->getOffset();
-            });
+        return returnConstantForClassObject(builder, "L" + className + ";", fieldName + ";" + fieldType,
+                                            [=](const ClassObject* classObject)
+                                            {
+                                                return classObject
+                                                    ->getField(fieldName, fieldType,
+                                                               /*isStatic=*/false)
+                                                    ->getOffset();
+                                            });
     }
 
     llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
@@ -304,14 +301,7 @@ public:
         return returnConstantForClassObject(
             builder, "L" + className + ";", fieldName + ";" + fieldType,
             [=](const ClassObject* classObject)
-            {
-                // TODO: Pretty sure this needs to also go through the inheritance hierarchy among other details.
-                const Field* iter = llvm::find_if(
-                    classObject->getFields(), [&](const Field& field)
-                    { return field.isStatic() && field.getName() == fieldName && field.getType() == fieldType; });
-                assert(iter != classObject->getFields().end());
-                return iter->getAddressOfStatic();
-            });
+            { return classObject->getField(fieldName, fieldType, /*isStatic=*/true)->getAddressOfStatic(); });
     }
 
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
