@@ -563,21 +563,79 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
     std::vector<std::pair<std::uint16_t, PoolIndex<ClassInfo>>> activeHandlers;
 
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-
-    std::vector<llvm::BasicBlock::iterator> insertPoints(code.getCode().size());
-
-    std::vector<llvm::Value*> operandStack;
-    operandStack.reserve(code.getMaxStack());
-
+    // Calculate BasicBlocks
     llvm::ArrayRef<char> current = code.getCode();
     while (!current.empty())
     {
         auto offset = current.data() - code.getCode().data();
-
-        if (!builder.GetInsertBlock()->empty())
+        auto addBasicBlock = [&](std::uint16_t target)
         {
-            insertPoints[offset] = builder.GetInsertBlock()->back().getIterator();
+            auto [result, inserted] = basicBlocks.insert({target, nullptr});
+
+            if (inserted)
+            {
+                result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            }
+        };
+        auto opCode = consume<OpCodes>(current);
+        switch(opCode)
+        {
+            default:
+            {
+                break;
+            }
+            case OpCodes::IfICmpGe:
+            case OpCodes::IfACmpEq:
+            case OpCodes::IfACmpNe:
+            case OpCodes::IfICmpEq:
+            case OpCodes::IfICmpGt:
+            case OpCodes::IfICmpLe:
+            case OpCodes::IfICmpLt:
+            case OpCodes::IfICmpNe:
+            case OpCodes::IfEq:
+            case OpCodes::IfNe:
+            case OpCodes::IfLt:
+            case OpCodes::IfGe:
+            case OpCodes::IfGt:
+            case OpCodes::IfLe:
+            case OpCodes::IfNonNull:
+            case OpCodes::IfNull:
+            {
+                if(current.size() >= sizeof(std::int16_t))
+                {
+                    auto target = consume<std::int16_t>(current);
+                    addBasicBlock(target + offset);
+                    addBasicBlock(current.data() - code.getCode().data());
+                }
+                break;
+            }
+            case OpCodes::Goto:
+            {
+                if(current.size() >= sizeof(std::int16_t))
+                {
+                    auto target = consume<std::int16_t>(current);
+                    addBasicBlock(target + offset);
+                }
+                break;
+            }
+            case OpCodes::GotoW:
+            {
+                if(current.size() >= sizeof(std::int32_t))
+                {
+                    auto target = consume<std::int32_t>(current);
+                    addBasicBlock(target + offset);
+                }
+                break;
+            }
         }
+    }
+
+    std::vector<llvm::Value*> operandStack;
+    operandStack.reserve(code.getMaxStack());
+    current = code.getCode();
+    while (!current.empty())
+    {
+        auto offset = current.data() - code.getCode().data();
 
         if (auto result = startHandlers.find(offset); result != startHandlers.end())
         {
@@ -592,41 +650,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
         if (auto result = basicBlocks.find(offset); result != basicBlocks.end())
         {
+            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to set
+            // this manually to the new insert point. This essentially implements implicit fallthrough from JVM bytecode.
+            if (builder.GetInsertBlock()->getTerminator() == nullptr)
+            {
+                builder.CreateBr(result->second);
+            }
             builder.SetInsertPoint(result->second);
         }
-
-        auto addBasicBlock = [&](std::uint16_t target)
-        {
-            auto [result, inserted] = basicBlocks.insert({target, nullptr});
-            if (!inserted)
-            {
-                return result->second;
-            }
-
-            if (target > offset)
-            {
-                return result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            }
-
-            auto iter = insertPoints[target];
-            if (target == 0 && iter == function->getEntryBlock().end())
-            {
-                iter = function->getEntryBlock().begin();
-            }
-            else
-            {
-                iter = iter->getNextNode()->getIterator();
-            }
-
-            llvm::BasicBlock* original = iter->getParent();
-            auto* newBlock = llvm::BasicBlock::Create(builder.getContext(), "", function, original);
-            newBlock->splice(newBlock->end(), original, original->begin(), iter);
-            llvm::IRBuilder<>::InsertPointGuard guard{builder};
-            builder.SetInsertPoint(newBlock);
-            builder.CreateBr(original);
-
-            return result->second = original;
-        };
 
         auto opCode = consume<OpCodes>(current);
         switch (opCode)
@@ -821,7 +852,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::Goto:
             {
                 auto target = consume<std::int16_t>(current);
-                builder.CreateBr(addBasicBlock(target + offset));
+                builder.CreateBr(basicBlocks[target + offset]);
                 break;
             }
             case OpCodes::New:
@@ -927,8 +958,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IfICmpGe:
             {
                 auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = addBasicBlock(target + offset);
-                llvm::BasicBlock* next = addBasicBlock(current.data() - code.getCode().data());
+                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
+                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
 
                 llvm::Value* rhs = operandStack.back();
                 operandStack.pop_back();
