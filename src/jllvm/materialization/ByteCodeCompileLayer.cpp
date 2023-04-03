@@ -46,6 +46,18 @@ auto arrayStructType(llvm::Type* elementType)
                                                              llvm::ArrayType::get(elementType, 0)});
 }
 
+auto arrayRefType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(context, {llvm::PointerType::get(context, 0),
+                                           llvm::Type::getIntNTy(context, std::numeric_limits<std::size_t>::digits)});
+}
+
+auto iTableType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(context, {llvm::Type::getIntNTy(context, std::numeric_limits<std::size_t>::digits),
+                                           llvm::ArrayType::get(llvm::PointerType::get(context, 0), 0)});
+}
+
 llvm::FunctionCallee allocationFunction(llvm::Module* module)
 {
     auto* function = module->getFunction("jllvm_gc_alloc");
@@ -331,6 +343,57 @@ public:
                                                 } while (classObject != nullptr);
                                                 llvm_unreachable("method not found");
                                             });
+    }
+
+    /// Returns an LLVM integer containing the iTable offset in the lower 8 bits and the id of the interface, whose
+    /// iTable should be indexed into from the 9th bit onwards for the class indicated by 'fieldDescriptor',
+    /// the method named 'methodName' with the type 'typeDescriptor'.
+    llvm::Value* getITableIdAndOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
+                                      llvm::StringRef methodName, llvm::StringRef typeDescriptor)
+    {
+        return returnConstantForClassObject(
+            builder, fieldDescriptor, methodName + ";" + typeDescriptor,
+            [=](const ClassObject* classObject)
+            {
+                // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
+
+                // Otherwise, if C declares a method with the name and descriptor specified by the interface method
+                // reference, method lookup succeeds.
+                {
+                    llvm::ArrayRef<Method> methods = classObject->getMethods();
+                    const Method* iter =
+                        llvm::find_if(methods, [&](const Method& method)
+                                      { return method.getName() == methodName && method.getType() == typeDescriptor; });
+                    if (iter != methods.end())
+                    {
+                        return classObject->getInterfaceId() << 8 | *iter->getVTableSlot();
+                    }
+                }
+
+                // TODO:
+                // Otherwise, if the class Object declares a method with the name and descriptor specified by the
+                // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
+                // set, method lookup succeeds.
+
+                // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
+                // descriptor specified by the method reference include exactly one method that does not have its
+                // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
+                for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
+                {
+                    const Method* method = llvm::find_if(interface->getMethods(),
+                                                         [&](const jllvm::Method& method) {
+                                                             return !method.isAbstract()
+                                                                    && method.getName() == methodName
+                                                                    && method.getType() == typeDescriptor;
+                                                         });
+                    if (method != interface->getMethods().end())
+                    {
+                        return interface->getInterfaceId() << 8 | *method->getVTableSlot();
+                    }
+                }
+
+                llvm_unreachable("method not found");
+            });
     }
 
     /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
@@ -1057,6 +1120,81 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateMul(lhs, rhs));
+                break;
+            }
+            case OpCodes::InvokeInterface:
+            {
+                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
+                // Legacy bytes that have become unused.
+                consume<std::uint8_t>(current);
+                consume<std::uint8_t>(current);
+
+                MethodType descriptor = parseMethodType(
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+                for (auto& iter : llvm::reverse(args))
+                {
+                    iter = operandStack.back();
+                    operandStack.pop_back();
+                }
+
+                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodName =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                llvm::StringRef methodType =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+
+                llvm::Value* idAndSlot =
+                    helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
+
+                std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
+                llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
+                llvm::Value* id = builder.CreateLShr(idAndSlot, builder.getIntN(sizeTBits, 8));
+
+                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+                llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,
+                                                            {builder.getInt32(ClassObject::getITablesOffset())});
+                llvm::Value* iTables = builder.CreateLoad(
+                    builder.getPtrTy(), builder.CreateGEP(arrayRefType(builder.getContext()), iTablesPtr,
+                                                          {builder.getInt32(0), builder.getInt32(0)}));
+
+                // Linear search over all iTables of 'classObject' until the iTable with the interface id equal to
+                // 'id' is found.
+                auto* loopBody = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                llvm::BasicBlock* pred = builder.GetInsertBlock();
+                builder.CreateBr(loopBody);
+
+                builder.SetInsertPoint(loopBody);
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), pred);
+
+                llvm::Value* iTable =
+                    builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(builder.getPtrTy(), iTables, {phi}));
+                llvm::Value* iTableId = builder.CreateLoad(idAndSlot->getType(), iTable);
+                llvm::Value* cond = builder.CreateICmpEQ(iTableId, id);
+                llvm::Value* increment = builder.CreateAdd(phi, builder.getInt32(1));
+                phi->addIncoming(increment, loopBody);
+
+                auto* loopContinue = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                builder.CreateCondBr(cond, loopContinue, loopBody);
+
+                builder.SetInsertPoint(loopContinue);
+
+                llvm::Value* iTableSlot = builder.CreateGEP(iTableType(builder.getContext()), iTable,
+                                                            {builder.getInt32(0), builder.getInt32(1), slot});
+                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
+
+                llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
+                prepareArgumentsForCall(builder, args, functionType);
+                auto* call = builder.CreateCall(functionType, callee, args);
+                call->setAttributes(getABIAttributes(functionType));
+
+                if (descriptor.returnType != FieldType(BaseType::Void))
+                {
+                    operandStack.push_back(call);
+                }
+
                 break;
             }
             case OpCodes::INeg:

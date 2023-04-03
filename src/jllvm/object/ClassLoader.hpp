@@ -33,6 +33,7 @@ class ClassLoader
     llvm::unique_function<void(ClassObject* classObject)> m_initializeClassObject;
     llvm::unique_function<void(const ClassFile*)> m_classFileLoaded;
     llvm::unique_function<void**()> m_allocateStatic;
+    std::size_t m_interfaceIdCounter = 0;
 
     ClassObject m_byte{sizeof(std::uint8_t), "B"};
     ClassObject m_char{sizeof(std::int16_t), "C"};

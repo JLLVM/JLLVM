@@ -1,7 +1,12 @@
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DepthFirstIterator.h>
+#include <llvm/ADT/GraphTraits.h>
+#include <llvm/ADT/PointerEmbeddedInt.h>
 #include <llvm/ADT/PointerIntPair.h>
+#include <llvm/ADT/PointerUnion.h>
+#include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -181,6 +186,35 @@ public:
 
 using VTableSlot = void*;
 
+/// Class used for storing a 'ClassObject's implementations of interface methods of the interface with a given id.
+/// This is a variable length object where the function pointers start at the end of the object.
+class ITable final : public llvm::TrailingObjects<ITable, VTableSlot>
+{
+    friend class llvm::TrailingObjects<ITable, VTableSlot>;
+
+    std::size_t m_id;
+
+    explicit ITable(std::size_t id) : m_id(id) {}
+
+public:
+    /// Creates a new ITable by allocating it in 'allocator' with the given ID and enough storage of 'iTableSlots'
+    /// amount of methods.
+    static ITable* create(llvm::BumpPtrAllocator& allocator, std::size_t id, std::size_t iTableSlots);
+
+    /// Returns the ID of the interface this ITable corresponds to.
+    std::size_t getId() const
+    {
+        return m_id;
+    }
+
+    /// Returns a pointer to the first slot in the ITable. Slots are contiguous and therefore reachable by pointer
+    /// arithmetic.
+    VTableSlot* getMethods()
+    {
+        return getTrailingObjects<VTableSlot>();
+    }
+};
+
 /// Class object representing Java 'Class' objects. Class objects serve all introspections needs of Java
 /// and additionally serve as the type object of all Java objects. The end of every Class object additionally
 /// contains the VTable slots for virtual functions.
@@ -192,13 +226,20 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::ArrayRef<Method> m_methods;
     llvm::ArrayRef<Field> m_fields;
     llvm::ArrayRef<const ClassObject*> m_interfaces;
+    llvm::ArrayRef<ITable*> m_iTables;
     llvm::StringRef m_className;
-    const ClassObject* m_superClass;
+
+    using InterfaceId = llvm::PointerEmbeddedInt<std::size_t, std::numeric_limits<std::size_t>::digits - 1>;
+
+    llvm::PointerUnion<const ClassObject*, InterfaceId> m_superClassOrInterfaceId;
     llvm::PointerIntPair<const ClassObject*, 1, bool> m_componentTypeAndIsPrimitive;
 
     ClassObject(std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className,
-                const ClassObject* superClass);
+                llvm::ArrayRef<const ClassObject*> interfaces, llvm::ArrayRef<ITable*> iTables,
+                llvm::StringRef className, const ClassObject* superClass);
+
+    ClassObject(std::size_t interfaceId, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
+                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
 
 public:
     /// Function to create a new class object for a user class. The class object is allocated within 'allocator'
@@ -212,6 +253,14 @@ public:
                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className,
                                const ClassObject* superClass);
+
+    /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
+    /// 'interfaceId' is the globally unique id of this interface.
+    /// 'methods', 'fields' and 'interfaces' are allocated within 'allocator' to preserve their lifetimes.
+    /// 'className' is the name of the user class in the JVM internal format.
+    static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, std::size_t interfaceId,
+                                        llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
+                                        llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
 
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
@@ -271,6 +320,9 @@ public:
         return m_interfaces;
     }
 
+    /// Returns a range containing all direct and indirect interfaces of this class in an unspecified order.
+    auto getAllInterfaces() const;
+
     /// Returns the name of this class as descriptor.
     llvm::StringRef getClassName() const
     {
@@ -281,13 +333,25 @@ public:
     /// This is notably the case for array types, primitives and java/lang/Object.
     const ClassObject* getSuperClass() const
     {
-        return m_superClass;
+        return m_superClassOrInterfaceId.dyn_cast<const ClassObject*>();
     }
 
     /// Returns true if this class is an array type.
     bool isArray() const
     {
         return getComponentType() != nullptr;
+    }
+
+    /// Returns true if this class is an interface.
+    bool isInterface() const
+    {
+        return m_superClassOrInterfaceId.is<InterfaceId>();
+    }
+
+    /// Returns the globally unique interface id of this interface.
+    std::size_t getInterfaceId() const
+    {
+        return m_superClassOrInterfaceId.get<InterfaceId>();
     }
 
     /// Returns the component type of the array type or null if this is not an array type.
@@ -313,10 +377,87 @@ public:
     {
         return getTrailingObjects<VTableSlot>();
     }
+
+    /// Returns the list of ITables of this class.
+    llvm::ArrayRef<ITable*> getITables() const
+    {
+        return m_iTables;
+    }
+
+    /// Byte offset from the start of the class object to the field area size member.
+    constexpr static std::size_t getITablesOffset()
+    {
+        return offsetof(ClassObject, m_iTables);
+    }
+
+    /// Returns a range of all (direct and indirect) interfaces of this class object in order of "maximally specific" as
+    /// the JVM spec calls it.
+    /// This is simply all interfaces of this class in topological sort order of the interface inheritance DAG.
+    /// All subinterfaces are therefore guaranteed to appear before their base interface in this list.
+    /// Note: This is an expensive operation and should only be used if a topological traversal order is required.
+    auto maximallySpecificInterfaces() const;
 };
 
 static_assert(std::is_trivially_destructible_v<ClassObject>);
 static_assert(std::is_trivially_destructible_v<Field>);
 static_assert(std::is_trivially_destructible_v<Method>);
 
+/// Adaptor class for LLVMs GraphTraits used to indicate we want to traverse the interfaces of a 'ClassObject'.
+struct InterfaceGraph
+{
+    const ClassObject* root;
+};
+
 } // namespace jllvm
+
+template <>
+struct llvm::GraphTraits<jllvm::InterfaceGraph>
+{
+    using NodeRef = const jllvm::ClassObject*;
+    using ChildIteratorType = llvm::ArrayRef<const jllvm::ClassObject*>::iterator;
+
+    static NodeRef getEntryNode(jllvm::InterfaceGraph interfaceGraph)
+    {
+        return interfaceGraph.root;
+    }
+
+    static ChildIteratorType child_begin(NodeRef interface)
+    {
+        return interface->getInterfaces().begin();
+    }
+
+    static ChildIteratorType child_end(NodeRef interface)
+    {
+        return interface->getInterfaces().end();
+    }
+};
+
+inline auto jllvm::ClassObject::getAllInterfaces() const
+{
+    return llvm::drop_begin(llvm::depth_first(InterfaceGraph{this}));
+}
+
+inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
+{
+    // Adaptor for ReversePostOrderTraversal which drops this first element (as that is 'this').
+    // llvm::drop_begin doesn't work here since that does not keep the range passed to it alive, just the iterators.
+    class RPODropFront
+    {
+        llvm::ReversePostOrderTraversal<InterfaceGraph> m_traversal;
+
+    public:
+        explicit RPODropFront(const ClassObject* object) : m_traversal(InterfaceGraph{object}) {}
+
+        auto begin() const
+        {
+            return std::next(m_traversal.begin());
+        }
+
+        auto end() const
+        {
+            return m_traversal.end();
+        }
+    };
+
+    return RPODropFront{this};
+}
