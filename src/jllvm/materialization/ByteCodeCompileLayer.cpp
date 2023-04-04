@@ -104,6 +104,44 @@ llvm::AttributeList getABIAttributes(llvm::FunctionType* functionType)
     return llvm::AttributeList::get(functionType->getContext(), llvm::AttributeSet{}, retAttrs, paramAttrs);
 }
 
+/// Class for operand stack
+/// This class also offers method to get and set the current top of stack in order to consider the control flow path
+class OperandStack
+{
+    std::vector<llvm::AllocaInst*> m_values;
+    llvm::AllocaInst** m_topOfStack;
+    llvm::IRBuilder<>& m_builder;
+
+public:
+    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder, llvm::LLVMContext& context): m_builder(builder), m_values(std::vector<llvm::AllocaInst*>(maxStack)), m_topOfStack(m_values.data())
+    {
+        for (auto& alloca : m_values)
+        {
+            alloca = builder.CreateAlloca(llvm::PointerType::get(context, 0));
+        }
+    }
+
+    llvm::Value* pop_back(llvm::Type *ty)
+    {
+        return m_builder.CreateLoad(ty, *(--m_topOfStack));
+    }
+
+    void push_back(llvm::Value* value)
+    {
+        m_builder.CreateStore(value, *(m_topOfStack++));
+    }
+
+    llvm::AllocaInst** getTopOfStack()
+    {
+        return m_topOfStack;
+    }
+
+    void setTopOfStack(llvm::AllocaInst** topOfStack)
+    {
+        m_topOfStack = topOfStack;
+    }
+};
+
 /// Helper class to fetch properties about a class while still doing lazy class loading.
 /// This works by taking callbacks which are either called immediately if a class object is already loaded, leading
 /// to better code generation, or otherwise creating stubs that when called load the given class object and return
@@ -531,6 +569,7 @@ enum class OpCodes : std::uint8_t
 void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper)
 {
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
+    OperandStack operandStack(code.getMaxStack(), builder, function->getContext());
     std::vector<llvm::AllocaInst*> locals(code.getMaxLocals());
     for (auto& alloca : locals)
     {
@@ -629,9 +668,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
         }
     }
-
-    std::vector<llvm::Value*> operandStack;
-    operandStack.reserve(code.getMaxStack());
+    llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
     current = code.getCode();
     while (!current.empty())
     {
@@ -654,21 +691,22 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // this manually to the new insert point. This essentially implements implicit fallthrough from JVM bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
+                basicBlockStackPointers.insert({result->second, operandStack.getTopOfStack()});
                 builder.CreateBr(result->second);
             }
             builder.SetInsertPoint(result->second);
+            if (auto resultStackPointer = basicBlockStackPointers.find(result->second); resultStackPointer != basicBlockStackPointers.end()) {
+                operandStack.setTopOfStack(resultStackPointer->second);
+            }
         }
-
         auto opCode = consume<OpCodes>(current);
         switch (opCode)
         {
             default: llvm_unreachable("NOT YET IMPLEMENTED");
             case OpCodes::AALoad:
             {
-                llvm::Value* index = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* array = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
@@ -677,12 +715,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::AAStore:
             {
-                llvm::Value* value = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* index = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* array = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
@@ -716,8 +751,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::ANewArray:
             {
                 auto index = consume<PoolIndex<ClassInfo>>(current);
-                llvm::Value* count = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* classObject = helper.getClassObject(
                     builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
@@ -741,15 +775,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::AReturn:
             {
-                llvm::Value* value = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
                 builder.CreateRet(value);
                 break;
             }
             case OpCodes::ArrayLength:
             {
-                llvm::Value* array = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // The element type of the array type here is actually irrelevant.
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
@@ -760,32 +792,27 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::AStore:
             {
                 auto index = consume<std::uint8_t>(current);
-                builder.CreateStore(operandStack.back(), locals[index]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[index]);
                 break;
             }
             case OpCodes::AStore0:
             {
-                builder.CreateStore(operandStack.back(), locals[0]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[0]);
                 break;
             }
             case OpCodes::AStore1:
             {
-                builder.CreateStore(operandStack.back(), locals[1]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[1]);
                 break;
             }
             case OpCodes::AStore2:
             {
-                builder.CreateStore(operandStack.back(), locals[2]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]);
                 break;
             }
             case OpCodes::AStore3:
             {
-                builder.CreateStore(operandStack.back(), locals[3]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]);
                 break;
             }
             case OpCodes::BIPush:
@@ -797,7 +824,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::Dup:
             {
-                operandStack.push_back(operandStack.back());
+                llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
+                operandStack.push_back(val);
+                operandStack.push_back(val);
                 break;
             }
             case OpCodes::GetField:
@@ -807,8 +836,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Type* type = descriptorToType(
                     parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text), builder.getContext());
 
-                llvm::Value* objectRef = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
@@ -852,6 +880,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::Goto:
             {
                 auto target = consume<std::int16_t>(current);
+                basicBlockStackPointers.insert({basicBlocks[target + offset], operandStack.getTopOfStack()});
                 builder.CreateBr(basicBlocks[target + offset]);
                 break;
             }
@@ -878,10 +907,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::IAdd:
             {
-                llvm::Value* rhs = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
                 break;
             }
@@ -922,10 +949,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::IDiv:
             {
-                llvm::Value* rhs = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSDiv(lhs, rhs));
                 break;
             }
@@ -961,12 +986,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
                 llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
 
-                llvm::Value* rhs = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* cond = builder.CreateICmpSGE(lhs, rhs);
+                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
 
                 break;
@@ -983,10 +1008,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::IMul:
             {
-                llvm::Value* rhs = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateMul(lhs, rhs));
                 break;
             }
@@ -1000,11 +1023,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
+                int i = descriptor.parameters.size() - 1;
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.back();
-                    operandStack.pop_back();
+                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
                 }
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1034,11 +1057,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
+                int i = descriptor.parameters.size() - 1;
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.back();
-                    operandStack.pop_back();
+                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
                 }
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef methodName =
@@ -1069,40 +1092,33 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IStore:
             {
                 auto index = consume<std::uint8_t>(current);
-                builder.CreateStore(operandStack.back(), locals[index]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[index]);
                 break;
             }
             case OpCodes::IStore0:
             {
-                builder.CreateStore(operandStack.back(), locals[0]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[0]);
                 break;
             }
             case OpCodes::IStore1:
             {
-                builder.CreateStore(operandStack.back(), locals[1]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[1]);
                 break;
             }
             case OpCodes::IStore2:
             {
-                builder.CreateStore(operandStack.back(), locals[2]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[2]);
                 break;
             }
             case OpCodes::IStore3:
             {
-                builder.CreateStore(operandStack.back(), locals[3]);
-                operandStack.pop_back();
+                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[3]);
                 break;
             }
             case OpCodes::ISub:
             {
-                llvm::Value* rhs = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* lhs = operandStack.back();
-                operandStack.pop_back();
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSub(lhs, rhs));
                 break;
             }
@@ -1125,22 +1141,19 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
 
-                llvm::Value* value = operandStack.back();
-                operandStack.pop_back();
-                llvm::Value* objectRef = operandStack.back();
-                operandStack.pop_back();
-
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
                     refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                llvm::Value* value = operandStack.pop_back(!llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty());
+                llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
 
                 llvm::Value* fieldPtr =
                     builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
 
-                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
                 if (value->getType() != llvmFieldType)
                 {
                     // Truncated from the operands stack i32 type.
@@ -1155,18 +1168,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::PutStatic:
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
-                llvm::Value* value = operandStack.back();
-                operandStack.pop_back();
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
                     refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-
+                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                llvm::Value* value = operandStack.pop_back(!llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty());
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
 
-                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
                 if (value->getType() != llvmFieldType)
                 {
                     // Truncated from the operands stack i32 type.
@@ -1180,7 +1191,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::Pop:
             {
-                operandStack.pop_back();
+                // Type does not matter as we do not use the result
+                operandStack.pop_back(referenceType(builder.getContext()));
                 break;
             }
             case OpCodes::Return: builder.CreateRetVoid(); break;
