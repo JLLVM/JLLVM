@@ -1132,11 +1132,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
+                int i = descriptor.parameters.size() - 1;
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.back();
-                    operandStack.pop_back();
+                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
                 }
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
