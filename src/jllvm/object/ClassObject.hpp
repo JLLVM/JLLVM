@@ -259,6 +259,12 @@ public:
         return m_fields;
     }
 
+    /// Returns the field with the given 'fieldName' and 'fieldType', only considering static or instance fields
+    /// depending on 'isStatic'.
+    /// This field lookup unlike 'getFields' also considers fields in the base classes of this class.
+    /// Returns nullptr if no field was found.
+    const Field* getField(llvm::StringRef fieldName, llvm::StringRef fieldType, bool isStatic) const;
+
     /// Returns the direct interfaces implemented by this class.
     llvm::ArrayRef<const ClassObject*> getInterfaces() const
     {
