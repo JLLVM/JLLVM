@@ -113,11 +113,11 @@ class OperandStack
     llvm::IRBuilder<>& m_builder;
 
 public:
-    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder, llvm::LLVMContext& context): m_builder(builder), m_values(std::vector<llvm::AllocaInst*>(maxStack)), m_topOfStack(m_values.data())
+    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder): m_builder(builder), m_values(maxStack), m_topOfStack(m_values.data())
     {
         for (auto& alloca : m_values)
         {
-            alloca = builder.CreateAlloca(llvm::PointerType::get(context, 0));
+            alloca = builder.CreateAlloca(llvm::PointerType::get(builder.getContext(), 0));
         }
     }
 
@@ -131,7 +131,7 @@ public:
         m_builder.CreateStore(value, *(m_topOfStack++));
     }
 
-    llvm::AllocaInst** getTopOfStack()
+    llvm::AllocaInst** getTopOfStack() const
     {
         return m_topOfStack;
     }
@@ -566,10 +566,15 @@ enum class OpCodes : std::uint8_t
     Wide = 0xc4,
 };
 
+llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
+{
+    return !llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty();
+}
+
 void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper)
 {
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
-    OperandStack operandStack(code.getMaxStack(), builder, function->getContext());
+    OperandStack operandStack(code.getMaxStack(), builder);
     std::vector<llvm::AllocaInst*> locals(code.getMaxLocals());
     for (auto& alloca : locals)
     {
@@ -1147,7 +1152,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-                llvm::Value* value = operandStack.pop_back(!llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty());
+                llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
 
@@ -1175,7 +1180,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-                llvm::Value* value = operandStack.pop_back(!llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty());
+                llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
 
                 if (value->getType() != llvmFieldType)
