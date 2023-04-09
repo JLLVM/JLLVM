@@ -1084,6 +1084,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 }
                 break;
             }
+            case OpCodes::IReturn:
+            {
+                builder.CreateRet(operandStack.pop_back(builder.getInt32Ty()));
+                break;
+            }
             case OpCodes::IStore:
             {
                 auto index = consume<std::uint8_t>(current);
