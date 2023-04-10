@@ -900,6 +900,42 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::I2B:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateIntCast(value, builder.getInt8Ty(), true));
+                break;
+            }
+            case OpCodes::I2C:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateIntCast(value, builder.getInt16Ty(), false));
+                break;
+            }
+            case OpCodes::I2D:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateCast(llvm::Instruction::CastOps::SIToFP, value, builder.getDoubleTy()));
+                break;
+            }
+            case OpCodes::I2F:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateCast(llvm::Instruction::CastOps::SIToFP, value, builder.getFloatTy()));
+                break;
+            }
+            case OpCodes::I2L:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateIntCast(value, builder.getInt64Ty(), true));
+                break;
+            }
+            case OpCodes::I2S:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateIntCast(value, builder.getInt16Ty(), true));
+                break;
+            }
             case OpCodes::IAdd:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1195,7 +1231,17 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.pop_back(referenceType(builder.getContext()));
                 break;
             }
-            case OpCodes::Return: builder.CreateRetVoid(); break;
+            case OpCodes::Return:
+            {
+                builder.CreateRetVoid();
+                break;
+            }
+            case OpCodes::SIPush:
+            {
+                auto value = consume<std::int16_t>(current);
+                operandStack.push_back(builder.getInt16(value));
+                break;
+            }
         }
     }
 }
