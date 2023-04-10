@@ -917,13 +917,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::I2D:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateCast(llvm::Instruction::CastOps::SIToFP, value, builder.getDoubleTy()));
+                operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
                 break;
             }
             case OpCodes::I2F:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateCast(llvm::Instruction::CastOps::SIToFP, value, builder.getFloatTy()));
+                operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
                 break;
             }
             case OpCodes::I2L:
