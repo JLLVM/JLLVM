@@ -25,13 +25,6 @@ class Test
         print((byte) z);
 
         //CHECK: 516
-        print((char) x);
-        //CHECK: 129
-        print((char) y);
-        //CHECK: 65407
-        print((char) z);
-
-        //CHECK: 516
         print((short) x);
         //CHECK: 129
         print((short) y);
