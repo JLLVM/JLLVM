@@ -900,6 +900,45 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::I2B:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+                break;
+            }
+            case OpCodes::I2C:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+                operandStack.push_back(builder.CreateZExt(value, builder.getInt32Ty()));
+                break;
+            }
+            case OpCodes::I2D:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
+                break;
+            }
+            case OpCodes::I2F:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
+                break;
+            }
+            case OpCodes::I2L:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
+                break;
+            }
+            case OpCodes::I2S:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+                break;
+            }
             case OpCodes::IAdd:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1195,7 +1234,17 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.pop_back(referenceType(builder.getContext()));
                 break;
             }
-            case OpCodes::Return: builder.CreateRetVoid(); break;
+            case OpCodes::Return:
+            {
+                builder.CreateRetVoid();
+                break;
+            }
+            case OpCodes::SIPush:
+            {
+                auto value = consume<std::int16_t>(current);
+                operandStack.push_back(builder.getInt32(value));
+                break;
+            }
         }
     }
 }

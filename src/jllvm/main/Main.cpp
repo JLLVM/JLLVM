@@ -73,7 +73,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
             {vm.getInterner()("Java_Test_print__I"), trivialPrintFunction<std::int32_t>()},
             {vm.getInterner()("Java_Test_print__J"), trivialPrintFunction<std::int64_t>()},
             {vm.getInterner()("Java_Test_print__S"), trivialPrintFunction<std::int16_t>()},
-            {vm.getInterner()("Java_Test_print__C"), trivialPrintFunction<std::int16_t>()},
+            {vm.getInterner()("Java_Test_print__C"), trivialPrintFunction<std::uint16_t>()},
             {vm.getInterner()("Java_Test_print__Z"), trivialPrintFunction<bool>()},
         }));
     }
