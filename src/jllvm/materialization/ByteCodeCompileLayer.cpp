@@ -903,13 +903,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::I2B:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateIntCast(value, builder.getInt8Ty(), true));
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
                 break;
             }
             case OpCodes::I2C:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateIntCast(value, builder.getInt16Ty(), false));
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+                operandStack.push_back(builder.CreateZExt(value, builder.getInt32Ty()));
                 break;
             }
             case OpCodes::I2D:
@@ -927,13 +929,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::I2L:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateIntCast(value, builder.getInt64Ty(), true));
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
                 break;
             }
             case OpCodes::I2S:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateIntCast(value, builder.getInt16Ty(), true));
+                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
                 break;
             }
             case OpCodes::IAdd:
@@ -1239,7 +1242,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::SIPush:
             {
                 auto value = consume<std::int16_t>(current);
-                operandStack.push_back(builder.getInt16(value));
+                operandStack.push_back(builder.getInt32(value));
                 break;
             }
         }
