@@ -20,6 +20,7 @@ jobs:
 
       - name: Install clang-tidy
         run: |
+          sudo apt-get remove libclang-common-15-dev
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh $LLVM_VERSION all
