@@ -20,10 +20,7 @@ jobs:
 
       - name: Install clang-tidy
         run: |
-          sudo apt-get remove libclang-common-15-dev
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh $LLVM_VERSION all
+          sudo apt-get install clang-tidy-$LLVM_VERSION
 
       - name: Checkout JLLVM
         uses: actions/checkout@v3
@@ -99,9 +96,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh $LLVM_VERSION all
+          sudo apt-get install clang-format-$LLVM_VERSION
 
       - name: Set up Python
         uses: actions/setup-python@v4
