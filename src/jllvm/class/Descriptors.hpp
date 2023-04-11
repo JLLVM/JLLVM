@@ -51,7 +51,7 @@ public:
             case Char:
             case Short:
             case Int:
-            case Long:
+            case Long: return true;
             default: return false;
         }
     }
