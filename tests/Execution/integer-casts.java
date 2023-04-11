@@ -32,6 +32,13 @@ class Test
         print((short) z);
 
         //CHECK: 516
+        print((char) x);
+        //CHECK: 129
+        print((char) y);
+        //CHECK: 65407
+        print((char) z);
+
+        //CHECK: 516
         print((long) x);
         //CHECK: 129
         print((long) y);

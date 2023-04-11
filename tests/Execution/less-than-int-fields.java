@@ -15,6 +15,9 @@ class Test
     public static char sc = 5;
     public char c = 5;
 
+    public char nc = 65407;
+    public static char ncs = 65407;
+
     public static void main(String[] args)
     {
         var t = new Test();
@@ -25,5 +28,9 @@ class Test
         print((int)Test.sc);
         print((int)t.c);
         // CHECK-COUNT-6: 5
+
+        print((int)t.nc);
+        print((int)t.ncs);
+        // CHECK-COUNT-2: 65407
     }
 }

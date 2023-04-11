@@ -2,6 +2,7 @@
 #pragma once
 
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 
 #include <memory>
 #include <variant>
@@ -12,17 +13,64 @@ namespace jllvm
 
 /// <BaseType> ::= 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z'
 /// Note: We add 'V' for void here as well for convenience.
-enum class BaseType
+class BaseType
 {
-    Byte, /// 'B'
-    Char, /// 'C'
-    Double, /// 'D'
-    Float, /// 'F'
-    Int, /// 'I'
-    Long, /// 'J'
-    Short, /// 'S'
-    Boolean, /// 'Z'
-    Void /// 'V'
+public:
+    enum Values
+    {
+        Boolean, /// 'Z'
+        Byte,    /// 'B'
+        Char,    /// 'C'
+        Short,   /// 'S'
+        Int,     /// 'I'
+        Float,   /// 'F'
+        Double,  /// 'D'
+        Long,    /// 'J'
+        Void     /// 'V'
+    };
+
+private:
+    Values m_value;
+
+public:
+    /*implicit*/ BaseType(Values value) : m_value(value) {}
+
+    /// Returns the enum value for this base type.
+    Values getValue() const
+    {
+        return m_value;
+    }
+
+    /// Returns true if this base type is an integer type.
+    bool isIntegerType() const
+    {
+        switch (m_value)
+        {
+            case Boolean:
+            case Byte:
+            case Char:
+            case Short:
+            case Int:
+            case Long:
+            default: return false;
+        }
+    }
+
+    /// Returns true if this type is unsigned. All other types are signed.
+    bool isUnsigned() const
+    {
+        return m_value == Char || m_value == Boolean;
+    }
+
+    bool operator==(const BaseType& rhs) const
+    {
+        return m_value == rhs.m_value;
+    }
+
+    bool operator!=(const BaseType& rhs) const
+    {
+        return !(rhs == *this);
+    }
 };
 
 /// <ObjectType> ::= 'L' <ClassName> ';'

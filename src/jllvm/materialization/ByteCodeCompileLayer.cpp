@@ -80,28 +80,30 @@ void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<l
     }
 }
 
-/// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' attribute
-/// we tell LLVM that if due to ABI, it has to extend these registers, to use sign extension.
+/// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' and
+/// 'zeroext' attribute we tell LLVM that if due to ABI, it has to extend these registers, which extension to use.
 /// This attribute list can be applied to either a call or a function itself.
-llvm::AttributeList getABIAttributes(llvm::FunctionType* functionType)
+llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::MethodType& methodType)
 {
-    llvm::SmallVector<llvm::AttributeSet> paramAttrs(functionType->getNumParams());
-    for (auto&& [param, attrs] : llvm::zip(functionType->params(), paramAttrs))
+    llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.parameters.size());
+    for (auto&& [param, attrs] : llvm::zip(methodType.parameters, paramAttrs))
     {
-        if (!param->isIntegerTy())
+        const auto* baseType = std::get_if<BaseType>(&param);
+        if (!baseType || !baseType->isIntegerType())
         {
             continue;
         }
-        attrs = attrs.addAttribute(functionType->getContext(), llvm::Attribute::SExt);
+        attrs = attrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
     }
 
     llvm::AttributeSet retAttrs;
-    if (functionType->getReturnType()->isIntegerTy())
+    if (const auto* baseType = std::get_if<BaseType>(&methodType.returnType); baseType && baseType->isIntegerType())
     {
-        retAttrs = retAttrs.addAttribute(functionType->getContext(), llvm::Attribute::SExt);
+        retAttrs =
+            retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
     }
 
-    return llvm::AttributeList::get(functionType->getContext(), llvm::AttributeSet{}, retAttrs, paramAttrs);
+    return llvm::AttributeList::get(context, llvm::AttributeSet{}, retAttrs, paramAttrs);
 }
 
 /// Class for operand stack
@@ -828,8 +830,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
                 const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(classFile);
-                llvm::Type* type = descriptorToType(
-                    parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text), builder.getContext());
+                FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
+                llvm::Type* type = descriptorToType(descriptor, builder.getContext());
 
                 llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
 
@@ -842,10 +844,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (field->getType()->isIntegerTy() && field->getType()->getIntegerBitWidth() < 32)
+                if (const auto* baseType = std::get_if<BaseType>(&descriptor);
+                    baseType && baseType->getValue() < BaseType::Int)
                 {
-                    // Sign extend to the operands stack i32 type.
-                    field = builder.CreateSExt(field, builder.getInt32Ty());
+                    // Extend to the operands stack i32 type.
+                    field = builder.CreateIntCast(field, builder.getInt32Ty(), /*isSigned=*/!baseType->isUnsigned());
                 }
 
                 operandStack.push_back(field);
@@ -862,12 +865,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                llvm::Type* type = descriptorToType(parseFieldType(fieldType), builder.getContext());
+                FieldType descriptor = parseFieldType(fieldType);
+                llvm::Type* type = descriptorToType(descriptor, builder.getContext());
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (field->getType()->isIntegerTy() && field->getType()->getIntegerBitWidth() < 32)
+                if (const auto* baseType = std::get_if<BaseType>(&descriptor);
+                    baseType && baseType->getValue() < BaseType::Int)
                 {
-                    // Sign extend to the operands stack i32 type.
-                    field = builder.CreateSExt(field, builder.getInt32Ty());
+                    // Extend to the operands stack i32 type.
+                    field = builder.CreateIntCast(field, builder.getInt32Ty(), /*isSigned=*/!baseType->isUnsigned());
                 }
                 operandStack.push_back(field);
                 break;
@@ -1075,7 +1080,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 prepareArgumentsForCall(builder, args, functionType);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(functionType));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1115,7 +1120,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(functionType));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {

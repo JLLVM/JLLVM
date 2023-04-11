@@ -13,7 +13,7 @@ llvm::Type* jllvm::descriptorToType(const FieldType& type, llvm::LLVMContext& co
         type,
         [&](BaseType baseType) -> llvm::Type*
         {
-            switch (baseType)
+            switch (baseType.getValue())
             {
                 case jllvm::BaseType::Void: return llvm::Type::getVoidTy(context);
                 case BaseType::Boolean:

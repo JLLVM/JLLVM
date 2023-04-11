@@ -166,7 +166,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             desc,
             [](BaseType baseType) -> std::size_t
             {
-                switch (baseType)
+                switch (baseType.getValue())
                 {
                     case BaseType::Byte: return 1;
                     case BaseType::Char: return 2;
