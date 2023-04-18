@@ -108,6 +108,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 argTypes.push_back(environment->getType());
                 // jclass or object
                 argTypes.push_back(referenceType(*context));
+
+                constexpr std::size_t parameterStartOffset = 2;
                 for (auto& iter : methodType.parameters)
                 {
                     argTypes.push_back(descriptorToType(iter, *context));
@@ -117,14 +119,16 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
                 llvm::CallInst* result =
                     builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
-                for (auto&& [index, type] : llvm::enumerate(argTypes))
+                for (auto&& [index, type] : llvm::enumerate(methodType.parameters))
                 {
-                    if (!type->isIntegerTy())
+                    const auto* baseType = std::get_if<BaseType>(&type);
+                    if (!baseType || !baseType->isIntegerType())
                     {
                         continue;
                     }
-                    // Signextend integer args for ABI.
-                    result->addParamAttr(index, llvm::Attribute::SExt);
+                    // Extend integer args for ABI.
+                    result->addParamAttr(parameterStartOffset + index,
+                                         baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
                 }
 
                 // TODO: Post-setup code here
