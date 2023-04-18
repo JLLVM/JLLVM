@@ -1188,7 +1188,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(functionType));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
