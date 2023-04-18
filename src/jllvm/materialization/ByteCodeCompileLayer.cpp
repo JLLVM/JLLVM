@@ -946,6 +946,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
                 break;
             }
+            case OpCodes::IAnd:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateAnd(lhs, rhs));
+                break;
+            }
             case OpCodes::IConstM1:
             {
                 operandStack.push_back(builder.getInt32(-1));
@@ -1047,6 +1054,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateMul(lhs, rhs));
                 break;
             }
+            case OpCodes::INeg:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateNeg(value));
+                break;
+            }
             case OpCodes::InvokeStatic:
             case OpCodes::InvokeSpecial:
             {
@@ -1123,6 +1136,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 }
                 break;
             }
+            case OpCodes::IOr:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateOr(lhs, rhs));
+                break;
+            }
             case OpCodes::IReturn:
             {
                 builder.CreateRet(operandStack.pop_back(builder.getInt32Ty()));
@@ -1159,6 +1179,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSub(lhs, rhs));
+                break;
+            }
+            case OpCodes::IXor:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateXor(lhs, rhs));
                 break;
             }
             case OpCodes::LDC:
