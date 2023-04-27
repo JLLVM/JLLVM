@@ -7,6 +7,7 @@
 #include <jllvm/object/ClassObject.hpp>
 
 #include <memory>
+#include <random>
 
 #include "GarbageCollector.hpp"
 #include "JIT.hpp"
@@ -24,20 +25,24 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     JIT m_jit = JIT::create(m_classLoader, m_gc, m_jniEnv.get());
+    std::mt19937 m_pseudoGen;
+    std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
 
 public:
     VirtualMachine(std::vector<std::string>&& classPath);
 
-    llvm::orc::MangleAndInterner& getInterner()
-    {
-        return m_jit.getInterner();
-    }
+    /// Returns a new pseudo random hash code for a Java object.
+    /// Since we have a relocating garbage collector we use a similar strategy to V8, where we generate pseudo random
+    /// uniformly distributed integers for each object exactly once and then store and reuse that as hash code
+    /// throughout the program.
+    /// Note: The value returned is non-deterministic between program executions and seeded at VM startup.
+    ///       It also never returns 0, but may return any other value that fits within 'int32_t'.
+    std::int32_t createNewHashCode();
 
-    /// Adds a new materialization unit to the JNI dylib which will be used to lookup any symbols when 'native' methods
-    /// are called.
-    void addJNISymbols(std::unique_ptr<llvm::orc::MaterializationUnit>&& materializationUnit)
+    /// Returns the jit instance of the virtual machine.
+    JIT& getJIT()
     {
-        m_jit.addJNISymbols(std::move(materializationUnit));
+        return m_jit;
     }
 
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);

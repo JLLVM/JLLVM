@@ -39,9 +39,14 @@ struct jllvm::CppToLLVMType<jllvm::ClassObject*> : CppToLLVMType<const jllvm::Cl
 namespace
 {
 
+auto objectHeaderType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(/*classObject*/ referenceType(context), /*hashCode*/ llvm::Type::getInt32Ty(context));
+}
+
 auto arrayStructType(llvm::Type* elementType)
 {
-    return llvm::StructType::get(elementType->getContext(), {referenceType(elementType->getContext()),
+    return llvm::StructType::get(elementType->getContext(), {objectHeaderType(elementType->getContext()),
                                                              llvm::Type::getInt32Ty(elementType->getContext()),
                                                              llvm::ArrayType::get(elementType, 0)});
 }

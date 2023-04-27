@@ -26,6 +26,36 @@ struct CppToLLVMType<T, std::enable_if_t<std::is_integral_v<T>>>
     }
 };
 
+/// Specialization for float.
+template <>
+struct CppToLLVMType<float>
+{
+    static llvm::Type* get(llvm::LLVMContext* context)
+    {
+        return llvm::Type::getFloatTy(*context);
+    }
+
+    static llvm::Value* getConstant(float value, llvm::IRBuilder<>& builder)
+    {
+        return llvm::ConstantFP::get(builder.getFloatTy(), value);
+    }
+};
+
+/// Specialization for double.
+template <>
+struct CppToLLVMType<double>
+{
+    static llvm::Type* get(llvm::LLVMContext* context)
+    {
+        return llvm::Type::getDoubleTy(*context);
+    }
+
+    static llvm::Value* getConstant(double value, llvm::IRBuilder<>& builder)
+    {
+        return llvm::ConstantFP::get(builder.getDoubleTy(), value);
+    }
+};
+
 /// Specialization for void.
 template <>
 struct CppToLLVMType<void>

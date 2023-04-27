@@ -31,6 +31,22 @@ std::string escape(llvm::StringRef string)
 
 } // namespace
 
+std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName,
+                                     llvm::StringRef methodDescriptor)
+{
+    std::string result = "Java_" + escape(className) + "_" + escape(methodName);
+    if (methodDescriptor.empty())
+    {
+        return result;
+    }
+
+    result += "__";
+    // Append just the parameters from the method descriptor. This is essentially dropping the return
+    // type and the parentheses.
+    result += methodDescriptor.drop_front(1).take_while([](char c) { return c != ')'; });
+    return result;
+}
+
 void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
                                          const jllvm::MethodInfo* methodInfo, const jllvm::ClassFile* classFile)
 {
@@ -53,18 +69,13 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
             {
                 // Reference:
                 // https://docs.oracle.com/en/java/javase/17/docs/specs/jni/design.html#resolving-native-method-names
-                std::string jniName =
-                    "Java_" + escape(classFile->getThisClass()) + "_" + escape(methodInfo->getName(*classFile));
-
+                std::string jniName = formJNIMethodName(classFile->getThisClass(), methodInfo->getName(*classFile));
                 auto lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
                 if (!lookup)
                 {
                     llvm::consumeError(lookup.takeError());
-                    jniName += "__";
-                    // Append just the parameters from the method descriptor. This is essentially dropping the return
-                    // type and the parentheses.
-                    jniName +=
-                        methodInfo->getDescriptor(*classFile).drop_front(1).take_while([](char c) { return c != ')'; });
+                    jniName = formJNIMethodName(classFile->getThisClass(), methodInfo->getName(*classFile),
+                                                methodInfo->getDescriptor(*classFile));
                     lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
                     if (!lookup)
                     {
@@ -86,8 +97,11 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                                         llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
-                llvm::Value* environment = builder.CreateIntToPtr(
-                    builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)), builder.getPtrTy());
+                llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
+                builder.CreateStore(
+                    builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
+                                           builder.getPtrTy()),
+                    environment);
 
                 // TODO: Pre-setup code here
 

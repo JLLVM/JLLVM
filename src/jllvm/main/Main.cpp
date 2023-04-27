@@ -12,8 +12,7 @@ namespace
 template <class T>
 auto trivialPrintFunction()
 {
-    return llvm::JITEvaluatedSymbol::fromPointer(+[](void*, void*, T value)
-                                                 { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; });
+    return [](void*, void*, T value) { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; };
 }
 
 } // namespace
@@ -66,16 +65,15 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 
     if (commandLine.getArgs().hasArg(OPT_Xenable_test_utils))
     {
-        vm.addJNISymbols(llvm::orc::absoluteSymbols({
-            {vm.getInterner()("Java_Test_print__B"), trivialPrintFunction<std::int8_t>()},
-            {vm.getInterner()("Java_Test_print__D"), trivialPrintFunction<double>()},
-            {vm.getInterner()("Java_Test_print__F"), trivialPrintFunction<float>()},
-            {vm.getInterner()("Java_Test_print__I"), trivialPrintFunction<std::int32_t>()},
-            {vm.getInterner()("Java_Test_print__J"), trivialPrintFunction<std::int64_t>()},
-            {vm.getInterner()("Java_Test_print__S"), trivialPrintFunction<std::int16_t>()},
-            {vm.getInterner()("Java_Test_print__C"), trivialPrintFunction<std::uint16_t>()},
-            {vm.getInterner()("Java_Test_print__Z"), trivialPrintFunction<bool>()},
-        }));
+        JIT& jit = vm.getJIT();
+        jit.addJNISymbol("Java_Test_print__B", trivialPrintFunction<std::int8_t>());
+        jit.addJNISymbol("Java_Test_print__D", trivialPrintFunction<double>());
+        jit.addJNISymbol("Java_Test_print__F", trivialPrintFunction<float>());
+        jit.addJNISymbol("Java_Test_print__I", trivialPrintFunction<std::int32_t>());
+        jit.addJNISymbol("Java_Test_print__J", trivialPrintFunction<std::int64_t>());
+        jit.addJNISymbol("Java_Test_print__S", trivialPrintFunction<std::int16_t>());
+        jit.addJNISymbol("Java_Test_print__C", trivialPrintFunction<std::uint16_t>());
+        jit.addJNISymbol("Java_Test_print__Z", trivialPrintFunction<bool>());
     }
 
     return vm.executeMain(inputFiles.front(), llvm::to_vector_of<llvm::StringRef>(llvm::drop_begin(inputFiles)));

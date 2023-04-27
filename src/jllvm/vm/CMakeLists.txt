@@ -2,7 +2,7 @@
 llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
 
 add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp GarbageCollector.cpp StackMapRegistrationPlugin.cpp
-        JNIImplementation.cpp)
+        JNIImplementation.cpp NativeImplementation.cpp)
 target_link_libraries(JLLVMVirtualMachine
         PRIVATE ${llvm_native_libs}
         PUBLIC JLLVMClassParser JLLVMObject LLVMExecutionEngine LLVMOrcJIT LLVMJITLink JLLVMMaterialization
@@ -23,4 +23,4 @@ find_path(JNI_INCLUDE_PATH2 NAMES jni_md.h jniport.h REQUIRED
         ${JAVA_INCLUDE_PATH}/aix
         )
 
-set_source_files_properties(JNIImplementation.cpp PROPERTIES INCLUDE_DIRECTORIES "${JNI_INCLUDE_PATH1};${JNI_INCLUDE_PATH2}")
+target_include_directories(JLLVMVirtualMachine PRIVATE ${JNI_INCLUDE_PATH1} ${JNI_INCLUDE_PATH2})

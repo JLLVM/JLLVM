@@ -4,6 +4,8 @@
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Support/Debug.h>
 
+#include "NativeImplementation.hpp"
+
 #define DEBUG_TYPE "jvm"
 
 namespace
@@ -157,8 +159,13 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             }
         },
         [this](const ClassFile* classFile) { m_jit.add(classFile); }, [&] { return m_gc.allocateStatic(); }),
-      m_gc(/*small random value for now*/ 4096)
+      m_gc(/*small random value for now*/ 4096),
+      // Seed from the C++ implementations entropy source.
+      m_pseudoGen(std::random_device{}()),
+      // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
+      m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max())
 {
+    registerJavaClasses(*this);
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)
@@ -177,4 +184,9 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
     }
     reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
     return 0;
+}
+
+std::int32_t jllvm::VirtualMachine::createNewHashCode()
+{
+    return m_hashIntDistrib(m_pseudoGen);
 }
