@@ -1286,6 +1286,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateOr(lhs, rhs));
                 break;
             }
+            case OpCodes::IRem:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateSRem(lhs, rhs));
+                break;
+            }
             case OpCodes::IReturn:
             {
                 builder.CreateRet(operandStack.pop_back(builder.getInt32Ty()));
