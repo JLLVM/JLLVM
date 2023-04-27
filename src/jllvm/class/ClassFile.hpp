@@ -412,7 +412,7 @@ public:
 
     bool isPrivate() const
     {
-        return (m_accessFlags & AccessFlag::Protected) != AccessFlag::None;
+        return (m_accessFlags & AccessFlag::Private) != AccessFlag::None;
     }
 
     bool isPublic() const
@@ -458,6 +458,12 @@ public:
     llvm::ArrayRef<llvm::StringRef> getInterfaces() const
     {
         return m_interfaces;
+    }
+
+    /// Returns true if this class file defines an interface.
+    bool isInterface() const
+    {
+        return (m_accessFlags & AccessFlag::Interface) != AccessFlag::None;
     }
 
     /// Returns the fields of this class.

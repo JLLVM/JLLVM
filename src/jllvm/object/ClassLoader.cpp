@@ -78,6 +78,22 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
     return {std::move(assignment), vTableCount};
 }
 
+VTableAssignment assignITableSlots(const jllvm::ClassFile& classFile)
+{
+    llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> methodToSlot;
+
+    for (const jllvm::MethodInfo& iter : classFile.getMethods())
+    {
+        if (iter.isStatic())
+        {
+            continue;
+        }
+        methodToSlot.insert({&iter, methodToSlot.size()});
+    }
+
+    return {std::move(methodToSlot), 0};
+}
+
 jllvm::Visibility visibility(const jllvm::MethodInfo& methodInfo)
 {
     if (methodInfo.isPrivate())
@@ -128,7 +144,8 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
         interfaces.push_back(&forName("L" + iter + ";", State::Prepared));
     }
 
-    VTableAssignment vTableAssignment = assignVTableSlots(classFile, superClass);
+    VTableAssignment vTableAssignment =
+        classFile.isInterface() ? assignITableSlots(classFile) : assignVTableSlots(classFile, superClass);
 
     llvm::SmallVector<Method> methods;
     for (const MethodInfo& methodInfo : classFile.getMethods())
@@ -187,8 +204,18 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     }
     instanceSize = llvm::alignTo(instanceSize, alignof(ObjectHeader));
 
-    auto* result = ClassObject::create(m_classAllocator, vTableAssignment.vTableCount, instanceSize, methods, fields,
-                                       interfaces, className, superClass);
+    ClassObject* result;
+
+    if (classFile.isInterface())
+    {
+        result = ClassObject::createInterface(m_classAllocator, m_interfaceIdCounter++, methods, fields, interfaces,
+                                              className);
+    }
+    else
+    {
+        result = ClassObject::create(m_classAllocator, vTableAssignment.vTableCount, instanceSize, methods, fields,
+                                     interfaces, className, superClass);
+    }
     m_mapping.insert({("L" + className + ";").str(), result});
 
     // 5.5 Initialization, step 7: Initialize super class and interfaces recursively.

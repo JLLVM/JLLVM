@@ -1,8 +1,89 @@
 #include "VirtualMachine.hpp"
 
+#include <llvm/ADT/DepthFirstIterator.h>
+#include <llvm/ADT/SCCIterator.h>
 #include <llvm/Support/Debug.h>
 
 #define DEBUG_TYPE "jvm"
+
+namespace
+{
+
+bool canOverride(const jllvm::Method& derived, const jllvm::Method& base)
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.5
+    if (derived.getName() != base.getName() || derived.getType() != base.getType())
+    {
+        return false;
+    }
+
+    switch (base.getVisibility())
+    {
+        case jllvm::Visibility::Private: return false;
+        case jllvm::Visibility::Public:
+        case jllvm::Visibility::Protected: return true;
+        case jllvm::Visibility::Package:
+            // TODO: complicated package overriding.
+            llvm_unreachable("NOT YET IMPLEMENTED");
+    }
+    llvm_unreachable("All visibilities handled");
+}
+
+llvm::StringRef classOfMethodResolution(const jllvm::ClassObject* classObject, const jllvm::Method interfaceMethod)
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 2.
+
+    // If C contains a declaration of an instance method m that can override mR (§5.4.5), then m is the selected method.
+    if (llvm::any_of(classObject->getMethods(), [&](const jllvm::Method& method)
+                     { return !method.isStatic() && canOverride(method, interfaceMethod); }))
+    {
+        return classObject->getClassName();
+    }
+
+    // Otherwise, if C has a superclass, a search for a declaration of an instance method that can override mR is
+    // performed, starting with the direct superclass of C and continuing with the direct superclass of that class, and
+    // so forth, until a method is found or no further superclasses exist. If a method is found, it is the selected
+    // method.
+    for (const jllvm::ClassObject* curr = classObject->getSuperClass(); curr; curr = curr->getSuperClass())
+    {
+        if (llvm::any_of(curr->getMethods(), [&](const jllvm::Method& method)
+                         { return !method.isStatic() && canOverride(method, interfaceMethod); }))
+        {
+            return curr->getClassName();
+        }
+    }
+
+    // Otherwise, the maximally-specific superinterface methods of C are determined (§5.4.3.3). If exactly one matches
+    // mR's name and descriptor and is not abstract, then it is the selected method.
+
+    // A maximally-specific superinterface method of a class or interface C for a particular method name and descriptor
+    // is any method for which all of the following are true:
+    //
+    // The method is declared in a superinterface (direct or indirect) of C.
+    //
+    // The method is declared with the specified name and descriptor.
+    //
+    // The method has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set.
+    //
+    // Where the method is declared in interface I, there exists no other maximally-specific superinterface method of C
+    // with the specified name and descriptor that is declared in a subinterface of I.
+
+    for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
+    {
+        if (llvm::any_of(interface->getMethods(),
+                         [&](const jllvm::Method& method)
+                         {
+                             return !method.isStatic() && method.getVisibility() != jllvm::Visibility::Private
+                                    && !method.isAbstract() && canOverride(method, interfaceMethod);
+                         }))
+        {
+            return interface->getClassName();
+        }
+    }
+
+    llvm_unreachable("Method resolution unexpectedly failed");
+}
+} // namespace
 
 jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
     : m_classLoader(
@@ -20,6 +101,11 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             else
             {
                 llvm::consumeError(classInitializer.takeError());
+            }
+
+            if (classObject->isInterface())
+            {
+                return;
             }
 
             for (const ClassObject* curr = classObject; curr; curr = curr->getSuperClass())
@@ -42,6 +128,31 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                             llvm::cantFail(m_jit.lookup(curr->getClassName(), iter.getName(), iter.getType()))
                                 .getAddress());
                     }
+                }
+            }
+
+            llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
+            for (const ClassObject* interface : classObject->getAllInterfaces())
+            {
+                idToInterface[interface->getInterfaceId()] = interface;
+            }
+
+            for (ITable* iTable : classObject->getITables())
+            {
+                const ClassObject* interface = idToInterface[iTable->getId()];
+                for (auto&& [index, method] : llvm::enumerate(llvm::make_filter_range(
+                         interface->getMethods(), [](const Method& method) { return !method.isStatic(); })))
+                {
+                    // JVM 5.4.6 Step 1: If mR is marked ACC_PRIVATE, then it is the selected method.
+                    llvm::StringRef className = interface->getClassName();
+                    if (method.getVisibility() != Visibility::Private)
+                    {
+                        // Step 2.
+                        className = classOfMethodResolution(classObject, method);
+                    }
+
+                    iTable->getMethods()[index] = reinterpret_cast<VTableSlot>(
+                        llvm::cantFail(m_jit.lookup(className, method.getName(), method.getType())).getAddress());
                 }
             }
         },
