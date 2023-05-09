@@ -1303,6 +1303,22 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateRet(operandStack.pop_back(builder.getInt32Ty()));
                 break;
             }
+            case OpCodes::IShl:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
+                break;
+            }
+            case OpCodes::IShr:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
+                break;
+            }
             case OpCodes::IStore:
             {
                 auto index = consume<std::uint8_t>(current);
@@ -1334,6 +1350,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSub(lhs, rhs));
+                break;
+            }
+            case OpCodes::IUShr:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
                 break;
             }
             case OpCodes::IXor:
