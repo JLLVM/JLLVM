@@ -1095,181 +1095,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 break;
             }
             case OpCodes::IfEq:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::Value* cond = builder.CreateICmpEQ(val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfGe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::Value* cond = builder.CreateICmpSGE(val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfGt:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::Value* cond = builder.CreateICmpSGT(val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpEq:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpEQ(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpGe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpSGE(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpGt:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpSGT(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpLe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpSLE(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpLt:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpSLT(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IfICmpNe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* cond = builder.CreateICmpNE(lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfLe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::Value* cond = builder.CreateICmpSLE(val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfLt:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::Value* cond = builder.CreateICmpSLT(val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfNe:
             {
                 auto target = consume<std::int16_t>(current);
@@ -1279,7 +1108,80 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* zero = builder.getInt32(0);
 
-                llvm::Value* cond = builder.CreateICmpNE(val, zero);
+                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
+
+                switch(opCode)
+                {
+                    case OpCodes::IfGe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGE; break;
+                    }
+                    case OpCodes::IfGt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGT; break;
+                    }
+                    case OpCodes::IfLe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLE; break;
+                    }
+                    case OpCodes::IfLt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLT; break;
+                    }
+                    case OpCodes::IfNe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_NE; break;
+                    }
+                }
+
+                llvm::Value* cond = builder.CreateICmp(predicate,val, zero);
+                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
+                builder.CreateCondBr(cond, basicBlock, next);
+
+                break;
+            }
+            case OpCodes::IfICmpEq:
+            case OpCodes::IfICmpGe:
+            case OpCodes::IfICmpGt:
+            case OpCodes::IfICmpLe:
+            case OpCodes::IfICmpLt:
+            case OpCodes::IfICmpNe:
+            {
+                auto target = consume<std::int16_t>(current);
+                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
+                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
+
+                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+
+                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
+
+                switch(opCode)
+                {
+                    case OpCodes::IfICmpGe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGE; break;
+                    }
+                    case OpCodes::IfICmpGt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGT; break;
+                    }
+                    case OpCodes::IfICmpLe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLE; break;
+                    }
+                    case OpCodes::IfICmpLt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLT; break;
+                    }
+                    case OpCodes::IfICmpNe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_NE; break;
+                    }
+                }
+
+                llvm::Value* cond = builder.CreateICmp(predicate,lhs, rhs);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
                 basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
