@@ -126,3 +126,56 @@ jllvm::ITable* jllvm::ITable::create(llvm::BumpPtrAllocator& allocator, std::siz
     std::memset(result->getTrailingObjects<VTableSlot>(), 0, sizeof(VTableSlot) * iTableSlots);
     return result;
 }
+
+bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
+{
+    assert(!isInterface());
+    if (this == other)
+    {
+        return true;
+    }
+
+    // Primitive class objects have no concept of inheritance.
+    if (isPrimitive() || other->isPrimitive())
+    {
+        return false;
+    }
+
+    if (isArray())
+    {
+        if (!other->isArray())
+        {
+            // classObject has to be Object if not an array type.
+            // Object is easy to identify as it is a normal class with no super class.
+            return other->isClass() && !other->getSuperClass();
+        }
+
+        // Strip array types and check that the component types are compatible.
+        const ClassObject* curr = this;
+        while (curr->isArray() && other->isArray())
+        {
+            curr = curr->getComponentType();
+            other = other->getComponentType();
+        }
+        if (curr->isArray() || other->isArray())
+        {
+            // Not the same depth of array types.
+            return false;
+        }
+        return curr->wouldBeInstanceOf(other);
+    }
+
+    if (other->isInterface())
+    {
+        return llvm::is_contained(getAllInterfaces(), other);
+    }
+
+    for (const ClassObject* curr = getSuperClass(); curr; curr = curr->getSuperClass())
+    {
+        if (other == curr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
