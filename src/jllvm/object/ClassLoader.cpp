@@ -25,16 +25,18 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
     using namespace jllvm;
 
     llvm::DenseMap<std::pair<llvm::StringRef, llvm::StringRef>, std::pair<std::uint16_t, const Method*>> map;
-    while (superClass)
+    if (superClass)
     {
-        for (const Method& iter : superClass->getMethods())
+        for (const jllvm::ClassObject* curr : superClass->getSuperClasses())
         {
-            if (auto slot = iter.getVTableSlot())
+            for (const Method& iter : curr->getMethods())
             {
-                map.insert({{iter.getName(), iter.getType()}, {*slot, &iter}});
+                if (auto slot = iter.getVTableSlot())
+                {
+                    map.insert({{iter.getName(), iter.getType()}, {*slot, &iter}});
+                }
             }
         }
-        superClass = superClass->getSuperClass();
     }
     std::uint16_t vTableCount = 0;
     if (!map.empty())

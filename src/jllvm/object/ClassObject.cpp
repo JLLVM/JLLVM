@@ -83,13 +83,11 @@ jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name
 const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm::StringRef fieldType,
                                                  bool isStatic) const
 {
-    for (const ClassObject* curr = this; curr; curr = curr->getSuperClass())
+    for (const ClassObject* curr : getSuperClasses())
     {
-        const Field* iter = llvm::find_if(curr->getFields(),
-                                          [&](const Field& field) {
-                                              return field.isStatic() == isStatic && field.getName() == fieldName
-                                                     && field.getType() == fieldType;
-                                          });
+        const Field* iter = llvm::find_if(
+            curr->getFields(), [&](const Field& field)
+            { return field.isStatic() == isStatic && field.getName() == fieldName && field.getType() == fieldType; });
         if (iter != curr->getFields().end())
         {
             return iter;
@@ -169,13 +167,5 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
     {
         return llvm::is_contained(getAllInterfaces(), other);
     }
-
-    for (const ClassObject* curr = getSuperClass(); curr; curr = curr->getSuperClass())
-    {
-        if (other == curr)
-        {
-            return true;
-        }
-    }
-    return false;
+    return llvm::is_contained(getSuperClasses(), other);
 }

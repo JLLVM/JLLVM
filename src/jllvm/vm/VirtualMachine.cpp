@@ -36,17 +36,12 @@ llvm::StringRef classOfMethodResolution(const jllvm::ClassObject* classObject, c
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 2.
 
     // If C contains a declaration of an instance method m that can override mR (§5.4.5), then m is the selected method.
-    if (llvm::any_of(classObject->getMethods(), [&](const jllvm::Method& method)
-                     { return !method.isStatic() && canOverride(method, interfaceMethod); }))
-    {
-        return classObject->getClassName();
-    }
 
     // Otherwise, if C has a superclass, a search for a declaration of an instance method that can override mR is
     // performed, starting with the direct superclass of C and continuing with the direct superclass of that class, and
     // so forth, until a method is found or no further superclasses exist. If a method is found, it is the selected
     // method.
-    for (const jllvm::ClassObject* curr = classObject->getSuperClass(); curr; curr = curr->getSuperClass())
+    for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
     {
         if (llvm::any_of(curr->getMethods(), [&](const jllvm::Method& method)
                          { return !method.isStatic() && canOverride(method, interfaceMethod); }))
@@ -110,7 +105,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                 return;
             }
 
-            for (const ClassObject* curr = classObject; curr; curr = curr->getSuperClass())
+            for (const ClassObject* curr : classObject->getSuperClasses())
             {
                 for (const Method& iter : curr->getMethods())
                 {
