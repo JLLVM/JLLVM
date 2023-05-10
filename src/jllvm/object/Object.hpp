@@ -35,6 +35,20 @@ public:
     {
         return *reinterpret_cast<ObjectHeader*>(this);
     }
+
+    const ObjectHeader& getObjectHeader() const
+    {
+        return *reinterpret_cast<const ObjectHeader*>(this);
+    }
+
+    /// Returns true if this object is an instance of 'classObject'.
+    bool instanceOf(const ClassObject* classObject) const;
+
+    /// Returns the class object of this java object.
+    const ClassObject* getClass() const
+    {
+        return getObjectHeader().classObject;
+    }
 };
 
 class Object;

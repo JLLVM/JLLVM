@@ -366,6 +366,17 @@ public:
         return m_componentTypeAndIsPrimitive.getInt();
     }
 
+    /// Returns true if this class object represents a Java class.
+    /// This does not include array types or interfaces.
+    bool isClass() const
+    {
+        return !isArray() && !isPrimitive() && !isInterface();
+    }
+
+    /// Returns true if an instance of this class object would also be an instance of 'other'.
+    /// Not valid for class objects representing interfaces.
+    bool wouldBeInstanceOf(const ClassObject* other) const;
+
     /// Byte offset from the start of the class object to the start of the VTable.
     constexpr static std::size_t getVTableOffset()
     {

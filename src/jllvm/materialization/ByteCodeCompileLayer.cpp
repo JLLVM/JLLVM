@@ -1362,6 +1362,49 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 }
                 break;
             }
+            case OpCodes::InstanceOf:
+            {
+                llvm::StringRef className =
+                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
+
+                llvm::PointerType* ty = referenceType(builder.getContext());
+                llvm::Value* object = operandStack.pop_back(ty);
+                llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+
+                // null references always return 0.
+                llvm::Value* isNull = builder.CreateICmpEQ(object, null);
+                auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                llvm::BasicBlock* block = builder.GetInsertBlock();
+                builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
+
+                builder.SetInsertPoint(instanceOfBlock);
+
+                llvm::Value* classObject;
+                if (className.front() == '[')
+                {
+                    // Weirdly, it uses normal field mangling if its an array type, but for other class types its just
+                    // the name of the class. Hence these two cases.
+                    classObject = helper.getClassObject(builder, className);
+                }
+                else
+                {
+                    classObject = helper.getClassObject(builder, "L" + className + ";");
+                }
+
+                llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                    "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
+                llvm::Value* call = builder.CreateCall(callee, {object, classObject});
+                builder.CreateBr(continueBlock);
+
+                builder.SetInsertPoint(continueBlock);
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), block);
+                phi->addIncoming(call, instanceOfBlock);
+
+                operandStack.push_back(phi);
+                break;
+            }
             case OpCodes::IOr:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
