@@ -167,13 +167,5 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
     {
         return llvm::is_contained(getAllInterfaces(), other);
     }
-
-    for (const ClassObject* curr = getSuperClass(); curr; curr = curr->getSuperClass())
-    {
-        if (other == curr)
-        {
-            return true;
-        }
-    }
-    return false;
+    return llvm::is_contained(getSuperClasses(), other);
 }
