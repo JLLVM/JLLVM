@@ -8,6 +8,7 @@
 #include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/iterator.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
@@ -241,6 +242,34 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     ClassObject(std::size_t interfaceId, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                 llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
 
+    class SuperclassIterator
+        : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
+                                            std::ptrdiff_t, const ClassObject**, const ClassObject*>
+    {
+        const ClassObject* m_curr = nullptr;
+
+    public:
+        SuperclassIterator() = default;
+
+        explicit SuperclassIterator(const ClassObject* curr) : m_curr(curr) {}
+
+        bool operator==(const SuperclassIterator& rhs) const
+        {
+            return m_curr == rhs.m_curr;
+        }
+
+        const ClassObject* operator*() const
+        {
+            return m_curr;
+        }
+
+        SuperclassIterator& operator++()
+        {
+            m_curr = m_curr->getSuperClass();
+            return *this;
+        }
+    };
+
 public:
     /// Function to create a new class object for a user class. The class object is allocated within 'allocator'
     /// with 'vTableSlots' amount of v-table slots.
@@ -334,6 +363,12 @@ public:
     const ClassObject* getSuperClass() const
     {
         return m_superClassOrInterfaceId.dyn_cast<const ClassObject*>();
+    }
+
+    /// Returns a range of all super classes of this class object, by default starting with this class object.
+    auto getSuperClasses(bool includeThis = true) const
+    {
+        return llvm::drop_begin(llvm::make_range(SuperclassIterator(this), SuperclassIterator()), includeThis ? 0 : 1);
     }
 
     /// Returns true if this class is an array type.

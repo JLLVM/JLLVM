@@ -329,23 +329,21 @@ public:
         return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
                                             [=](const ClassObject* classObject)
                                             {
-                                                const Method* iter;
-                                                do
+                                                for (const ClassObject* curr : classObject->getSuperClasses())
                                                 {
-                                                    llvm::ArrayRef<Method> methods = classObject->getMethods();
-                                                   iter =
+                                                    llvm::ArrayRef<Method> methods = curr->getMethods();
+                                                    const Method* iter =
                                                         llvm::find_if(methods,
                                                                       [&](const Method& method) {
                                                                           return !method.isStatic()
                                                                                  && method.getName() == methodName
                                                                                  && method.getType() == typeDescriptor;
                                                                       });
-                                                   if (iter != methods.end())
-                                                   {
-                                                       return *iter->getVTableSlot();
-                                                   }
-                                                    classObject = classObject->getSuperClass();
-                                                } while (classObject != nullptr);
+                                                    if (iter != methods.end())
+                                                    {
+                                                        return *iter->getVTableSlot();
+                                                    }
+                                                }
                                                 llvm_unreachable("method not found");
                                             });
     }
