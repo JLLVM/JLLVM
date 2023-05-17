@@ -6,7 +6,6 @@
 
 namespace jllvm
 {
-
 /// Materialization unit to add a JVM Byte code method to the JITLink graph and materializing it once required.
 class ByteCodeMaterializationUnit : public llvm::orc::MaterializationUnit
 {

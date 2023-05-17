@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <llvm/IR/DerivedTypes.h>
@@ -8,7 +7,6 @@
 
 namespace jllvm
 {
-
 /// Returns the pointer type used for any Java reference types. This is a pointer tagged with an address space for the
 /// sake of the GC.
 llvm::PointerType* referenceType(llvm::LLVMContext& context);

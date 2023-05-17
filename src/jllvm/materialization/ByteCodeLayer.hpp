@@ -6,11 +6,9 @@
 
 namespace jllvm
 {
-
 std::string mangleMethod(llvm::StringRef className, llvm::StringRef methodName, llvm::StringRef descriptor);
 
 std::string mangleMethod(const MethodInfo& methodInfo, const ClassFile& classFile);
-
 
 /// Base class layer for any layers operating on JVM Bytecode.
 class ByteCodeLayer

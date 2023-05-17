@@ -55,7 +55,8 @@ jllvm::ClassObject::ClassObject(std::int32_t fieldAreaSize, llvm::ArrayRef<Metho
 {
 }
 
-jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* componentType, llvm::StringSaver& stringSaver)
+jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* componentType,
+                                                    llvm::StringSaver& stringSaver)
 {
     std::uint32_t arrayFieldAreaSize = sizeof(std::uint32_t);
     // Account for padding inbetween 'length' and the elements after.

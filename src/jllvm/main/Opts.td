@@ -1,4 +1,3 @@
-
 include "llvm/Option/OptParser.td"
 
 class F<string letter, string help> : Flag<["-"], letter>, HelpText<help>;

@@ -1,4 +1,3 @@
-
 #include <jni.h>
 
 #include "VirtualMachine.hpp"

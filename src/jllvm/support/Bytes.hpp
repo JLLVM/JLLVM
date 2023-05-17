@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
@@ -9,7 +8,6 @@
 
 namespace jllvm
 {
-
 /// Reads a instance of 'T' from 'bytes', advancing 'bytes' by the amount of bytes read.
 /// 'T' must be a trivially copyable type for this to be legal.
 /// Note: This function is mainly used to support parsing JVM formats which are all big endian.

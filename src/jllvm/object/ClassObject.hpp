@@ -3,12 +3,12 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/GraphTraits.h>
+#include <llvm/ADT/iterator.h>
 #include <llvm/ADT/PointerEmbeddedInt.h>
 #include <llvm/ADT/PointerIntPair.h>
 #include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/iterator.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
@@ -19,7 +19,6 @@
 
 namespace jllvm
 {
-
 /// Visibility of a method, class or field.
 enum class Visibility : std::uint8_t
 {
@@ -124,7 +123,6 @@ class Field
     bool m_isStatic;
 
 public:
-
     /// Creates a new non-static field with the given name, type descriptor and its offset within an instance.
     Field(llvm::StringRef name, llvm::StringRef type, std::uint16_t offset)
         : m_name(name), m_type(type), m_offset(offset), m_isStatic(false)

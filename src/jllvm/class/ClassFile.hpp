@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
@@ -7,16 +6,15 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/StringSaver.h>
 
+#include <jllvm/support/Variant.hpp>
+
 #include <cstdint>
 #include <tuple>
 #include <variant>
 #include <vector>
 
-#include <jllvm/support/Variant.hpp>
-
 namespace jllvm
 {
-
 struct ClassFile;
 
 /// Convenience class for strong typing of indices within the constant pool of a class file.

@@ -1,4 +1,3 @@
-
 llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
 
 add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp GarbageCollector.cpp StackMapRegistrationPlugin.cpp

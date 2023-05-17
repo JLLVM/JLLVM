@@ -9,7 +9,6 @@
 
 namespace jllvm
 {
-
 struct StackMapEntry
 {
     enum Type : std::uint8_t
@@ -57,7 +56,6 @@ class GarbageCollector
     void garbageCollect();
 
 public:
-
     /// Creates the garbage collector with the given heap size. The GC does garbage collection once the heap is too
     /// large to support another allocation.
     GarbageCollector(std::size_t heapSize);

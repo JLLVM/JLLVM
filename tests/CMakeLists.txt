@@ -1,4 +1,3 @@
-
 find_package(Python3 3.6 COMPONENTS Interpreter REQUIRED)
 
 set(JLLVM_TEST_DEPENDS

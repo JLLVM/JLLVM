@@ -9,7 +9,6 @@
 
 namespace jllvm
 {
-
 /// Applies the JNI name mangling to create the corresponding C symbol name for the given 'methodName' inside of
 /// 'className'. If 'methodDescriptor' is non empty, it must be a valid method descriptor whose parameter types are
 /// then also encoded in the symbol name (to allow overloading).

@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <cassert>
@@ -8,7 +7,6 @@
 
 namespace jllvm
 {
-
 class ClassObject;
 
 /// Object header that every Java object starts with. Contains the class object.

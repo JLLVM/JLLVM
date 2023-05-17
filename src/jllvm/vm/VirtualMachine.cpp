@@ -10,7 +10,6 @@
 
 namespace
 {
-
 bool canOverride(const jllvm::Method& derived, const jllvm::Method& base)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.5

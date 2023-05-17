@@ -38,7 +38,6 @@ struct jllvm::CppToLLVMType<jllvm::ClassObject*> : CppToLLVMType<const jllvm::Cl
 
 namespace
 {
-
 auto objectHeaderType(llvm::LLVMContext& context)
 {
     return llvm::StructType::get(/*classObject*/ referenceType(context), /*hashCode*/ llvm::Type::getInt32Ty(context));
@@ -132,7 +131,8 @@ class OperandStack
     llvm::IRBuilder<>& m_builder;
 
 public:
-    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder): m_builder(builder), m_values(maxStack), m_topOfStack(m_values.data())
+    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder)
+        : m_builder(builder), m_values(maxStack), m_topOfStack(m_values.data())
     {
         for (auto& alloca : m_values)
         {
@@ -140,7 +140,7 @@ public:
         }
     }
 
-    llvm::Value* pop_back(llvm::Type *ty)
+    llvm::Value* pop_back(llvm::Type* ty)
     {
         return m_builder.CreateLoad(ty, *(--m_topOfStack));
     }
@@ -178,7 +178,8 @@ class LazyClassLoaderHelper
     llvm::Triple m_triple;
 
     template <class F>
-    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::Twine key, F&& f)
+    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::Twine key,
+                                              F&& f)
     {
         auto returnValueToIRConstant = [](llvm::IRBuilder<>& builder, const auto& retVal)
         {
@@ -191,9 +192,7 @@ class LazyClassLoaderHelper
             return returnValueToIRConstant(builder, f(classObject));
         }
 
-        std::string stubSymbol =
-            ("<classLoad>" + fieldDescriptor + key)
-                .str();
+        std::string stubSymbol = ("<classLoad>" + fieldDescriptor + key).str();
         if (!m_stubsManager.findStub(stubSymbol, true))
         {
             llvm::cantFail(m_stubsManager.createStub(
@@ -324,7 +323,7 @@ public:
     }
 
     llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
-                               llvm::StringRef typeDescriptor)
+                                 llvm::StringRef typeDescriptor)
     {
         return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
                                             [=](const ClassObject* classObject)
@@ -626,7 +625,8 @@ enum class OpCodes : std::uint8_t
 
 llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
 {
-    return !llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType : builder.getInt32Ty();
+    return !llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType :
+                                                                                        builder.getInt32Ty();
 }
 
 void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper)
@@ -680,7 +680,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
         };
         auto opCode = consume<OpCodes>(current);
-        switch(opCode)
+        switch (opCode)
         {
             default:
             {
@@ -703,7 +703,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IfNonNull:
             case OpCodes::IfNull:
             {
-                if(current.size() >= sizeof(std::int16_t))
+                if (current.size() >= sizeof(std::int16_t))
                 {
                     auto target = consume<std::int16_t>(current);
                     addBasicBlock(target + offset);
@@ -713,7 +713,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::Goto:
             {
-                if(current.size() >= sizeof(std::int16_t))
+                if (current.size() >= sizeof(std::int16_t))
                 {
                     auto target = consume<std::int16_t>(current);
                     addBasicBlock(target + offset);
@@ -722,7 +722,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::GotoW:
             {
-                if(current.size() >= sizeof(std::int32_t))
+                if (current.size() >= sizeof(std::int32_t))
                 {
                     auto target = consume<std::int32_t>(current);
                     addBasicBlock(target + offset);
@@ -751,14 +751,17 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         if (auto result = basicBlocks.find(offset); result != basicBlocks.end())
         {
             // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to set
-            // this manually to the new insert point. This essentially implements implicit fallthrough from JVM bytecode.
+            // this manually to the new insert point. This essentially implements implicit fallthrough from JVM
+            // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
                 basicBlockStackPointers.insert({result->second, operandStack.getTopOfStack()});
                 builder.CreateBr(result->second);
             }
             builder.SetInsertPoint(result->second);
-            if (auto resultStackPointer = basicBlockStackPointers.find(result->second); resultStackPointer != basicBlockStackPointers.end()) {
+            if (auto resultStackPointer = basicBlockStackPointers.find(result->second);
+                resultStackPointer != basicBlockStackPointers.end())
+            {
                 operandStack.setTopOfStack(resultStackPointer->second);
             }
         }
@@ -1108,33 +1111,38 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
 
-                switch(opCode)
+                switch (opCode)
                 {
                     case OpCodes::IfGe:
                     {
-                        predicate = llvm::CmpInst::ICMP_SGE; break;
+                        predicate = llvm::CmpInst::ICMP_SGE;
+                        break;
                     }
                     case OpCodes::IfGt:
                     {
-                        predicate = llvm::CmpInst::ICMP_SGT; break;
+                        predicate = llvm::CmpInst::ICMP_SGT;
+                        break;
                     }
                     case OpCodes::IfLe:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLE; break;
+                        predicate = llvm::CmpInst::ICMP_SLE;
+                        break;
                     }
                     case OpCodes::IfLt:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLT; break;
+                        predicate = llvm::CmpInst::ICMP_SLT;
+                        break;
                     }
                     case OpCodes::IfNe:
                     {
-                        predicate = llvm::CmpInst::ICMP_NE; break;
+                        predicate = llvm::CmpInst::ICMP_NE;
+                        break;
                     }
                 }
 
-                llvm::Value* cond = builder.CreateICmp(predicate,val, zero);
+                llvm::Value* cond = builder.CreateICmp(predicate, val, zero);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
 
                 break;
@@ -1155,33 +1163,38 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
 
-                switch(opCode)
+                switch (opCode)
                 {
                     case OpCodes::IfICmpGe:
                     {
-                        predicate = llvm::CmpInst::ICMP_SGE; break;
+                        predicate = llvm::CmpInst::ICMP_SGE;
+                        break;
                     }
                     case OpCodes::IfICmpGt:
                     {
-                        predicate = llvm::CmpInst::ICMP_SGT; break;
+                        predicate = llvm::CmpInst::ICMP_SGT;
+                        break;
                     }
                     case OpCodes::IfICmpLe:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLE; break;
+                        predicate = llvm::CmpInst::ICMP_SLE;
+                        break;
                     }
                     case OpCodes::IfICmpLt:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLT; break;
+                        predicate = llvm::CmpInst::ICMP_SLT;
+                        break;
                     }
                     case OpCodes::IfICmpNe:
                     {
-                        predicate = llvm::CmpInst::ICMP_NE; break;
+                        predicate = llvm::CmpInst::ICMP_NE;
+                        break;
                     }
                 }
 
-                llvm::Value* cond = builder.CreateICmp(predicate,lhs, rhs);
+                llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next,  operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
 
                 break;
@@ -1217,7 +1230,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
+                    iter = operandStack.pop_back(
+                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                 referenceType(builder.getContext()));
                 }
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1298,7 +1313,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
+                    iter = operandStack.pop_back(
+                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                 referenceType(builder.getContext()));
                 }
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1332,7 +1349,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
                 for (auto& iter : llvm::reverse(args))
                 {
-                    iter = operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) : referenceType(builder.getContext()));
+                    iter = operandStack.pop_back(
+                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                 referenceType(builder.getContext()));
                 }
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef methodName =
@@ -1425,7 +1444,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IShl:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* maskedRhs = builder.CreateAnd(
+                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
                 break;
@@ -1433,7 +1453,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IShr:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* maskedRhs = builder.CreateAnd(
+                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
                 break;
@@ -1474,7 +1495,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IUShr:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+                llvm::Value* maskedRhs = builder.CreateAnd(
+                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
                 break;

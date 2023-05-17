@@ -6,7 +6,6 @@
 
 namespace jllvm
 {
-
 /// Struct that should be specialized to provide a mapping between C++ and LLVM types and constants.
 template <class T, class = void>
 struct CppToLLVMType;
