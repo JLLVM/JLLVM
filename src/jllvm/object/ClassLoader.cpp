@@ -13,7 +13,6 @@
 
 namespace
 {
-
 struct VTableAssignment
 {
     llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> methodToSlot;

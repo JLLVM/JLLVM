@@ -6,7 +6,6 @@
 
 namespace jllvm
 {
-
 /// Class used to manage resources used during and for command line parsing.
 class CommandLine : public llvm::opt::PrecomputedOptTable
 {

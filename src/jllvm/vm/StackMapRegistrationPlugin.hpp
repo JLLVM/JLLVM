@@ -6,7 +6,6 @@
 
 namespace jllvm
 {
-
 /// JIT link plugin for extracting the LLVM generated stack map section out of materialized objects and notifying
 /// the GC about newly added entries.
 class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin

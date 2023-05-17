@@ -62,9 +62,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
         m_interner)));
     llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
         {{m_interner("jllvm_instance_of"), llvm::JITEvaluatedSymbol::fromPointer(
-                                               +[](const Object* object, const ClassObject* classObject) -> std::int32_t {
-                                                   return object->instanceOf(classObject);
-                                               })}})));
+                                               +[](const Object* object, const ClassObject* classObject) -> std::int32_t
+                                               { return object->instanceOf(classObject); })}})));
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions)

@@ -8,7 +8,6 @@ using namespace jllvm;
 
 namespace
 {
-
 std::uint8_t deduceByteCount(std::uint8_t c)
 {
     if (c <= 0x7F)

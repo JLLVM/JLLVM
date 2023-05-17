@@ -1,6 +1,5 @@
 
 #pragma once
-
 #include <llvm/Support/Compiler.h>
 
 #include <variant>

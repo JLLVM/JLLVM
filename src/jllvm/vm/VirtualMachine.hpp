@@ -14,7 +14,6 @@
 
 namespace jllvm
 {
-
 class VirtualMachine
 {
     using JNINativeInterfaceUPtr = std::unique_ptr<void, void (*)(void*)>;

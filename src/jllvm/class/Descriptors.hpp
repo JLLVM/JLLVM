@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <llvm/ADT/StringRef.h>
@@ -10,7 +9,6 @@
 
 namespace jllvm
 {
-
 /// <BaseType> ::= 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z'
 /// Note: We add 'V' for void here as well for convenience.
 class BaseType

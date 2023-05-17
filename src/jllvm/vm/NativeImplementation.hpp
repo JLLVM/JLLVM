@@ -12,7 +12,6 @@
 
 namespace jllvm
 {
-
 /// Method used to add a (possibly static) member function to the 'method' tuple of a 'ModelBase' instance.
 /// This uses an implementation defined trick to get the name of the member function and returns it together with the
 /// function pointer.
@@ -116,7 +115,6 @@ void registerJavaClasses(VirtualMachine& virtualMachine);
 
 namespace detail
 {
-
 jllvm::VirtualMachine& virtualMachineFromJNIEnv(JNIEnv* env);
 
 template <class, class Ret, class... Args>

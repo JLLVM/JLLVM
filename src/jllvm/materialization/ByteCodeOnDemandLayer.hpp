@@ -9,7 +9,6 @@
 
 namespace jllvm
 {
-
 class ByteCodeOnDemandLayer : public ByteCodeLayer
 {
 public:

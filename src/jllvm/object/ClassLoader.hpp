@@ -15,7 +15,6 @@
 
 namespace jllvm
 {
-
 /// The default bootstrap class loader capable of creating class objects from class files. It also contains
 /// the builtin class objects.
 class ClassLoader
