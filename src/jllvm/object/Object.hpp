@@ -1,9 +1,13 @@
 #pragma once
 
+#include <llvm/Support/Allocator.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+
+#include "jllvm/support/Encoding.hpp"
 
 namespace jllvm
 {
@@ -62,7 +66,18 @@ class Array : public ObjectInterface
     // without introducing any padding inbetween.
     T m_trailing[];
 
+    Array(ObjectHeader header, std::uint32_t length) : m_header{header}, m_length{length} {}
+
 public:
+    /// Function to create a new array object. The array object is allocated within 'allocator'
+    /// with 'classObject' as the corresponding array class object.
+    /// 'length' is the amount entries in the resulting array.
+    static Array* create(llvm::BumpPtrAllocator& allocator, const ClassObject* classObject, std::uint32_t length)
+    {
+        return new (allocator.Allocate(arrayElementsOffset() + sizeof(T[length]), alignof(Array)))
+            Array({classObject, 0}, length);
+    }
+
     /// Returns the byte offset from the start of the Array object to the first array element.
     constexpr static std::size_t arrayElementsOffset()
     {
@@ -131,5 +146,33 @@ class Object : public ObjectInterface
 };
 
 static_assert(std::is_standard_layout_v<Object>);
+
+/// In memory representation for a Java String.
+class String : public ObjectInterface
+{
+    ObjectHeader m_header;
+    Array<std::uint8_t>* m_value;
+    std::uint8_t m_coder;
+    std::int32_t m_hash{};
+    bool m_hashIsZero{true};
+
+public:
+    String(const ClassObject* classObject, Array<std::uint8_t>* value, std::uint8_t coder)
+        : m_header{classObject, 0}, m_value{value}, m_coder{coder}
+    {
+    }
+
+    Array<std::uint8_t>& getValue()
+    {
+        return *m_value;
+    }
+
+    std::string toUTF8() const
+    {
+        return fromJavaCompactEncoding({{m_value->data(), m_value->getLength()}, CompactEncoding{m_coder}});
+    }
+};
+
+static_assert(std::is_standard_layout_v<String>);
 
 } // namespace jllvm

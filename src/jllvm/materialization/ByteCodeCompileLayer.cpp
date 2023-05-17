@@ -629,7 +629,8 @@ llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
                                                                                         builder.getInt32Ty();
 }
 
-void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper)
+void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
+                 StringInterner& stringInterner)
 {
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
     OperandStack operandStack(code.getMaxStack(), builder);
@@ -1519,6 +1520,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     pool.resolve(classFile),
                     [&](const IntegerInfo* integerInfo)
                     { operandStack.push_back(builder.getInt32(integerInfo->value)); },
+                    [&](const StringInfo* stringInfo)
+                    {
+                        llvm::StringRef text = stringInfo->stringValue.resolve(classFile)->text;
+
+                        String* string = stringInterner.intern(text);
+
+                        operandStack.push_back(
+                            builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
+                                                   referenceType(builder.getContext())));
+                    },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
 
                 break;
@@ -1617,7 +1628,8 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     assert(code);
     codeGenBody(function, *code, *classFile,
                 LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager, m_callbackManager,
-                                      m_baseLayer, m_interner, m_dataLayout));
+                                      m_baseLayer, m_interner, m_dataLayout),
+                m_stringInterner);
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);

@@ -22,6 +22,7 @@
 #include <memory>
 
 #include "GarbageCollector.hpp"
+#include "StringInterner.hpp"
 
 namespace jllvm
 {
@@ -35,6 +36,7 @@ class JIT
 
     llvm::DataLayout m_dataLayout;
     ClassLoader& m_classLoader;
+    StringInterner& m_stringInterner;
 
     llvm::orc::MangleAndInterner m_interner;
     llvm::orc::ObjectLinkingLayer m_objectLayer;
@@ -50,10 +52,11 @@ class JIT
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, void* jniFunctions);
+        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions);
 
 public:
-    static JIT create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions);
+    static JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
+                      void* jniFunctions);
 
     ~JIT();
 

@@ -22,7 +22,8 @@
 
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
-                llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions)
+                llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
+                StringInterner& stringInterner, void* jniFunctions)
     : m_session(std::move(session)),
       m_main(llvm::cantFail(m_session->createJITDylib("<main>"))),
       m_epciu(std::move(epciu)),
@@ -32,6 +33,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
           llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
       m_dataLayout(layout),
       m_classLoader(classLoader),
+      m_stringInterner(stringInterner),
       m_interner(*m_session, m_dataLayout),
       m_objectLayer(*m_session),
       m_compilerLayer(*m_session, m_objectLayer, std::make_unique<llvm::orc::ConcurrentIRCompiler>(builder)),
@@ -41,8 +43,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                           tsm.withModuleDo([&](llvm::Module& module) { optimize(module); });
                           return std::move(tsm);
                       }),
-      m_byteCodeCompileLayer(m_classLoader, m_main, m_epciu->createIndirectStubsManager(), *m_callbackManager,
-                             m_optimizeLayer, m_interner, m_dataLayout),
+      m_byteCodeCompileLayer(m_classLoader, m_stringInterner, m_main, m_epciu->createIndirectStubsManager(),
+                             *m_callbackManager, m_optimizeLayer, m_interner, m_dataLayout),
       m_byteCodeOnDemandLayer(m_byteCodeCompileLayer, *m_session, m_interner,
                               llvm::orc::createLocalIndirectStubsManagerBuilder(llvm::Triple(LLVM_HOST_TRIPLE)),
                               m_epciu->getLazyCallThroughManager()),
@@ -66,7 +68,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                                                { return object->instanceOf(classObject); })}})));
 }
 
-jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions)
+jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
+                              void* jniFunctions)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -90,7 +93,8 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, vo
     jtmb.getOptions().ExceptionModel = llvm::ExceptionHandling::DwarfCFI;
     jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
     auto dl = llvm::cantFail(jtmb.getDefaultDataLayoutForTarget());
-    return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, jniFunctions);
+    return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, stringInterner,
+               jniFunctions);
 }
 
 jllvm::JIT::~JIT()

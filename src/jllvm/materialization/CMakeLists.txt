@@ -5,4 +5,4 @@ add_library(JLLVMMaterialization
         ByteCodeOnDemandLayer.cpp
         JNIImplementationLayer.cpp
         ByteCodeCompileUtils.cpp ByteCodeCompileUtils.hpp)
-target_link_libraries(JLLVMMaterialization PUBLIC JLLVMObject LLVMCore LLVMOrcJIT)
+target_link_libraries(JLLVMMaterialization PUBLIC JLLVMVirtualMachine JLLVMObject LLVMCore LLVMOrcJIT)
