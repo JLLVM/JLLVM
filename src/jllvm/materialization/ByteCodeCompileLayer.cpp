@@ -687,31 +687,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 break;
             }
-            case OpCodes::IfICmpGe:
-            case OpCodes::IfACmpEq:
-            case OpCodes::IfACmpNe:
-            case OpCodes::IfICmpEq:
-            case OpCodes::IfICmpGt:
-            case OpCodes::IfICmpLe:
-            case OpCodes::IfICmpLt:
-            case OpCodes::IfICmpNe:
-            case OpCodes::IfEq:
-            case OpCodes::IfNe:
-            case OpCodes::IfLt:
-            case OpCodes::IfGe:
-            case OpCodes::IfGt:
-            case OpCodes::IfLe:
-            case OpCodes::IfNonNull:
-            case OpCodes::IfNull:
-            {
-                if (current.size() >= sizeof(std::int16_t))
-                {
-                    auto target = consume<std::int16_t>(current);
-                    addBasicBlock(target + offset);
-                    addBasicBlock(current.data() - code.getCode().data());
-                }
-                break;
-            }
             case OpCodes::Goto:
             {
                 if (current.size() >= sizeof(std::int16_t))
@@ -727,6 +702,31 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     auto target = consume<std::int32_t>(current);
                     addBasicBlock(target + offset);
+                }
+                break;
+            }
+            case OpCodes::IfACmpEq:
+            case OpCodes::IfACmpNe:
+            case OpCodes::IfICmpEq:
+            case OpCodes::IfICmpNe:
+            case OpCodes::IfICmpLt:
+            case OpCodes::IfICmpGe:
+            case OpCodes::IfICmpGt:
+            case OpCodes::IfICmpLe:
+            case OpCodes::IfEq:
+            case OpCodes::IfNe:
+            case OpCodes::IfLt:
+            case OpCodes::IfGe:
+            case OpCodes::IfGt:
+            case OpCodes::IfLe:
+            case OpCodes::IfNonNull:
+            case OpCodes::IfNull:
+            {
+                if (current.size() >= sizeof(std::int16_t))
+                {
+                    auto target = consume<std::int16_t>(current);
+                    addBasicBlock(target + offset);
+                    addBasicBlock(current.data() - code.getCode().data());
                 }
                 break;
             }
@@ -882,6 +882,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]);
                 break;
             }
+            // TODO: AThrow
+            // TODO: BALoad
+            // TODO: BAStore
             case OpCodes::BIPush:
             {
                 auto byte = consume<std::int8_t>(current);
@@ -889,6 +892,36 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(res);
                 break;
             }
+            // TODO: CALoad
+            // TODO: CAStore
+            // TODO: CheckCast
+
+            // TODO: D2F
+            // TODO: D2I
+            // TODO: D2L
+            // TODO: DAdd
+            // TODO: DALoad
+            // TODO: DAStore
+            // TODO: DCmpG
+            // TODO: DCmpL
+            // TODO: DConst0
+            // TODO: DConst1
+            // TODO: DDiv
+            // TODO: DLoad
+            // TODO: DLoad0
+            // TODO: DLoad1
+            // TODO: DLoad2
+            // TODO: DLoad3
+            // TODO: DMul
+            // TODO: DNeg
+            // TODO: DRem
+            // TODO: DReturn
+            // TODO: DStore
+            // TODO: DStore0
+            // TODO: DStore1
+            // TODO: DStore2
+            // TODO: DStore3
+            // TODO: DSub
             case OpCodes::Dup:
             {
                 llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
@@ -896,6 +929,39 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(val);
                 break;
             }
+            // TODO: DupX1
+            // TODO: DupX2
+            // TODO: Dup2
+            // TODO: Dup2X1
+            // TODO: Dup2X2
+
+            // TODO: F2D
+            // TODO: F2I
+            // TODO: F2L
+            // TODO: FAdd
+            // TODO: FALoad
+            // TODO: FAStore
+            // TODO: FCmpG
+            // TODO: FCmpL
+            // TODO: FConst0
+            // TODO: FConst1
+            // TODO: FConst2
+            // TODO: FDiv
+            // TODO: FLoad
+            // TODO: FLoad0
+            // TODO: FLoad1
+            // TODO: FLoad2
+            // TODO: FLoad3
+            // TODO: FMul
+            // TODO: FNeg
+            // TODO: FRem
+            // TODO: FReturn
+            // TODO: FStore
+            // TODO: FStore0
+            // TODO: FStore1
+            // TODO: FStore2
+            // TODO: FStore3
+            // TODO: FSub
             case OpCodes::GetField:
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
@@ -954,27 +1020,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateBr(basicBlocks[target + offset]);
                 break;
             }
-            case OpCodes::New:
-            {
-                llvm::StringRef className =
-                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
-
-                llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
-
-                // Size is first 4 bytes in the class object and does not include the object header.
-                llvm::Value* fieldAreaPtr = builder.CreateGEP(
-                    builder.getInt8Ty(), classObject, {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
-                llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), fieldAreaPtr);
-                size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
-
-                llvm::Module* module = function->getParent();
-                llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
-                // Store object header (which in our case is just the class object) in the object.
-                builder.CreateStore(classObject, object);
-                operandStack.push_back(object);
-
-                break;
-            }
             case OpCodes::I2B:
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
@@ -1021,6 +1066,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
                 break;
             }
+            // TODO: IALoad
             case OpCodes::IAnd:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1028,6 +1074,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateAnd(lhs, rhs));
                 break;
             }
+            // TODO: IAStore
             case OpCodes::IConstM1:
             {
                 operandStack.push_back(builder.getInt32(-1));
@@ -1070,90 +1117,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateSDiv(lhs, rhs));
                 break;
             }
-            case OpCodes::ILoad:
-            {
-                auto index = consume<std::uint8_t>(current);
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[index]));
-                break;
-            }
-            case OpCodes::ILoad0:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[0]));
-                break;
-            }
-            case OpCodes::ILoad1:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[1]));
-                break;
-            }
-            case OpCodes::ILoad2:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[2]));
-                break;
-            }
-            case OpCodes::ILoad3:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[3]));
-                break;
-            }
-            case OpCodes::IfEq:
-            case OpCodes::IfGe:
-            case OpCodes::IfGt:
-            case OpCodes::IfLe:
-            case OpCodes::IfLt:
-            case OpCodes::IfNe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
-
-                switch (opCode)
-                {
-                    case OpCodes::IfGe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGE;
-                        break;
-                    }
-                    case OpCodes::IfGt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGT;
-                        break;
-                    }
-                    case OpCodes::IfLe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLE;
-                        break;
-                    }
-                    case OpCodes::IfLt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLT;
-                        break;
-                    }
-                    case OpCodes::IfNe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_NE;
-                        break;
-                    }
-                }
-
-                llvm::Value* cond = builder.CreateICmp(predicate, val, zero);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfICmpEq:
+            case OpCodes::IfICmpNe:
+            case OpCodes::IfICmpLt:
             case OpCodes::IfICmpGe:
             case OpCodes::IfICmpGt:
             case OpCodes::IfICmpLe:
-            case OpCodes::IfICmpLt:
-            case OpCodes::IfICmpNe:
             {
                 auto target = consume<std::int16_t>(current);
                 llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
@@ -1200,6 +1169,58 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::IfEq:
+            case OpCodes::IfNe:
+            case OpCodes::IfLt:
+            case OpCodes::IfGe:
+            case OpCodes::IfGt:
+            case OpCodes::IfLe:
+            {
+                auto target = consume<std::int16_t>(current);
+                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
+                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
+
+                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* zero = builder.getInt32(0);
+
+                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
+
+                switch (opCode)
+                {
+                    case OpCodes::IfGe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGE;
+                        break;
+                    }
+                    case OpCodes::IfGt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGT;
+                        break;
+                    }
+                    case OpCodes::IfLe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLE;
+                        break;
+                    }
+                    case OpCodes::IfLt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLT;
+                        break;
+                    }
+                    case OpCodes::IfNe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_NE;
+                        break;
+                    }
+                }
+
+                llvm::Value* cond = builder.CreateICmp(predicate, val, zero);
+                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
+                builder.CreateCondBr(cond, basicBlock, next);
+
+                break;
+            }
             case OpCodes::IInc:
             {
                 auto index = consume<std::uint8_t>(current);
@@ -1210,6 +1231,32 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            case OpCodes::ILoad:
+            {
+                auto index = consume<std::uint8_t>(current);
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[index]));
+                break;
+            }
+            case OpCodes::ILoad0:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[0]));
+                break;
+            }
+            case OpCodes::ILoad1:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[1]));
+                break;
+            }
+            case OpCodes::ILoad2:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[2]));
+                break;
+            }
+            case OpCodes::ILoad3:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[3]));
+                break;
+            }
             case OpCodes::IMul:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1217,6 +1264,56 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateMul(lhs, rhs));
                 break;
             }
+            case OpCodes::INeg:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                operandStack.push_back(builder.CreateNeg(value));
+                break;
+            }
+            case OpCodes::InstanceOf:
+            {
+                llvm::StringRef className =
+                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
+
+                llvm::PointerType* ty = referenceType(builder.getContext());
+                llvm::Value* object = operandStack.pop_back(ty);
+                llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+
+                // null references always return 0.
+                llvm::Value* isNull = builder.CreateICmpEQ(object, null);
+                auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                llvm::BasicBlock* block = builder.GetInsertBlock();
+                builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
+
+                builder.SetInsertPoint(instanceOfBlock);
+
+                llvm::Value* classObject;
+                if (className.front() == '[')
+                {
+                    // Weirdly, it uses normal field mangling if its an array type, but for other class types its just
+                    // the name of the class. Hence these two cases.
+                    classObject = helper.getClassObject(builder, className);
+                }
+                else
+                {
+                    classObject = helper.getClassObject(builder, "L" + className + ";");
+                }
+
+                llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                    "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
+                llvm::Value* call = builder.CreateCall(callee, {object, classObject});
+                builder.CreateBr(continueBlock);
+
+                builder.SetInsertPoint(continueBlock);
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), block);
+                phi->addIncoming(call, instanceOfBlock);
+
+                operandStack.push_back(phi);
+                break;
+            }
+            // TODO: InvokeDynamic
             case OpCodes::InvokeInterface:
             {
                 const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
@@ -1294,14 +1391,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
-            case OpCodes::INeg:
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateNeg(value));
-                break;
-            }
-            case OpCodes::InvokeStatic:
             case OpCodes::InvokeSpecial:
+            case OpCodes::InvokeStatic:
             {
                 const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
 
@@ -1378,49 +1469,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     operandStack.push_back(call);
                 }
-                break;
-            }
-            case OpCodes::InstanceOf:
-            {
-                llvm::StringRef className =
-                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
-
-                llvm::PointerType* ty = referenceType(builder.getContext());
-                llvm::Value* object = operandStack.pop_back(ty);
-                llvm::Value* null = llvm::ConstantPointerNull::get(ty);
-
-                // null references always return 0.
-                llvm::Value* isNull = builder.CreateICmpEQ(object, null);
-                auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                llvm::BasicBlock* block = builder.GetInsertBlock();
-                builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
-
-                builder.SetInsertPoint(instanceOfBlock);
-
-                llvm::Value* classObject;
-                if (className.front() == '[')
-                {
-                    // Weirdly, it uses normal field mangling if its an array type, but for other class types its just
-                    // the name of the class. Hence these two cases.
-                    classObject = helper.getClassObject(builder, className);
-                }
-                else
-                {
-                    classObject = helper.getClassObject(builder, "L" + className + ";");
-                }
-
-                llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
-                    "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
-                llvm::Value* call = builder.CreateCall(callee, {object, classObject});
-                builder.CreateBr(continueBlock);
-
-                builder.SetInsertPoint(continueBlock);
-                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                phi->addIncoming(builder.getInt32(0), block);
-                phi->addIncoming(call, instanceOfBlock);
-
-                operandStack.push_back(phi);
                 break;
             }
             case OpCodes::IOr:
@@ -1509,6 +1557,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateXor(lhs, rhs));
                 break;
             }
+            // TODO: JSR
+            // TODO: JSRw
+            // TODO: L2D
+            // TODO: L2F
+            // TODO: L2I
+            // TODO: LAdd
+            // TODO: LALoad
+            // TODO: LAnd
+            // TODO: LAStore
+            // TODO: LCmp
+            // TODO: LConst0
+            // TODO: LConst1
             case OpCodes::LDC:
             {
                 auto index = consume<std::uint8_t>(current);
@@ -1534,6 +1594,63 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
+            // TODO: LDCW
+            // TODO: LDC2W
+            // TODO: LDiv
+            // TODO: LLoad
+            // TODO: LLoad0
+            // TODO: LLoad1
+            // TODO: LLoad2
+            // TODO: LLoad3
+            // TODO: LMul
+            // TODO: LNeg
+            // TODO: LookupSwitch
+            // TODO: LOr
+            // TODO: LRem
+            // TODO: LReturn
+            // TODO: LShl
+            // TODO: LShr
+            // TODO: LStore
+            // TODO: LStore0
+            // TODO: LStore1
+            // TODO: LStore2
+            // TODO: LStore3
+            // TODO: LSub
+            // TODO: LUShr
+            // TODO: LXor
+            // TODO: MonitorEnter
+            // TODO: MonitorExit
+            // TODO: MultiANewArray
+            case OpCodes::New:
+            {
+                llvm::StringRef className =
+                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
+
+                llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
+
+                // Size is first 4 bytes in the class object and does not include the object header.
+                llvm::Value* fieldAreaPtr = builder.CreateGEP(
+                    builder.getInt8Ty(), classObject, {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
+                llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), fieldAreaPtr);
+                size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
+
+                llvm::Module* module = function->getParent();
+                llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
+                // Store object header (which in our case is just the class object) in the object.
+                builder.CreateStore(classObject, object);
+                operandStack.push_back(object);
+
+                break;
+            }
+            // TODO: NewArray
+            // TODO: Nop
+            case OpCodes::Pop:
+            {
+                // Type does not matter as we do not use the result
+                operandStack.pop_back(referenceType(builder.getContext()));
+                break;
+            }
+            // TODO: Pop2
             case OpCodes::PutField:
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
@@ -1586,23 +1703,23 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateStore(value, fieldPtr);
                 break;
             }
-            case OpCodes::Pop:
-            {
-                // Type does not matter as we do not use the result
-                operandStack.pop_back(referenceType(builder.getContext()));
-                break;
-            }
+            // TODO: Ret
             case OpCodes::Return:
             {
                 builder.CreateRetVoid();
                 break;
             }
+            // TODO: SALoad
+            // TODO: SAStore
             case OpCodes::SIPush:
             {
                 auto value = consume<std::int16_t>(current);
                 operandStack.push_back(builder.getInt32(value));
                 break;
             }
+                // TODO: Swap
+                // TODO: TableSwitch
+                // TODO: Wide
         }
     }
 }
