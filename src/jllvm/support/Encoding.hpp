@@ -23,4 +23,6 @@ enum class CompactEncoding : uint8_t
 /// This method does exactly that conversion, returning the raw bytes of the converted output and the encoding used.
 std::pair<std::vector<std::uint8_t>, CompactEncoding> toJavaCompactEncoding(llvm::StringRef utf8String);
 
+std::string fromJavaCompactEncoding(std::pair<llvm::ArrayRef<std::uint8_t>, CompactEncoding> compactEncoding);
+
 } // namespace jllvm

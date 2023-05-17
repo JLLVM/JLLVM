@@ -166,6 +166,11 @@ public:
     {
         return *m_value;
     }
+
+    std::string toUTF8() const
+    {
+        return fromJavaCompactEncoding({{m_value->data(), m_value->getLength()}, CompactEncoding{m_coder}});
+    }
 };
 
 static_assert(std::is_standard_layout_v<String>);

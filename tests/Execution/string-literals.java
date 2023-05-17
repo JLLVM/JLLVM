@@ -13,8 +13,8 @@ class Test
         // CHECK: Hello Java
         print("Hello Java");
 
-        // TODO: test UTF16BE encoding
-        // print("Java == ♨");
+        // CHECK: Java == ♨
+        print("Java == ♨");
 
         // TODO: does not currently work, because if_acmpne is either not implemented or not implemented correctly
         /* var hello2 = "Hello World";

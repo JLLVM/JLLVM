@@ -18,12 +18,7 @@ auto trivialPrintFunction()
 template <>
 auto trivialPrintFunction<jllvm::String>()
 {
-    return [](void*, void*, jllvm::String* string)
-    {
-        // TODO: also print UTF16BE encoded strings correctly
-        llvm::interleave(string->getValue(), llvm::outs(), "");
-        llvm::outs() << '\n';
-    };
+    return [](void*, void*, jllvm::String* string) { llvm::outs() << string->toUTF8() << '\n'; };
 }
 
 } // namespace
