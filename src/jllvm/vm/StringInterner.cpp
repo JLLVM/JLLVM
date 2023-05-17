@@ -54,7 +54,7 @@ jllvm::String* jllvm::StringInterner::createString(llvm::ArrayRef<std::uint8_t> 
     auto* string = new (m_allocator.Allocate(sizeof(String), alignof(String)))
         String(getStringClassObject(), value, static_cast<std::uint8_t>(encoding));
 
-    m_literalToStringMap.insert({{buffer, static_cast<std::uint8_t>(encoding)}, string});
+    m_contentToStringMap.insert({{buffer, static_cast<std::uint8_t>(encoding)}, string});
 
     return string;
 }
@@ -67,8 +67,8 @@ jllvm::String* jllvm::StringInterner::intern(llvm::StringRef utf8String)
 
 jllvm::String* jllvm::StringInterner::intern(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding)
 {
-    auto it = m_literalToStringMap.find({buffer, static_cast<uint8_t>(encoding)});
-    if (it != m_literalToStringMap.end())
+    auto it = m_contentToStringMap.find({buffer, static_cast<uint8_t>(encoding)});
+    if (it != m_contentToStringMap.end())
     {
         return it->second;
     }

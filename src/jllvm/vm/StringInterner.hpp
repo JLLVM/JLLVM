@@ -12,7 +12,7 @@ class StringInterner
     static constexpr auto stringDescriptor = "Ljava/lang/String;";
     static constexpr auto byteArrayDescriptor = "[B";
 
-    llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_literalToStringMap;
+    llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_contentToStringMap;
     llvm::BumpPtrAllocator m_allocator;
     ClassLoader& m_classLoader;
     const ClassObject* m_stringClass{nullptr};
