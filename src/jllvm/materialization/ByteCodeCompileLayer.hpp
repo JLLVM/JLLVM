@@ -8,6 +8,7 @@
 #include <jllvm/object/ClassLoader.hpp>
 
 #include "ByteCodeLayer.hpp"
+#include "jllvm/vm/StringInterner.hpp"
 
 namespace jllvm
 {
@@ -15,6 +16,7 @@ namespace jllvm
 class ByteCodeCompileLayer : public ByteCodeLayer
 {
     ClassLoader& m_classLoader;
+    StringInterner& m_stringInterner;
     llvm::orc::JITDylib& m_mainDylib;
     std::unique_ptr<llvm::orc::IndirectStubsManager> m_stubsManager;
     llvm::orc::JITCompileCallbackManager& m_callbackManager;
@@ -23,12 +25,13 @@ class ByteCodeCompileLayer : public ByteCodeLayer
     llvm::DataLayout m_dataLayout;
 
 public:
-    ByteCodeCompileLayer(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib,
+    ByteCodeCompileLayer(ClassLoader& classLoader, StringInterner& stringInterner, llvm::orc::JITDylib& mainDylib,
                          std::unique_ptr<llvm::orc::IndirectStubsManager>&& stubsManager,
                          llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
                          llvm::orc::MangleAndInterner& mangler, const llvm::DataLayout& dataLayout)
         : ByteCodeLayer(mangler),
           m_classLoader(classLoader),
+          m_stringInterner(stringInterner),
           m_stubsManager(std::move(stubsManager)),
           m_callbackManager(callbackManager),
           m_baseLayer(baseLayer),

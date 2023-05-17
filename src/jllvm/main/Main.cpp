@@ -15,6 +15,17 @@ auto trivialPrintFunction()
     return [](void*, void*, T value) { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; };
 }
 
+template <>
+auto trivialPrintFunction<jllvm::String>()
+{
+    return [](void*, void*, jllvm::String* string)
+    {
+        // TODO: also print UTF16BE encoded strings correctly
+        llvm::interleave(string->getValue(), llvm::outs(), "");
+        llvm::outs() << '\n';
+    };
+}
+
 } // namespace
 
 int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
@@ -74,6 +85,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
         jit.addJNISymbol("Java_Test_print__S", trivialPrintFunction<std::int16_t>());
         jit.addJNISymbol("Java_Test_print__C", trivialPrintFunction<std::uint16_t>());
         jit.addJNISymbol("Java_Test_print__Z", trivialPrintFunction<bool>());
+        jit.addJNISymbol("Java_Test_print__Ljava/lang/String;", trivialPrintFunction<String>());
     }
 
     return vm.executeMain(inputFiles.front(), llvm::to_vector_of<llvm::StringRef>(llvm::drop_begin(inputFiles)));

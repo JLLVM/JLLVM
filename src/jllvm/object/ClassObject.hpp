@@ -85,7 +85,7 @@ public:
         return m_isStatic;
     }
 
-    /// Returns true if this method is static.
+    /// Returns true if this method is abstract.
     bool isAbstract() const
     {
         return m_isAbstract;

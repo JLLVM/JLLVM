@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
@@ -8,7 +9,7 @@
 
 namespace jllvm
 {
-/// Reads a instance of 'T' from 'bytes', advancing 'bytes' by the amount of bytes read.
+/// Reads an instance of 'T' from 'bytes', advancing 'bytes' by the amount of bytes read.
 /// 'T' must be a trivially copyable type for this to be legal.
 /// Note: This function is mainly used to support parsing JVM formats which are all big endian.
 /// This function therefore also does conversion from big endian to the host format.
@@ -30,12 +31,6 @@ T consume(llvm::ArrayRef<char>& bytes)
 /// Reads in 'length' amount of bytes from 'bytes', returns it as a 'StringRef' and advanced 'bytes' by the amount of
 /// bytes read.
 /// Asserts if 'bytes' does not contain enough bytes.
-inline llvm::StringRef consumeRawString(std::size_t length, llvm::ArrayRef<char>& bytes)
-{
-    assert(bytes.size() >= length);
-    auto result = llvm::StringRef(bytes.data(), length);
-    bytes = bytes.drop_front(length);
-    return result;
-}
+llvm::StringRef consumeRawString(std::size_t length, llvm::ArrayRef<char>& bytes);
 
 } // namespace jllvm

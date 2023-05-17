@@ -11,6 +11,7 @@
 
 #include "GarbageCollector.hpp"
 #include "JIT.hpp"
+#include "StringInterner.hpp"
 
 namespace jllvm
 {
@@ -23,7 +24,8 @@ class VirtualMachine
     JNINativeInterfaceUPtr m_jniEnv = createJNIEnvironment();
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
-    JIT m_jit = JIT::create(m_classLoader, m_gc, m_jniEnv.get());
+    StringInterner m_stringInterner;
+    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
 

@@ -194,8 +194,9 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
                     case BaseType::Long: return 8;
                     case BaseType::Short: return 2;
                     case BaseType::Boolean: return 1;
-                    case BaseType::Void: llvm_unreachable("Field can't be void");
+                    case BaseType::Void: break;
                 }
+                llvm_unreachable("Field can't be void");
             },
             [](const ObjectType&) { return sizeof(void*); }, [](const ArrayType&) { return sizeof(void*); });
         instanceSize = llvm::alignTo(instanceSize, fieldSizeAndAlignment);
@@ -315,7 +316,7 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor, Sta
 
     if (!result)
     {
-        llvm::report_fatal_error("No *.class file found for clss " + className);
+        llvm::report_fatal_error("No *.class file found for class " + className);
     }
 
     LLVM_DEBUG({ llvm::dbgs() << "Loaded " << result->getBufferIdentifier() << " from class path\n"; });
