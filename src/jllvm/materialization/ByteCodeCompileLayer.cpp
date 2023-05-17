@@ -964,7 +964,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // Size is first 4 bytes in the class object and does not include the object header.
                 llvm::Value* fieldAreaPtr = builder.CreateGEP(
                     builder.getInt8Ty(), classObject, {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
-                llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), classObject);
+                llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), fieldAreaPtr);
                 size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
 
                 llvm::Module* module = function->getParent();
