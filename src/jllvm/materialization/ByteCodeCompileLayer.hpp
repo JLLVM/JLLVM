@@ -6,9 +6,9 @@
 #include <llvm/ExecutionEngine/Orc/Mangling.h>
 
 #include <jllvm/object/ClassLoader.hpp>
+#include <jllvm/vm/StringInterner.hpp>
 
 #include "ByteCodeLayer.hpp"
-#include "jllvm/vm/StringInterner.hpp"
 
 namespace jllvm
 {

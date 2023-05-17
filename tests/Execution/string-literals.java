@@ -1,4 +1,4 @@
-// RUN: javac %s -d %t
+// RUN: javac -encoding utf-8 %s -d %t
 // RUN: jllvm -Xenable-test-utils %t/Test.class | FileCheck %s
 class Test
 {

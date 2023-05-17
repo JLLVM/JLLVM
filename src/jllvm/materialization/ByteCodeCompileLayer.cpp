@@ -1526,7 +1526,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                         String* string = stringInterner.intern(text);
 
-                        operandStack.push_back(CppToLLVMType<String*>::getConstant(string, builder));
+                        operandStack.push_back(
+                            builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
+                                                   referenceType(builder.getContext())));
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
 

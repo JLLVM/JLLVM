@@ -153,12 +153,12 @@ class String : public ObjectInterface
     ObjectHeader m_header;
     Array<std::uint8_t>* m_value;
     std::uint8_t m_coder;
-    std::int32_t m_hash;
-    bool m_hashIsZero;
+    std::int32_t m_hash{};
+    bool m_hashIsZero{true};
 
 public:
     String(const ClassObject* classObject, Array<std::uint8_t>* value, std::uint8_t coder)
-        : m_header{classObject, 0}, m_value{value}, m_coder{coder}, m_hash{}, m_hashIsZero{true}
+        : m_header{classObject, 0}, m_value{value}, m_coder{coder}
     {
     }
 

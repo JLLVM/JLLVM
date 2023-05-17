@@ -15,8 +15,7 @@ class StringInterner
     static constexpr auto byteArrayDescriptor = "[B";
 
     std::map<llvm::StringRef, String*> m_literalToStringMap;
-    llvm::BumpPtrAllocator m_stringAllocator;
-    llvm::BumpPtrAllocator m_valueAllocator;
+    llvm::BumpPtrAllocator m_allocator;
     ClassLoader& m_classLoader;
     const ClassObject* m_stringClass{nullptr};
 
