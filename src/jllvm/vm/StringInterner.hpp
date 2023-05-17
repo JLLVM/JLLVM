@@ -5,8 +5,6 @@
 #include <jllvm/object/ClassLoader.hpp>
 #include <jllvm/support/Encoding.hpp>
 
-#include <map>
-
 namespace jllvm
 {
 class StringInterner
@@ -14,7 +12,7 @@ class StringInterner
     static constexpr auto stringDescriptor = "Ljava/lang/String;";
     static constexpr auto byteArrayDescriptor = "[B";
 
-    std::map<std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding>, String*> m_literalToStringMap;
+    llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_literalToStringMap;
     llvm::BumpPtrAllocator m_allocator;
     ClassLoader& m_classLoader;
     const ClassObject* m_stringClass{nullptr};
@@ -23,13 +21,13 @@ class StringInterner
 
     void checkStructure();
 
-    String* createString(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding);
+    String* createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding);
 
 public:
     StringInterner(ClassLoader& classLoader) : m_classLoader(classLoader) {}
 
     String* intern(llvm::StringRef utf8String);
 
-    String* intern(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding);
+    String* intern(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding);
 };
 } // namespace jllvm

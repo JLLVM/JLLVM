@@ -73,7 +73,8 @@ std::string jllvm::fromJavaCompactEncoding(std::pair<llvm::ArrayRef<std::uint8_t
         }
     }
 
-    assert(llvm::convertUTF16ToUTF8String(utf16, string));
+    bool success = llvm::convertUTF16ToUTF8String(utf16, string);
+    assert(success);
 
     return string;
 }

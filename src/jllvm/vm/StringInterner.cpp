@@ -19,35 +19,34 @@ void jllvm::StringInterner::checkStructure()
         {
             continue;
         }
+        bool valid;
         if (item.getName() == "value")
         {
-            assert(item.getOffset() == 16 && item.getType() == byteArrayDescriptor);
+            valid = item.getOffset() == 16 && item.getType() == byteArrayDescriptor;
         }
         else if (item.getName() == "coder")
         {
-            assert(item.getOffset() == 24 && item.getType() == "B");
+            valid = item.getOffset() == 24 && item.getType() == "B";
         }
         else if (item.getName() == "hash")
         {
-            assert(item.getOffset() == 28 && item.getType() == "I");
+            valid = item.getOffset() == 28 && item.getType() == "I";
         }
         else if (item.getName() == "hashIsZero")
         {
-            assert(item.getOffset() == 32 && item.getType() == "Z");
+            valid = item.getOffset() == 32 && item.getType() == "Z";
         }
         else
         {
             llvm::report_fatal_error("Unexpected field in java.lang.String: " + item.getName());
         }
+        assert(valid);
     }
 #endif
 }
 
-jllvm::String*
-    jllvm::StringInterner::createString(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding)
+jllvm::String* jllvm::StringInterner::createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding)
 {
-    auto& [buffer, encoding] = compactEncoding;
-
     auto* value =
         Array<std::uint8_t>::create(m_allocator, m_classLoader.forNameLoaded(byteArrayDescriptor), buffer.size());
     llvm::copy(buffer, value->begin());
@@ -55,23 +54,23 @@ jllvm::String*
     auto* string = new (m_allocator.Allocate(sizeof(String), alignof(String)))
         String(getStringClassObject(), value, static_cast<std::uint8_t>(encoding));
 
-    m_literalToStringMap.emplace(std::move(compactEncoding), string);
+    m_literalToStringMap.insert({{buffer, static_cast<std::uint8_t>(encoding)}, string});
 
     return string;
 }
 
 jllvm::String* jllvm::StringInterner::intern(llvm::StringRef utf8String)
 {
-    return intern(toJavaCompactEncoding(utf8String));
+    auto [buffer, encoding] = toJavaCompactEncoding(utf8String);
+    return intern(buffer, encoding);
 }
 
-jllvm::String*
-    jllvm::StringInterner::intern(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding)
+jllvm::String* jllvm::StringInterner::intern(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding)
 {
-    auto it = m_literalToStringMap.find(compactEncoding);
+    auto it = m_literalToStringMap.find({buffer, static_cast<uint8_t>(encoding)});
     if (it != m_literalToStringMap.end())
     {
         return it->second;
     }
-    return createString(std::move(compactEncoding));
+    return createString(buffer, encoding);
 }
