@@ -43,9 +43,11 @@ void jllvm::StringInterner::checkStructure()
 #endif
 }
 
-jllvm::String* jllvm::StringInterner::createString(llvm::StringRef utf8String)
+jllvm::String*
+    jllvm::StringInterner::createString(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding)
 {
-    auto [buffer, encoding] = toJavaCompactEncoding(utf8String);
+    auto& [buffer, encoding] = compactEncoding;
+
     auto* value =
         Array<std::uint8_t>::create(m_allocator, m_classLoader.forNameLoaded(byteArrayDescriptor), buffer.size());
     llvm::copy(buffer, value->begin());
@@ -53,17 +55,23 @@ jllvm::String* jllvm::StringInterner::createString(llvm::StringRef utf8String)
     auto* string = new (m_allocator.Allocate(sizeof(String), alignof(String)))
         String(getStringClassObject(), value, static_cast<std::uint8_t>(encoding));
 
-    m_literalToStringMap.insert({utf8String, string});
+    m_literalToStringMap.emplace(std::move(compactEncoding), string);
 
     return string;
 }
 
 jllvm::String* jllvm::StringInterner::intern(llvm::StringRef utf8String)
 {
-    auto it = m_literalToStringMap.find(utf8String);
+    return intern(toJavaCompactEncoding(utf8String));
+}
+
+jllvm::String*
+    jllvm::StringInterner::intern(std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> compactEncoding)
+{
+    auto it = m_literalToStringMap.find(compactEncoding);
     if (it != m_literalToStringMap.end())
     {
         return it->second;
     }
-    return createString(utf8String);
+    return createString(std::move(compactEncoding));
 }
