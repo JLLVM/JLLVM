@@ -12,6 +12,7 @@ namespace
 template <class T>
 auto trivialPrintFunction()
 {
+    // TODO: change for floating types
     return [](void*, void*, T value) { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; };
 }
 

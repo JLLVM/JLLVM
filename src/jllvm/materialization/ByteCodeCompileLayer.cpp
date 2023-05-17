@@ -943,9 +943,21 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: FAStore
             // TODO: FCmpG
             // TODO: FCmpL
-            // TODO: FConst0
-            // TODO: FConst1
-            // TODO: FConst2
+            case OpCodes::FConst0:
+            {
+                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 0.0));
+                break;
+            }
+            case OpCodes::FConst1:
+            {
+                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 1.0));
+                break;
+            }
+            case OpCodes::FConst2:
+            {
+                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 2.0));
+                break;
+            }
             // TODO: FDiv
             // TODO: FLoad
             // TODO: FLoad0
