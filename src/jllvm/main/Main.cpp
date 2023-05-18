@@ -5,6 +5,8 @@
 
 #include <jllvm/vm/VirtualMachine.hpp>
 
+#include <sstream>
+
 #include "CommandLine.hpp"
 
 namespace
@@ -12,8 +14,19 @@ namespace
 template <class T>
 auto trivialPrintFunction()
 {
-    // TODO: change for floating types
-    return [](void*, void*, T value) { llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n'; };
+    return [](void*, void*, T value)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            std::stringstream str;
+            str << std::defaultfloat << value << '\n';
+            llvm::outs() << str.str();
+        }
+        else
+        {
+            llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n';
+        }
+    };
 }
 
 template <>
