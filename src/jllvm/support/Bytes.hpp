@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
@@ -21,11 +20,14 @@ T consume(llvm::ArrayRef<char>& bytes)
     assert(bytes.size() >= sizeof(T));
     std::conditional_t<sizeof(T) <= 2, std::conditional_t<sizeof(T) <= 1, std::uint8_t, std::uint16_t>,
                        std::conditional_t<(sizeof(T) > 4), std::uint64_t, std::uint32_t>>
-        result;
-    std::memcpy(&result, bytes.data(), sizeof(T));
+        asBytes;
+    std::memcpy(&asBytes, bytes.data(), sizeof(T));
     bytes = bytes.drop_front(sizeof(T));
-    result = llvm::support::endian::byte_swap(result, llvm::support::big);
-    return T(result);
+    asBytes = llvm::support::endian::byte_swap(asBytes, llvm::support::big);
+
+    T result;
+    std::memcpy(&result, &asBytes, sizeof(T));
+    return result;
 }
 
 /// Reads in 'length' amount of bytes from 'bytes', returns it as a 'StringRef' and advanced 'bytes' by the amount of

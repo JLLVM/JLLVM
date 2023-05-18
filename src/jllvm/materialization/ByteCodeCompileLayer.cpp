@@ -1642,6 +1642,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     pool.resolve(classFile),
                     [&](const IntegerInfo* integerInfo)
                     { operandStack.push_back(builder.getInt32(integerInfo->value)); },
+                    [&](const FloatInfo* floatInfo)
+                    { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), floatInfo->value)); },
                     [&](const StringInfo* stringInfo)
                     {
                         llvm::StringRef text = stringInfo->stringValue.resolve(classFile)->text;
