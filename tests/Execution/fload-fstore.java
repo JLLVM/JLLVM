@@ -14,8 +14,8 @@ class Test
         var f0 = 0.0f;
         var f1 = 1.0f;
         var f2 = 2.0f;
-        var f3 = 3.0f;
-        var f4 = 4.0f;
+        var f3 = 123.456f;
+        var f4 = -987.654f;
 
         // CHECK: 0
         print(f0);
@@ -23,9 +23,9 @@ class Test
         print(f1);
         // CHECK: 2
         print(f2);
-        // CHECK: 3
+        // CHECK: 123.456
         print(f3);
-        // CHECK: 4
+        // CHECK: -987.654
         print(f4);
     }
 }
