@@ -378,7 +378,7 @@ public:
                 // set, method lookup succeeds.
 
                 // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
-                // descriptor specified by the method reference include exactly one method that does not have its
+                // descriptor specified by the method reference to include exactly one method that does not have its
                 // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
                 for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
                 {
