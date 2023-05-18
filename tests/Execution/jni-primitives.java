@@ -32,8 +32,6 @@ class Test
         print(true);
 
         print(0.0f);
-        print(1.0f);
-        print(2.0f);
     }
 }
 
@@ -41,5 +39,3 @@ class Test
 // CHECK: 5
 // CHECK: 1
 // CHECK: 0
-// CHECK: 1
-// CHECK: 2

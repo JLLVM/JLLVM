@@ -378,7 +378,7 @@ public:
                 // set, method lookup succeeds.
 
                 // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
-                // descriptor specified by the method reference include exactly one method that does not have its
+                // descriptor specified by the method reference to include exactly one method that does not have its
                 // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
                 for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
                 {
@@ -804,17 +804,25 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 break;
             }
             case OpCodes::ALoad0:
+            {
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[0]));
                 break;
+            }
             case OpCodes::ALoad1:
+            {
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[1]));
                 break;
+            }
             case OpCodes::ALoad2:
+            {
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[2]));
                 break;
+            }
             case OpCodes::ALoad3:
+            {
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[3]));
                 break;
+            }
             case OpCodes::ANewArray:
             {
                 auto index = consume<PoolIndex<ClassInfo>>(current);
@@ -959,20 +967,62 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 break;
             }
             // TODO: FDiv
-            // TODO: FLoad
-            // TODO: FLoad0
-            // TODO: FLoad1
-            // TODO: FLoad2
-            // TODO: FLoad3
+            case OpCodes::FLoad:
+            {
+                auto index = consume<std::uint8_t>(current);
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[index]));
+                break;
+            }
+            case OpCodes::FLoad0:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[0]));
+                break;
+            }
+            case OpCodes::FLoad1:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[1]));
+                break;
+            }
+            case OpCodes::FLoad2:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[2]));
+                break;
+            }
+            case OpCodes::FLoad3:
+            {
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[3]));
+                break;
+            }
             // TODO: FMul
             // TODO: FNeg
             // TODO: FRem
             // TODO: FReturn
-            // TODO: FStore
-            // TODO: FStore0
-            // TODO: FStore1
-            // TODO: FStore2
-            // TODO: FStore3
+            case OpCodes::FStore:
+            {
+                auto index = consume<std::uint8_t>(current);
+                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[index]);
+                break;
+            }
+            case OpCodes::FStore0:
+            {
+                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[0]);
+                break;
+            }
+            case OpCodes::FStore1:
+            {
+                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[1]);
+                break;
+            }
+            case OpCodes::FStore2:
+            {
+                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[2]);
+                break;
+            }
+            case OpCodes::FStore3:
+            {
+                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[3]);
+                break;
+            }
             // TODO: FSub
             case OpCodes::GetField:
             {
@@ -1303,8 +1353,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* classObject;
                 if (className.front() == '[')
                 {
-                    // Weirdly, it uses normal field mangling if its an array type, but for other class types its just
-                    // the name of the class. Hence these two cases.
+                    // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's just
+                    // the name of the class. Hence, these two cases.
                     classObject = helper.getClassObject(builder, className);
                 }
                 else
