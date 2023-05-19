@@ -250,5 +250,45 @@ class Test
         {
             print(0);
         }
+
+        //ifacmpeq
+        //CHECK: 1
+        if ("a" != "b")
+        {
+            print(1);
+        }
+        else
+        {
+            print(0);
+        }
+        //CHECK: 0
+        if ("a" != "a")
+        {
+            print(1);
+        }
+        else
+        {
+            print(0);
+        }
+
+        //ifacmpne
+        //CHECK: 1
+        if ("a" == "a")
+        {
+            print(1);
+        }
+        else
+        {
+            print(0);
+        }
+        //CHECK: 0
+        if ("a" == "b")
+        {
+            print(1);
+        }
+        else
+        {
+            print(0);
+        }
     }
 }

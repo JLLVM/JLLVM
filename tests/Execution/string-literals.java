@@ -16,8 +16,8 @@ class Test
         // CHECK: Java == ♨
         print("Java == ♨");
 
-        // TODO: does not currently work, because if_acmpne is either not implemented or not implemented correctly
-        /* var hello2 = "Hello World";
-        print(hello1 == hello2); */
+        // CHECK: 1
+        var hello2 = "Hello World";
+        print(hello1 == hello2);
     }
 }
