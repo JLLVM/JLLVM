@@ -996,7 +996,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: FMul
             // TODO: FNeg
             // TODO: FRem
-            // TODO: FReturn
+            case OpCodes::FReturn:
+            {
+                builder.CreateRet(operandStack.pop_back(builder.getFloatTy()));
+                break;
+            }
             case OpCodes::FStore:
             {
                 auto index = consume<std::uint8_t>(current);
