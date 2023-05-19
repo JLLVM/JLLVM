@@ -1179,58 +1179,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateSDiv(lhs, rhs));
                 break;
             }
+            case OpCodes::IfACmpEq:
+            case OpCodes::IfACmpNe:
             case OpCodes::IfICmpEq:
             case OpCodes::IfICmpNe:
             case OpCodes::IfICmpLt:
             case OpCodes::IfICmpGe:
             case OpCodes::IfICmpGt:
             case OpCodes::IfICmpLe:
-            {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
-
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
-
-                switch (opCode)
-                {
-                    case OpCodes::IfICmpGe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGE;
-                        break;
-                    }
-                    case OpCodes::IfICmpGt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGT;
-                        break;
-                    }
-                    case OpCodes::IfICmpLe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLE;
-                        break;
-                    }
-                    case OpCodes::IfICmpLt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLT;
-                        break;
-                    }
-                    case OpCodes::IfICmpNe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_NE;
-                        break;
-                    }
-                }
-
-                llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
             case OpCodes::IfEq:
             case OpCodes::IfNe:
             case OpCodes::IfLt:
@@ -1242,41 +1198,88 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
                 llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
 
-                llvm::Value* val = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* zero = builder.getInt32(0);
-
-                llvm::CmpInst::Predicate predicate = llvm::CmpInst::ICMP_EQ;
+                llvm::Value* rhs;
+                llvm::Value* lhs;
+                llvm::CmpInst::Predicate predicate;
 
                 switch (opCode)
                 {
+                    default: llvm_unreachable("Invalid comparison operation");
+                    case OpCodes::IfACmpEq:
+                    case OpCodes::IfACmpNe:
+                    {
+                        rhs = operandStack.pop_back(referenceType(builder.getContext()));
+                        lhs = operandStack.pop_back(referenceType(builder.getContext()));
+                        break;
+                    }
+                    case OpCodes::IfICmpEq:
+                    case OpCodes::IfICmpNe:
+                    case OpCodes::IfICmpLt:
+                    case OpCodes::IfICmpGe:
+                    case OpCodes::IfICmpGt:
+                    case OpCodes::IfICmpLe:
+                    {
+                        rhs = operandStack.pop_back(builder.getInt32Ty());
+                        lhs = operandStack.pop_back(builder.getInt32Ty());
+                        break;
+                    }
+                    case OpCodes::IfEq:
+                    case OpCodes::IfNe:
+                    case OpCodes::IfLt:
                     case OpCodes::IfGe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGE;
-                        break;
-                    }
                     case OpCodes::IfGt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGT;
-                        break;
-                    }
                     case OpCodes::IfLe:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLE;
+                        rhs = builder.getInt32(0);
+                        lhs = operandStack.pop_back(builder.getInt32Ty());
                         break;
                     }
-                    case OpCodes::IfLt:
+                }
+
+                switch (opCode)
+                {
+                    default: llvm_unreachable("Invalid comparison operation");
+                    case OpCodes::IfACmpEq:
+                    case OpCodes::IfICmpEq:
+                    case OpCodes::IfEq:
                     {
-                        predicate = llvm::CmpInst::ICMP_SLT;
+                        predicate = llvm::CmpInst::ICMP_EQ;
                         break;
                     }
+                    case OpCodes::IfACmpNe:
+                    case OpCodes::IfICmpNe:
                     case OpCodes::IfNe:
                     {
                         predicate = llvm::CmpInst::ICMP_NE;
                         break;
                     }
+                    case OpCodes::IfICmpLt:
+                    case OpCodes::IfLt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLT;
+                        break;
+                    }
+                    case OpCodes::IfICmpLe:
+                    case OpCodes::IfLe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SLE;
+                        break;
+                    }
+                    case OpCodes::IfICmpGt:
+                    case OpCodes::IfGt:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGT;
+                        break;
+                    }
+                    case OpCodes::IfICmpGe:
+                    case OpCodes::IfGe:
+                    {
+                        predicate = llvm::CmpInst::ICMP_SGE;
+                        break;
+                    }
                 }
 
-                llvm::Value* cond = builder.CreateICmp(predicate, val, zero);
+                llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
                 basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
