@@ -67,7 +67,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                                                +[](const Object* object, const ClassObject* classObject) -> std::int32_t
                                                { return object->instanceOf(classObject); })},
          {m_interner("fmodf"),
-          llvm::JITEvaluatedSymbol::fromPointer(fmodf)}})));
+          llvm::JITEvaluatedSymbol::fromPointer(std::fmodf)}})));
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
