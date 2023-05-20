@@ -22,7 +22,10 @@ struct ObjectHeader
     /// Cached hash of the object. This has to be stored and lazily calculated on first use. We cannot use an objects
     /// address as we have a relocating garbage collector. It is therefore unstable.
     /// A value of 0 indicates the hashCode of an object has not yet been calculated.
-    std::int32_t hashCode;
+    std::int32_t hashCode = 0;
+
+    /// Initialize an object header with the objects class object.
+    explicit ObjectHeader(const ClassObject* classObject) : classObject(classObject) {}
 };
 
 /// Pure interface class used to implement methods one would commonly associate with 'Object'.
@@ -66,7 +69,7 @@ class Array : public ObjectInterface
     // without introducing any padding inbetween.
     T m_trailing[];
 
-    Array(ObjectHeader header, std::uint32_t length) : m_header{header}, m_length{length} {}
+    Array(const ClassObject* classObject, std::uint32_t length) : m_header{classObject}, m_length{length} {}
 
 public:
     /// Function to create a new array object. The array object is allocated within 'allocator'
@@ -75,7 +78,7 @@ public:
     static Array* create(llvm::BumpPtrAllocator& allocator, const ClassObject* classObject, std::uint32_t length)
     {
         return new (allocator.Allocate(arrayElementsOffset() + sizeof(T[length]), alignof(Array)))
-            Array({classObject, 0}, length);
+            Array(classObject, length);
     }
 
     /// Returns the byte offset from the start of the Array object to the first array element.
@@ -158,7 +161,7 @@ class String : public ObjectInterface
 
 public:
     String(const ClassObject* classObject, Array<std::uint8_t>* value, std::uint8_t coder)
-        : m_header{classObject, 0}, m_value{value}, m_coder{coder}
+        : m_header{classObject}, m_value{value}, m_coder{coder}
     {
     }
 

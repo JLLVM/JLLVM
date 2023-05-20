@@ -161,6 +161,8 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
       m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max())
 {
     registerJavaClasses(*this);
+
+    m_classLoader.loadBootstrapClasses();
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)

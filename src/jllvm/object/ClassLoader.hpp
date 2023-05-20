@@ -44,6 +44,8 @@ class ClassLoader
     ClassObject m_boolean{sizeof(bool), "Z"};
     ClassObject m_void{0, "V"};
 
+    ClassObject* m_metaClassObject = nullptr;
+
     void initialize(ClassObject& classObject)
     {
         if (!m_uninitialized.contains(&classObject))
@@ -91,6 +93,12 @@ public:
     /// Returns the class object for 'fieldDescriptor', which must be a valid field descriptor,
     /// if it has been loaded previously. Null otherwise.
     ClassObject* forNameLoaded(llvm::Twine fieldDescriptor);
+
+    /// Loads java classes required to boot up the VM. This a separate method and not executed as part of the
+    /// constructor as it requires the VM to already be ready to execute JVM Bytecode (one that does not depend on the
+    /// bootstrap classes) and to have at the very least initialized the builtin native methods of the bootstrap
+    /// classes.
+    void loadBootstrapClasses();
 };
 
 } // namespace jllvm

@@ -217,10 +217,31 @@ public:
 /// Class object representing Java 'Class' objects. Class objects serve all introspections needs of Java
 /// and additionally serve as the type object of all Java objects. The end of every Class object additionally
 /// contains the VTable slots for virtual functions.
-class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
+class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>, public ObjectInterface
 {
     friend class llvm::TrailingObjects<ClassObject, VTableSlot>;
+    ObjectHeader m_objectHeader;
 
+    // Field layout from Java!
+    Object* m_cachedConstructor = nullptr;
+    // This is purely used as a cache by the JVM and lazily init.
+    String* m_name = nullptr;
+    Object* m_module = nullptr;
+    Object* m_classLoader = nullptr;
+    Object* m_classData = nullptr;
+    String* m_packageName = nullptr;
+    const ClassObject* m_componentType = nullptr;
+    Object* m_reflectionData = nullptr;
+    std::int32_t m_classRedefinedCount = 0;
+    Object* m_genericInfo = nullptr;
+    Array<Object*>* m_enumConstants = nullptr;
+    Object* m_enumConstantDirectory = nullptr;
+    Object* m_annotationData = nullptr;
+    Object* m_annotationType = nullptr;
+    Object* m_classValueMap = nullptr;
+
+    // Custom data we add starts here. Since ClassObjects are always created in the class loader heap and never
+    // directly form Java code or on the GC we can extend the layout given by the JDK.
     std::int32_t m_fieldAreaSize;
     llvm::ArrayRef<Method> m_methods;
     llvm::ArrayRef<Field> m_fields;
@@ -231,14 +252,14 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     using InterfaceId = llvm::PointerEmbeddedInt<std::size_t, std::numeric_limits<std::size_t>::digits - 1>;
 
     llvm::PointerUnion<const ClassObject*, InterfaceId> m_superClassOrInterfaceId;
-    llvm::PointerIntPair<const ClassObject*, 1, bool> m_componentTypeAndIsPrimitive;
+    bool m_isPrimitive = false;
 
-    ClassObject(std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                llvm::ArrayRef<const ClassObject*> interfaces, llvm::ArrayRef<ITable*> iTables,
-                llvm::StringRef className, const ClassObject* superClass);
+    ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
+                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, const ClassObject* superClass);
 
-    ClassObject(std::size_t interfaceId, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
+    ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
+                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
 
     class SuperclassIterator
         : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
@@ -276,24 +297,24 @@ public:
     /// 'methods', 'fields' and 'interfaces' are allocated within 'allocator' to preserve their lifetimes.
     /// 'className' is the name of the user class in the JVM internal format.
     /// 'superClass' is the super class of this class if it has one.
-    static ClassObject* create(llvm::BumpPtrAllocator& allocator, std::size_t vTableSlots, std::uint32_t fieldAreaSize,
-                               llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                               llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className,
-                               const ClassObject* superClass);
+    static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass, std::size_t vTableSlots,
+                               std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
+                               llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                               llvm::StringRef className, const ClassObject* superClass);
 
     /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
     /// 'interfaceId' is the globally unique id of this interface.
     /// 'methods', 'fields' and 'interfaces' are allocated within 'allocator' to preserve their lifetimes.
     /// 'className' is the name of the user class in the JVM internal format.
-    static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, std::size_t interfaceId,
-                                        llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                        llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
+    static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                                        std::size_t interfaceId, llvm::ArrayRef<Method> methods,
+                                        llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
 
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
     /// 'stringSaver' is used to save the array type descriptor created and used as class name.
-    static ClassObject* createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* componentType,
-                                    llvm::StringSaver& stringSaver);
+    static ClassObject* createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                                    const ClassObject* componentType, llvm::StringSaver& stringSaver);
 
     /// Constructor for creating the class objects for primitive types with a size and name.
     ClassObject(std::uint32_t instanceSize, llvm::StringRef name);
@@ -390,13 +411,13 @@ public:
     /// Returns the component type of the array type or null if this is not an array type.
     const ClassObject* getComponentType() const
     {
-        return m_componentTypeAndIsPrimitive.getPointer();
+        return m_componentType;
     }
 
     /// Returns true if this is a primitive type.
     bool isPrimitive() const
     {
-        return m_componentTypeAndIsPrimitive.getInt();
+        return m_isPrimitive;
     }
 
     /// Returns true if this class object represents a Java class.
@@ -445,6 +466,7 @@ public:
 static_assert(std::is_trivially_destructible_v<ClassObject>);
 static_assert(std::is_trivially_destructible_v<Field>);
 static_assert(std::is_trivially_destructible_v<Method>);
+static_assert(std::is_standard_layout_v<ClassObject>);
 
 /// Adaptor class for LLVMs GraphTraits used to indicate we want to traverse the interfaces of a 'ClassObject'.
 struct InterfaceGraph

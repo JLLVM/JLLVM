@@ -96,6 +96,11 @@ class ObjectModel : public ModelBase<>
 public:
     using Base::Base;
 
+    const ClassObject* getClass()
+    {
+        return javaThis.getClass();
+    }
+
     std::int32_t hashCode()
     {
         std::int32_t& hashCode = javaThis.getObjectHeader().hashCode;
@@ -107,7 +112,29 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Object";
-    constexpr static auto methods = std::make_tuple(addMember<&ObjectModel::hashCode>());
+    constexpr static auto methods =
+        std::make_tuple(addMember<&ObjectModel::hashCode>(), addMember<&ObjectModel::getClass>());
+};
+
+/// Model implementation for the native methods of Javas 'Class' class.
+class ClassModel : public ModelBase<ClassObject>
+{
+public:
+    using Base::Base;
+
+    static void registerNatives(VirtualMachine&, ClassObject*)
+    {
+        // Noop until (if?) we need some C++ initialization code.
+    }
+
+    bool isArray()
+    {
+        return javaThis.isArray();
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/Class";
+    constexpr static auto methods =
+        std::make_tuple(addMember<&ClassModel::registerNatives>(), addMember<&ClassModel::isArray>());
 };
 
 /// Register any models for builtin Java classes in the VM.
@@ -151,13 +178,24 @@ void addModel(jllvm::VirtualMachine& virtualMachine)
         "'Model' must have a 'constexpr static' tuple called 'methods' listing all 'native' methods implemented");
 
     std::apply(
-        [&](const auto& subTuple)
+        [&](const auto&... subTuples)
         {
-            auto [ptr, methodName] = subTuple;
-            virtualMachine.getJIT().addJNISymbol(jllvm::formJNIMethodName(Model::className, methodName),
-                                                 detail::createMethodBridge<Model>(ptr));
+            (
+                [&](const auto& subTuple)
+                {
+                    auto [ptr, methodName] = subTuple;
+                    virtualMachine.getJIT().addJNISymbol(jllvm::formJNIMethodName(Model::className, methodName),
+                                                         detail::createMethodBridge<Model>(ptr));
+                }(subTuples),
+                ...);
         },
         Model::methods);
+}
+
+template <class... Models>
+void addModels(jllvm::VirtualMachine& virtualMachine)
+{
+    (addModel<Models>(virtualMachine), ...);
 }
 
 } // namespace jllvm

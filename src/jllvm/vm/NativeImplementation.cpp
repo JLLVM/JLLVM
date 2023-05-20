@@ -7,5 +7,5 @@ jllvm::VirtualMachine& jllvm::detail::virtualMachineFromJNIEnv(JNIEnv* env)
 
 void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
 {
-    addModel<ObjectModel>(virtualMachine);
+    addModels<ObjectModel, ClassModel>(virtualMachine);
 }
