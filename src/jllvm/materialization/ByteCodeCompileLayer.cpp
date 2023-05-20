@@ -946,7 +946,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: F2D
             // TODO: F2I
             // TODO: F2L
-            // TODO: FAdd
+            case OpCodes::FAdd:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFAdd(lhs, rhs));
+                break;
+            }
             // TODO: FALoad
             // TODO: FAStore
             // TODO: FCmpG
@@ -966,7 +972,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 2.0));
                 break;
             }
-            // TODO: FDiv
+            case OpCodes::FDiv:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFDiv(lhs, rhs));
+                break;
+            }
             case OpCodes::FLoad:
             {
                 auto index = consume<std::uint8_t>(current);
@@ -993,9 +1005,26 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[3]));
                 break;
             }
-            // TODO: FMul
-            // TODO: FNeg
-            // TODO: FRem
+            case OpCodes::FMul:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFMul(lhs, rhs));
+                break;
+            }
+            case OpCodes::FNeg:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFNeg(value));
+                break;
+            }
+            case OpCodes::FRem:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFRem(lhs, rhs));
+                break;
+            }
             case OpCodes::FReturn:
             {
                 builder.CreateRet(operandStack.pop_back(builder.getFloatTy()));
@@ -1027,7 +1056,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[3]);
                 break;
             }
-            // TODO: FSub
+            case OpCodes::FSub:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFSub(lhs, rhs));
+                break;
+            }
             case OpCodes::GetField:
             {
                 const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
