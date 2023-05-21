@@ -1167,7 +1167,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
                 break;
             }
-            // TODO: IALoad
+            case OpCodes::IALoad:
+            {
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
+                                              {builder.getInt32(0), builder.getInt32(2), index});
+                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
+                break;
+            }
             case OpCodes::IAnd:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1175,7 +1184,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateAnd(lhs, rhs));
                 break;
             }
-            // TODO: IAStore
+            case OpCodes::IAStore:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
+                                              {builder.getInt32(0), builder.getInt32(2), index});
+                builder.CreateStore(value, gep);
+
+                break;
+            }
             case OpCodes::IConstM1:
             {
                 operandStack.push_back(builder.getInt32(-1));
@@ -1748,7 +1768,106 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 break;
             }
-            // TODO: NewArray
+            case OpCodes::NewArray:
+            {
+
+                enum class ArrayType : std::uint8_t
+                {
+                    TBoolean = 4,
+                    TChar = 5,
+                    TFloat = 6,
+                    TDouble = 7,
+                    TByte = 8,
+                    TShort = 9,
+                    TInt = 10,
+                    TLong = 11
+                };
+
+                auto type = consume<ArrayType>(current);
+                llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+
+                auto resolveTypeDescriptor = [](ArrayType type) -> llvm::StringRef {
+                    switch (type)
+                    {
+                        case ArrayType::TBoolean:
+                            return "Z";
+                        case ArrayType::TChar:
+                            return "C";
+                        case ArrayType::TFloat:
+                            return "F";
+                        case ArrayType::TDouble:
+                            return "D";
+                        case ArrayType::TByte:
+                            return "B";
+                        case ArrayType::TShort:
+                            return "S";
+                        case ArrayType::TInt:
+                            return "I";
+                        default:
+                            return "J";
+                    }
+                };
+
+                auto resolveTypeSize = [](ArrayType type) {
+                    switch(type)
+                    {
+                        case ArrayType::TBoolean:
+                        case ArrayType::TChar:
+                        case ArrayType::TByte:
+                            return sizeof(std::uint8_t);
+                        case ArrayType::TShort:
+                            return sizeof(std::uint16_t);
+                        case ArrayType::TInt:
+                            return sizeof(std::uint32_t);
+                        case ArrayType::TFloat:
+                            return sizeof(float);
+                        case ArrayType::TDouble:
+                            return sizeof(double);
+                        default:
+                            return sizeof(std::uint64_t);
+                    }
+                };
+
+                auto resolveElementType = [&builder](ArrayType type) -> llvm::Type * {
+                    switch(type)
+                    {
+                        case ArrayType::TBoolean:
+                        case ArrayType::TChar:
+                        case ArrayType::TByte:
+                            return builder.getInt8Ty();
+                        case ArrayType::TShort:
+                            return builder.getInt16Ty();
+                        case ArrayType::TInt:
+                            return builder.getInt32Ty();
+                        case ArrayType::TFloat:
+                            return builder.getFloatTy();
+                        case ArrayType::TDouble:
+                            return builder.getDoubleTy();
+                        default:
+                            return builder.getInt64Ty();
+                    }
+                };
+
+                llvm::Value* classObject = helper.getClassObject(
+                    builder, "[" + resolveTypeDescriptor(type));
+
+                // Size required is the size of the array prior to the elements (equal to the offset to the elements)
+                // plus element count * element size.
+                llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
+                bytesNeeded =
+                    builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(resolveTypeSize(type))));
+
+                // Type object.
+                llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+                builder.CreateStore(classObject, object);
+                // Array length.
+                auto* gep = builder.CreateGEP(arrayStructType(resolveElementType(type)), object,
+                                              {builder.getInt32(0), builder.getInt32(1)});
+                builder.CreateStore(count, gep);
+
+                operandStack.push_back(object);
+                break;
+            }
             // TODO: Nop
             case OpCodes::Pop:
             {
