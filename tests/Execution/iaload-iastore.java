@@ -21,5 +21,7 @@ class Test
         print(arr[2]);
         // CHECK: -10
         print(arr[3]);
+        // CHECK: 4
+        print(arr.length);
     }
 }
