@@ -1,6 +1,7 @@
 #include "ByteCodeCompileLayer.hpp"
 
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/Debug.h>
 
 #include <jllvm/class/Descriptors.hpp>
@@ -99,7 +100,7 @@ void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<l
 /// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' and
 /// 'zeroext' attribute we tell LLVM that if due to ABI, it has to extend these registers, which extension to use.
 /// This attribute list can be applied to either a call or a function itself.
-llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::MethodType& methodType)
+llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::MethodType& methodType, bool isStatic)
 {
     llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.parameters.size());
     for (auto&& [param, attrs] : llvm::zip(methodType.parameters, paramAttrs))
@@ -118,7 +119,10 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::Me
         retAttrs =
             retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
     }
-
+    if (!isStatic)
+    {
+        paramAttrs.insert(paramAttrs.begin(), llvm::AttributeSet().addAttribute(context, llvm::Attribute::NonNull));
+    }
     return llvm::AttributeList::get(context, llvm::AttributeSet{}, retAttrs, paramAttrs);
 }
 
@@ -1506,7 +1510,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1545,7 +1549,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 prepareArgumentsForCall(builder, args, functionType);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, isStatic));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1587,7 +1591,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor));
+                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1989,6 +1993,13 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
+
+#ifndef NDEBUG
+    if (llvm::verifyModule(*module, &llvm::dbgs()))
+    {
+        std::abort();
+    }
+#endif
 
     m_baseLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
 }
