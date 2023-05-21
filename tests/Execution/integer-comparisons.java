@@ -3,7 +3,7 @@
 
 class Test
 {
-    public static native void print(int i);
+    public static native void print(boolean b);
 
     public static void main(String[] args)
     {
@@ -13,282 +13,86 @@ class Test
 
         // ifne
         //CHECK: 0
-        if (y == 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y == 0);
         //CHECK: 1
-        if (z == 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(z == 0);
 
         //ifeq
         //CHECK: 1
-        if (y != 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y != 0);
         //CHECK: 0
-        if (z != 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(z != 0);
 
         //iflt
         //CHECK: 1
-        if (x >= 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x >= 0);
         //CHECK: 0
-        if (y >= 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y >= 0);
 
         //ifge
         //CHECK: 1
-        if (y < 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y < 0);
         //CHECK: 0
-        if (x < 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x < 0);
 
         //ifgt
         //CHECK: 1
-        if (y <= 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y <= 0);
         //CHECK: 0
-        if (x <= 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x <= 0);
 
         //ifle
         //CHECK: 1
-        if (x > 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x > 0);
         //CHECK: 0
-        if (y > 0)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y > 0);
 
         //ificmpge
         //CHECK: 1
-        if (y < x)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y < x);
         //CHECK: 0
-        if (x < y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x < y);
 
         //ificmpeq
         //CHECK: 1
-        if (x != y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x != y);
         //CHECK: 0
-        if (x != 5)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x != 5);
 
         //ificmpne
         //CHECK: 1
-        if (x == 5)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x == 5);
         //CHECK: 0
-        if (x == y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x == y);
 
         //ificmplt
         //CHECK: 1
-        if (x >= y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x >= y);
         //CHECK: 0
-        if (y >= x)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y >= x);
 
         //ificmpgt
         //CHECK: 1
-        if (y <= x)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y <= x);
         //CHECK: 0
-        if (x <= y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x <= y);
 
         //ificmple
         //CHECK: 1
-        if (x > y)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(x > y);
         //CHECK: 0
-        if (y > x)
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print(y > x);
 
         //ifacmpeq
         //CHECK: 1
-        if ("a" != "b")
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print("a" != "b");
         //CHECK: 0
-        if ("a" != "a")
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print("a" != "a");
 
         //ifacmpne
         //CHECK: 1
-        if ("a" == "a")
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print("a" == "a");
         //CHECK: 0
-        if ("a" == "b")
-        {
-            print(1);
-        }
-        else
-        {
-            print(0);
-        }
+        print("a" == "b");
     }
 }

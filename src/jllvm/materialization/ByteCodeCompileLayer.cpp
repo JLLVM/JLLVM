@@ -955,8 +955,39 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             // TODO: FALoad
             // TODO: FAStore
-            // TODO: FCmpG
-            // TODO: FCmpL
+            case OpCodes::FCmpG:
+            case OpCodes::FCmpL:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+
+                llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
+                llvm::Value* otherCmp;
+                llvm::Value* defaultCase;
+
+                switch (opCode)
+                {
+                    default: llvm_unreachable("Invalid comparison operation");
+                    case OpCodes::FCmpG:
+                    {
+                        notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
+                        otherCmp = builder.CreateFCmpOLT(lhs, rhs);
+                        defaultCase = builder.getInt32(-1);
+                        break;
+                    }
+                    case OpCodes::FCmpL:
+                    {
+                        notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
+                        otherCmp = builder.CreateFCmpOGT(lhs, rhs);
+                        defaultCase = builder.getInt32(1);
+                        break;
+                    }
+                }
+
+                operandStack.push_back(builder.CreateSelect(otherCmp, defaultCase, notEqual));
+
+                break;
+            }
             case OpCodes::FConst0:
             {
                 operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 0.0));
