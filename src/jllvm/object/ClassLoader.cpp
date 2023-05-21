@@ -210,13 +210,13 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
 
     if (classFile.isInterface())
     {
-        result = ClassObject::createInterface(m_classAllocator, m_interfaceIdCounter++, methods, fields, interfaces,
-                                              className);
+        result = ClassObject::createInterface(m_classAllocator, m_metaClassObject, m_interfaceIdCounter++, methods,
+                                              fields, interfaces, className);
     }
     else
     {
-        result = ClassObject::create(m_classAllocator, vTableAssignment.vTableCount, instanceSize, methods, fields,
-                                     interfaces, className, superClass);
+        result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.vTableCount, instanceSize,
+                                     methods, fields, interfaces, className, superClass);
     }
     m_mapping.insert({("L" + className + ";").str(), result});
 
@@ -263,7 +263,7 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescripto
     std::size_t arrayTypesCount = classNameRef.size() - arrayTypesRemoved.size();
     for (std::size_t i = 1; i <= arrayTypesCount; i++)
     {
-        curr = ClassObject::createArray(m_classAllocator, curr, m_stringSaver);
+        curr = ClassObject::createArray(m_classAllocator, m_metaClassObject, curr, m_stringSaver);
         // We are moving from right to left in the array type name, therefore always stripping one less array type
         // descriptor ('['), from the class name.
         m_mapping.insert({classNameRef.drop_front(arrayTypesCount - i), curr});
@@ -291,7 +291,8 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor, Sta
         if (twineStorage.front() == '[')
         {
             const ClassObject& componentType = forName(llvm::StringRef(twineStorage).drop_front());
-            ClassObject* arrayType = ClassObject::createArray(m_classAllocator, &componentType, m_stringSaver);
+            ClassObject* arrayType =
+                ClassObject::createArray(m_classAllocator, m_metaClassObject, &componentType, m_stringSaver);
             m_mapping.insert({twineStorage, arrayType});
             return *arrayType;
         }
@@ -357,4 +358,20 @@ const jllvm::ClassObject& jllvm::ClassLoader::addAndInitialize(std::unique_ptr<l
     ClassObject& classObject = add(std::move(memoryBuffer));
     m_initializeClassObject(&classObject);
     return classObject;
+}
+
+void jllvm::ClassLoader::loadBootstrapClasses()
+{
+    // Loading in a prepared state only to avoid running the initializer (just to be safe).
+    m_metaClassObject = &forName("Ljava/lang/Class;", State::Prepared);
+
+    // With the meta class object loaded we can update all so far loaded class objects to be of type 'Class'.
+    // This includes 'Class' itself.
+    for (ClassObject* classObject : llvm::make_second_range(m_mapping))
+    {
+        classObject->getObjectHeader().classObject = m_metaClassObject;
+    }
+
+    // Initialize it with the now "more defined" state.
+    initialize(*m_metaClassObject);
 }

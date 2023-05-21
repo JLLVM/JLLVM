@@ -1696,6 +1696,20 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                             builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
                                                    referenceType(builder.getContext())));
                     },
+                    [&](const ClassInfo* classInfo)
+                    {
+                        llvm::StringRef text = classInfo->nameIndex.resolve(classFile)->text;
+                        llvm::Value* classObject;
+                        if (text.front() == '[')
+                        {
+                            classObject = helper.getClassObject(builder, text);
+                        }
+                        else
+                        {
+                            classObject = helper.getClassObject(builder, "L" + text + ";");
+                        }
+                        operandStack.push_back(classObject);
+                    },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
 
                 break;

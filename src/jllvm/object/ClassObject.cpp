@@ -13,9 +13,9 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 }
 } // namespace
 
-jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, std::size_t vTableSlots,
-                                               std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                                               llvm::ArrayRef<Field> fields,
+jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                                               std::size_t vTableSlots, std::uint32_t fieldAreaSize,
+                                               llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className,
                                                const jllvm::ClassObject* superClass)
 {
@@ -34,18 +34,19 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 
     auto* result =
         new (allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(vTableSlots), alignof(ClassObject)))
-            ClassObject(fieldAreaSize, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
+            ClassObject(metaClass, fieldAreaSize, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
                         arrayRefAlloc(allocator, interfaces), arrayRefAlloc(allocator, iTables), className, superClass);
     // Zero out vTable.
     std::memset(result->getVTable(), 0, vTableSlots * sizeof(VTableSlot));
     return result;
 }
 
-jllvm::ClassObject::ClassObject(std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
-                                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className,
-                                const jllvm::ClassObject* superClass)
-    : m_fieldAreaSize(fieldAreaSize),
+jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize,
+                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
+                                llvm::ArrayRef<const ClassObject*> interfaces, llvm::ArrayRef<ITable*> iTables,
+                                llvm::StringRef className, const jllvm::ClassObject* superClass)
+    : m_objectHeader(metaClass),
+      m_fieldAreaSize(fieldAreaSize),
       m_methods(methods),
       m_fields(fields),
       m_interfaces(interfaces),
@@ -55,8 +56,8 @@ jllvm::ClassObject::ClassObject(std::int32_t fieldAreaSize, llvm::ArrayRef<Metho
 {
 }
 
-jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* componentType,
-                                                    llvm::StringSaver& stringSaver)
+jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                                                    const ClassObject* componentType, llvm::StringSaver& stringSaver)
 {
     std::uint32_t arrayFieldAreaSize = sizeof(std::uint32_t);
     // Account for padding inbetween 'length' and the elements after.
@@ -69,16 +70,16 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         arrayFieldAreaSize = llvm::alignTo(arrayFieldAreaSize, sizeof(void*));
     }
 
-    auto* result = create(allocator, 0, arrayFieldAreaSize, {}, {}, {},
+    auto* result = create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
                           stringSaver.save("[L" + componentType->getClassName() + ";"), nullptr);
-    result->m_componentTypeAndIsPrimitive.setPointer(componentType);
+    result->m_componentType = componentType;
     return result;
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(instanceSize - sizeof(void*), {}, {}, {}, {}, name, nullptr)
+    : ClassObject(nullptr, instanceSize - sizeof(void*), {}, {}, {}, {}, name, nullptr)
 {
-    m_componentTypeAndIsPrimitive.setInt(true);
+    m_isPrimitive = true; // NOLINT(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
 }
 
 const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm::StringRef fieldType,
@@ -97,9 +98,11 @@ const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm
     return nullptr;
 }
 
-jllvm::ClassObject::ClassObject(std::size_t interfaceId, llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className)
-    : m_fieldAreaSize(0),
+jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
+                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                                llvm::StringRef className)
+    : m_objectHeader(metaClass),
+      m_fieldAreaSize(0),
       m_methods(methods),
       m_fields(fields),
       m_interfaces(interfaces),
@@ -108,13 +111,14 @@ jllvm::ClassObject::ClassObject(std::size_t interfaceId, llvm::ArrayRef<Method> 
 {
 }
 
-jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& allocator, std::size_t interfaceId,
-                                                        llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
+jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                                                        std::size_t interfaceId, llvm::ArrayRef<Method> methods,
+                                                        llvm::ArrayRef<Field> fields,
                                                         llvm::ArrayRef<const ClassObject*> interfaces,
                                                         llvm::StringRef className)
 {
     return new (allocator.Allocate<ClassObject>())
-        ClassObject(interfaceId, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
+        ClassObject(metaClass, interfaceId, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
                     arrayRefAlloc(allocator, interfaces), className);
 }
 
