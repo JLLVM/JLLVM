@@ -20,14 +20,14 @@ class Test
             is[i] = new Test(i);
         }
 
-	// Something random inbetween, maybe GCs.
-	new Object();
+        // Something random inbetween, maybe GCs.
+        new Object();
 
-        for (int i = 0; i < 3; i++)
-        {
-            print(is[i].value);
-        }
-	print(is.length);
+            for (int i = 0; i < 3; i++)
+            {
+                print(is[i].value);
+            }
+        print(is.length);
     }
 }
 

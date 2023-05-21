@@ -955,8 +955,48 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             // TODO: FALoad
             // TODO: FAStore
-            // TODO: FCmpG
-            // TODO: FCmpL
+            case OpCodes::FCmpG:
+            case OpCodes::FCmpL:
+            {
+                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
+
+                // using unordered compare to allow for NaNs
+                // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
+                llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
+                llvm::Value* otherCmp;
+                llvm::Value* otherCase;
+
+                switch (opCode)
+                {
+                    default: llvm_unreachable("Invalid comparison operation");
+                    case OpCodes::FCmpG:
+                    {
+                        // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
+                        notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
+                        // using ordered less than to check lhs < rhs
+                        otherCmp = builder.CreateFCmpOLT(lhs, rhs);
+                        // return -1 if lhs < rhs
+                        otherCase = builder.getInt32(-1);
+                        break;
+                    }
+                    case OpCodes::FCmpL:
+                    {
+                        // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
+                        notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
+                        // using ordered greater than to check lhs > rhs
+                        otherCmp = builder.CreateFCmpOGT(lhs, rhs);
+                        // return -1 if lhs > rhs
+                        otherCase = builder.getInt32(1);
+                        break;
+                    }
+                }
+
+                // select the non-default or the 0-or-default value based on the result of otherCmp
+                operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
+
+                break;
+            }
             case OpCodes::FConst0:
             {
                 operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 0.0));
@@ -1784,7 +1824,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::NewArray:
             {
-
                 enum class ArrayType : std::uint8_t
                 {
                     TBoolean = 4,
@@ -1800,70 +1839,52 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto type = consume<ArrayType>(current);
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
-                auto resolveTypeDescriptor = [](ArrayType type) -> llvm::StringRef {
+                auto resolveTypeDescriptor = [](ArrayType type) -> llvm::StringRef
+                {
+                    switch (type)
+                    {
+                        case ArrayType::TBoolean: return "Z";
+                        case ArrayType::TChar: return "C";
+                        case ArrayType::TFloat: return "F";
+                        case ArrayType::TDouble: return "D";
+                        case ArrayType::TByte: return "B";
+                        case ArrayType::TShort: return "S";
+                        case ArrayType::TInt: return "I";
+                        default: return "J";
+                    }
+                };
+
+                auto resolveTypeSize = [](ArrayType type)
+                {
                     switch (type)
                     {
                         case ArrayType::TBoolean:
-                            return "Z";
                         case ArrayType::TChar:
-                            return "C";
-                        case ArrayType::TFloat:
-                            return "F";
-                        case ArrayType::TDouble:
-                            return "D";
-                        case ArrayType::TByte:
-                            return "B";
-                        case ArrayType::TShort:
-                            return "S";
-                        case ArrayType::TInt:
-                            return "I";
-                        default:
-                            return "J";
+                        case ArrayType::TByte: return sizeof(std::uint8_t);
+                        case ArrayType::TShort: return sizeof(std::uint16_t);
+                        case ArrayType::TInt: return sizeof(std::uint32_t);
+                        case ArrayType::TFloat: return sizeof(float);
+                        case ArrayType::TDouble: return sizeof(double);
+                        default: return sizeof(std::uint64_t);
                     }
                 };
 
-                auto resolveTypeSize = [](ArrayType type) {
-                    switch(type)
+                auto resolveElementType = [&builder](ArrayType type) -> llvm::Type*
+                {
+                    switch (type)
                     {
                         case ArrayType::TBoolean:
                         case ArrayType::TChar:
-                        case ArrayType::TByte:
-                            return sizeof(std::uint8_t);
-                        case ArrayType::TShort:
-                            return sizeof(std::uint16_t);
-                        case ArrayType::TInt:
-                            return sizeof(std::uint32_t);
-                        case ArrayType::TFloat:
-                            return sizeof(float);
-                        case ArrayType::TDouble:
-                            return sizeof(double);
-                        default:
-                            return sizeof(std::uint64_t);
+                        case ArrayType::TByte: return builder.getInt8Ty();
+                        case ArrayType::TShort: return builder.getInt16Ty();
+                        case ArrayType::TInt: return builder.getInt32Ty();
+                        case ArrayType::TFloat: return builder.getFloatTy();
+                        case ArrayType::TDouble: return builder.getDoubleTy();
+                        default: return builder.getInt64Ty();
                     }
                 };
 
-                auto resolveElementType = [&builder](ArrayType type) -> llvm::Type * {
-                    switch(type)
-                    {
-                        case ArrayType::TBoolean:
-                        case ArrayType::TChar:
-                        case ArrayType::TByte:
-                            return builder.getInt8Ty();
-                        case ArrayType::TShort:
-                            return builder.getInt16Ty();
-                        case ArrayType::TInt:
-                            return builder.getInt32Ty();
-                        case ArrayType::TFloat:
-                            return builder.getFloatTy();
-                        case ArrayType::TDouble:
-                            return builder.getDoubleTy();
-                        default:
-                            return builder.getInt64Ty();
-                    }
-                };
-
-                llvm::Value* classObject = helper.getClassObject(
-                    builder, "[" + resolveTypeDescriptor(type));
+                llvm::Value* classObject = helper.getClassObject(builder, "[" + resolveTypeDescriptor(type));
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the elements)
                 // plus element count * element size.
