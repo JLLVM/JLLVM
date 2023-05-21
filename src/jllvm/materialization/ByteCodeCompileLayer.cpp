@@ -953,8 +953,33 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.push_back(builder.CreateFAdd(lhs, rhs));
                 break;
             }
-            // TODO: FALoad
-            // TODO: FAStore
+            case OpCodes::FALoad:
+            {
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
+                                              {builder.getInt32(0), builder.getInt32(2), index});
+
+                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), gep));
+                break;
+            }
+            case OpCodes::FAStore:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
+                                              {builder.getInt32(0), builder.getInt32(2), index});
+                builder.CreateStore(value, gep);
+
+                break;
+            }
             case OpCodes::FCmpG:
             case OpCodes::FCmpL:
             {
@@ -1210,8 +1235,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IALoad:
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
                 auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
@@ -1228,8 +1255,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
                 auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
