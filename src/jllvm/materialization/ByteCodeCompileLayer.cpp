@@ -722,10 +722,21 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: Dup2
             // TODO: Dup2X1
             // TODO: Dup2X2
+            case OpCodes::F2D:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+                operandStack.push_back(builder.CreateFPExt(value, builder.getDoubleTy()));
+                break;
+            }
+            case OpCodes::F2I:
+            case OpCodes::F2L:
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+                llvm::Type* type = opCode == OpCodes::F2I ? builder.getInt32Ty() : builder.getInt64Ty();
 
-            // TODO: F2D
-            // TODO: F2I
-            // TODO: F2L
+                operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
+                break;
+            }
             case OpCodes::FAdd:
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
