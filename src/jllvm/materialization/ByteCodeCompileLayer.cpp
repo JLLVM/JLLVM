@@ -1112,6 +1112,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             case OpCodes::IfGe:
             case OpCodes::IfGt:
             case OpCodes::IfLe:
+            case OpCodes::IfNonNull:
+            case OpCodes::IfNull:
             {
                 auto target = consume<std::int16_t>(current);
                 llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
@@ -1153,6 +1155,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                         lhs = operandStack.pop_back(builder.getInt32Ty());
                         break;
                     }
+                    case OpCodes::IfNonNull:
+                    case OpCodes::IfNull:
+                    {
+                        lhs = operandStack.pop_back(referenceType(builder.getContext()));
+                        rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
+                        break;
+                    }
                 }
 
                 switch (opCode)
@@ -1161,6 +1170,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     case OpCodes::IfACmpEq:
                     case OpCodes::IfICmpEq:
                     case OpCodes::IfEq:
+                    case OpCodes::IfNull:
                     {
                         predicate = llvm::CmpInst::ICMP_EQ;
                         break;
@@ -1168,6 +1178,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     case OpCodes::IfACmpNe:
                     case OpCodes::IfICmpNe:
                     case OpCodes::IfNe:
+                    case OpCodes::IfNonNull:
                     {
                         predicate = llvm::CmpInst::ICMP_NE;
                         break;
