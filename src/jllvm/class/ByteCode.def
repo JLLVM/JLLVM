@@ -1,12 +1,12 @@
 #ifndef GENERATE_SELECTOR
-    #error GENERATE_SELECTOR(name, base, body, parser) has to be defined to include this file
+    #error GENERATE_SELECTOR(name, base, body, parser, size) has to be defined to include this file
 #endif
 
 #ifndef GENERATE_SELECTOR_END
-    #error GENERATE_SELECTOR_END(name, base, body, parser) has to be defined to include this file
+    #error GENERATE_SELECTOR_END(name, base, body, parser, size) has to be defined to include this file
 #endif
 
-#define SINGLETON_OP(name) GENERATE_SELECTOR(name, SingletonOp, {}, parseSingleton)
+#define SINGLETON_OP(name) GENERATE_SELECTOR(name, SingletonOp, {}, parseSingleton, 1)
 
 SINGLETON_OP(AALoad)
 SINGLETON_OP(AAStore)
@@ -156,7 +156,7 @@ SINGLETON_OP(SALoad)
 SINGLETON_OP(SAStore)
 SINGLETON_OP(Swap)
 
-#define LOCAL_INDEX_OP(name) GENERATE_SELECTOR(name, LocalIndexedOp, {}, parseLocalIndexed)
+#define LOCAL_INDEX_OP(name) GENERATE_SELECTOR(name, LocalIndexedOp, {}, parseLocalIndexed, 2)
 
 LOCAL_INDEX_OP(ALoad)
 LOCAL_INDEX_OP(AStore)
@@ -170,16 +170,17 @@ LOCAL_INDEX_OP(LLoad)
 LOCAL_INDEX_OP(LStore)
 LOCAL_INDEX_OP(Ret)
 
-#define POOL_INDEX_OP(name) GENERATE_SELECTOR(name, PoolIndexedOp, {}, parsePoolIndexed)
+#define POOL_INDEX_OP(name) GENERATE_SELECTOR(name, PoolIndexedOp, {}, parsePoolIndexed, 3)
+#define POOL_INDEX_SPECIAL_OP(name, size) GENERATE_SELECTOR(name, PoolIndexedOp, {}, parsePoolIndexed, size)
 
-POOL_INDEX_OP(LDC)
+POOL_INDEX_SPECIAL_OP(LDC, 2)
 POOL_INDEX_OP(ANewArray)
 POOL_INDEX_OP(CheckCast)
 POOL_INDEX_OP(GetField)
 POOL_INDEX_OP(GetStatic)
 POOL_INDEX_OP(InstanceOf)
-POOL_INDEX_OP(InvokeDynamic)
-POOL_INDEX_OP(InvokeInterface)
+POOL_INDEX_SPECIAL_OP(InvokeDynamic, 5)
+POOL_INDEX_SPECIAL_OP(InvokeInterface, 5)
 POOL_INDEX_OP(InvokeSpecial)
 POOL_INDEX_OP(InvokeStatic)
 POOL_INDEX_OP(InvokeVirtual)
@@ -189,10 +190,11 @@ POOL_INDEX_OP(New)
 POOL_INDEX_OP(PutField)
 POOL_INDEX_OP(PutStatic)
 
-#define BRANCH_OFFSET_OP(name) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset)
+#define BRANCH_OFFSET_OP(name) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset, 3)
+#define BRANCH_OFFSET_SPECIAL_OP(name, size) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset, size)
 
 BRANCH_OFFSET_OP(Goto)
-BRANCH_OFFSET_OP(GotoW)
+BRANCH_OFFSET_SPECIAL_OP(GotoW, 5)
 BRANCH_OFFSET_OP(IfACmpEq)
 BRANCH_OFFSET_OP(IfACmpNe)
 BRANCH_OFFSET_OP(IfICmpEq)
@@ -210,24 +212,24 @@ BRANCH_OFFSET_OP(IfLe)
 BRANCH_OFFSET_OP(IfNonNull)
 BRANCH_OFFSET_OP(IfNull)
 BRANCH_OFFSET_OP(JSR)
-BRANCH_OFFSET_OP(JSRw)
+BRANCH_OFFSET_SPECIAL_OP(JSRw, 5)
 
 GENERATE_SELECTOR(
-    BIPush, ByteCodeBase, { std::int8_t value{}; }, parseBIPush)
-GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray)
+    BIPush, ByteCodeBase, { std::int8_t value{}; }, parseBIPush, 2)
+GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray, 2)
 GENERATE_SELECTOR(
     IInc, ByteCodeBase,
     {
         std::uint8_t index{};
         std::int8_t byte{};
     },
-    parseIInc)
+    parseIIncm, 3)
 GENERATE_SELECTOR(
-    SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush)
-GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented)
-GENERATE_SELECTOR(MultiANewArray, ByteCodeBase, {/* TODO */}, parseNotImplemented)
-GENERATE_SELECTOR(TableSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented)
-GENERATE_SELECTOR_END(Wide, ByteCodeBase, {/* TODO */}, parseNotImplemented)
+    SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush, 3)
+GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, lookupSwitchSize(m_current))
+GENERATE_SELECTOR(MultiANewArray, ByteCodeBase, {/* TODO */}, parseNotImplemented, 4)
+GENERATE_SELECTOR(TableSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, tableSwitchSize(m_current))
+GENERATE_SELECTOR_END(Wide, ByteCodeBase, {/* TODO */}, parseNotImplemented, wideSize(m_current))
 
 #undef BRANCH_OFFSET_OP
 #undef POOL_INDEX_OP

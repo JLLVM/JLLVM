@@ -3,10 +3,10 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/iterator.h>
 
+#include <jllvm/support/Variant.hpp>
+
 #include <cstdint>
 #include <variant>
-
-#include "jllvm/support/Variant.hpp"
 
 namespace jllvm
 {
@@ -259,13 +259,13 @@ struct ArrayOp : ByteCodeBase
     ArrayType atype{};
 };
 
-#define GENERATE_SELECTOR(name, base, body, parser) struct name : base body;
-#define GENERATE_SELECTOR_END(name, base, body, parser) struct name : base body;
+#define GENERATE_SELECTOR(name, base, body, parser, size) struct name : base body;
+#define GENERATE_SELECTOR_END(name, base, body, parser, size) struct name : base body;
 #include "ByteCode.def"
 
 using ByteCodeOp = std::variant<
-#define GENERATE_SELECTOR(name, base, body, parser) name,
-#define GENERATE_SELECTOR_END(name, base, body, parser) name
+#define GENERATE_SELECTOR(name, base, body, parser, size) name,
+#define GENERATE_SELECTOR_END(name, base, body, parser, size) name
 #include "ByteCode.def"
     >;
 

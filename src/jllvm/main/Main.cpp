@@ -16,7 +16,7 @@ struct TrivialPrinter
 {
     auto operator()(void*, void*, T value)
     {
-        llvm::outs() << sizeof(TrivialPrinter) << ' ' << static_cast<std::ptrdiff_t>(value) << '\n';
+        llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n';
     }
 };
 
