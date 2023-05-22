@@ -5,169 +5,169 @@
 
 #include <jllvm/support/Bytes.hpp>
 
-std::optional<jllvm::SingletonOp> consumeSingleton(llvm::ArrayRef<char> bytes)
+std::optional<jllvm::SingletonOp> consumeSingleton(llvm::ArrayRef<char> bytes, std::size_t currentOffset)
 {
-    auto opCode = static_cast<jllvm::SingletonOp>(bytes.front());
+    auto opCode = static_cast<jllvm::SingletonOpCodes>(bytes.front());
     switch (opCode)
     {
         default:
         {
             return std::nullopt;
         }
-        case jllvm::SingletonOp::AALoad:
-        case jllvm::SingletonOp::AAStore:
-        case jllvm::SingletonOp::AConstNull:
-        case jllvm::SingletonOp::ALoad0:
-        case jllvm::SingletonOp::ALoad1:
-        case jllvm::SingletonOp::ALoad2:
-        case jllvm::SingletonOp::ALoad3:
-        case jllvm::SingletonOp::AReturn:
-        case jllvm::SingletonOp::ArrayLength:
-        case jllvm::SingletonOp::AStore0:
-        case jllvm::SingletonOp::AStore1:
-        case jllvm::SingletonOp::AStore2:
-        case jllvm::SingletonOp::AStore3:
-        case jllvm::SingletonOp::AThrow:
-        case jllvm::SingletonOp::BALoad:
-        case jllvm::SingletonOp::BAStore:
-        case jllvm::SingletonOp::CALoad:
-        case jllvm::SingletonOp::CAStore:
-        case jllvm::SingletonOp::D2F:
-        case jllvm::SingletonOp::D2I:
-        case jllvm::SingletonOp::D2L:
-        case jllvm::SingletonOp::DAdd:
-        case jllvm::SingletonOp::DALoad:
-        case jllvm::SingletonOp::DAStore:
-        case jllvm::SingletonOp::DCmpG:
-        case jllvm::SingletonOp::DCmpL:
-        case jllvm::SingletonOp::DConst0:
-        case jllvm::SingletonOp::DConst1:
-        case jllvm::SingletonOp::DDiv:
-        case jllvm::SingletonOp::DLoad0:
-        case jllvm::SingletonOp::DLoad1:
-        case jllvm::SingletonOp::DLoad2:
-        case jllvm::SingletonOp::DLoad3:
-        case jllvm::SingletonOp::DMul:
-        case jllvm::SingletonOp::DNeg:
-        case jllvm::SingletonOp::DRem:
-        case jllvm::SingletonOp::DReturn:
-        case jllvm::SingletonOp::DStore0:
-        case jllvm::SingletonOp::DStore1:
-        case jllvm::SingletonOp::DStore2:
-        case jllvm::SingletonOp::DStore3:
-        case jllvm::SingletonOp::DSub:
-        case jllvm::SingletonOp::Dup:
-        case jllvm::SingletonOp::DupX1:
-        case jllvm::SingletonOp::DupX2:
-        case jllvm::SingletonOp::Dup2:
-        case jllvm::SingletonOp::Dup2X1:
-        case jllvm::SingletonOp::Dup2X2:
-        case jllvm::SingletonOp::F2D:
-        case jllvm::SingletonOp::F2I:
-        case jllvm::SingletonOp::F2L:
-        case jllvm::SingletonOp::FAdd:
-        case jllvm::SingletonOp::FALoad:
-        case jllvm::SingletonOp::FAStore:
-        case jllvm::SingletonOp::FCmpG:
-        case jllvm::SingletonOp::FCmpL:
-        case jllvm::SingletonOp::FConst0:
-        case jllvm::SingletonOp::FConst1:
-        case jllvm::SingletonOp::FConst2:
-        case jllvm::SingletonOp::FDiv:
-        case jllvm::SingletonOp::FLoad0:
-        case jllvm::SingletonOp::FLoad1:
-        case jllvm::SingletonOp::FLoad2:
-        case jllvm::SingletonOp::FLoad3:
-        case jllvm::SingletonOp::FMul:
-        case jllvm::SingletonOp::FNeg:
-        case jllvm::SingletonOp::FRem:
-        case jllvm::SingletonOp::FReturn:
-        case jllvm::SingletonOp::FStore0:
-        case jllvm::SingletonOp::FStore1:
-        case jllvm::SingletonOp::FStore2:
-        case jllvm::SingletonOp::FStore3:
-        case jllvm::SingletonOp::FSub:
-        case jllvm::SingletonOp::I2B:
-        case jllvm::SingletonOp::I2C:
-        case jllvm::SingletonOp::I2D:
-        case jllvm::SingletonOp::I2F:
-        case jllvm::SingletonOp::I2L:
-        case jllvm::SingletonOp::I2S:
-        case jllvm::SingletonOp::IAdd:
-        case jllvm::SingletonOp::IALoad:
-        case jllvm::SingletonOp::IAnd:
-        case jllvm::SingletonOp::IAStore:
-        case jllvm::SingletonOp::IConstM1:
-        case jllvm::SingletonOp::IConst0:
-        case jllvm::SingletonOp::IConst1:
-        case jllvm::SingletonOp::IConst2:
-        case jllvm::SingletonOp::IConst3:
-        case jllvm::SingletonOp::IConst4:
-        case jllvm::SingletonOp::IConst5:
-        case jllvm::SingletonOp::IDiv:
-        case jllvm::SingletonOp::ILoad0:
-        case jllvm::SingletonOp::ILoad1:
-        case jllvm::SingletonOp::ILoad2:
-        case jllvm::SingletonOp::ILoad3:
-        case jllvm::SingletonOp::IMul:
-        case jllvm::SingletonOp::INeg:
-        case jllvm::SingletonOp::IOr:
-        case jllvm::SingletonOp::IRem:
-        case jllvm::SingletonOp::IReturn:
-        case jllvm::SingletonOp::IShl:
-        case jllvm::SingletonOp::IShr:
-        case jllvm::SingletonOp::IStore0:
-        case jllvm::SingletonOp::IStore1:
-        case jllvm::SingletonOp::IStore2:
-        case jllvm::SingletonOp::IStore3:
-        case jllvm::SingletonOp::ISub:
-        case jllvm::SingletonOp::IUShr:
-        case jllvm::SingletonOp::IXor:
-        case jllvm::SingletonOp::L2D:
-        case jllvm::SingletonOp::L2F:
-        case jllvm::SingletonOp::L2I:
-        case jllvm::SingletonOp::LAdd:
-        case jllvm::SingletonOp::LALoad:
-        case jllvm::SingletonOp::LAnd:
-        case jllvm::SingletonOp::LAStore:
-        case jllvm::SingletonOp::LCmp:
-        case jllvm::SingletonOp::LConst0:
-        case jllvm::SingletonOp::LConst1:
-        case jllvm::SingletonOp::LDiv:
-        case jllvm::SingletonOp::LLoad0:
-        case jllvm::SingletonOp::LLoad1:
-        case jllvm::SingletonOp::LLoad2:
-        case jllvm::SingletonOp::LLoad3:
-        case jllvm::SingletonOp::LMul:
-        case jllvm::SingletonOp::LNeg:
-        case jllvm::SingletonOp::LOr:
-        case jllvm::SingletonOp::LRem:
-        case jllvm::SingletonOp::LReturn:
-        case jllvm::SingletonOp::LShl:
-        case jllvm::SingletonOp::LShr:
-        case jllvm::SingletonOp::LStore0:
-        case jllvm::SingletonOp::LStore1:
-        case jllvm::SingletonOp::LStore2:
-        case jllvm::SingletonOp::LStore3:
-        case jllvm::SingletonOp::LSub:
-        case jllvm::SingletonOp::LUShr:
-        case jllvm::SingletonOp::LXor:
-        case jllvm::SingletonOp::MonitorEnter:
-        case jllvm::SingletonOp::MonitorExit:
-        case jllvm::SingletonOp::Nop:
-        case jllvm::SingletonOp::Pop:
-        case jllvm::SingletonOp::Pop2:
-        case jllvm::SingletonOp::Return:
-        case jllvm::SingletonOp::SALoad:
-        case jllvm::SingletonOp::SAStore:
-        case jllvm::SingletonOp::Swap:
+        case jllvm::SingletonOpCodes::AALoad:
+        case jllvm::SingletonOpCodes::AAStore:
+        case jllvm::SingletonOpCodes::AConstNull:
+        case jllvm::SingletonOpCodes::ALoad0:
+        case jllvm::SingletonOpCodes::ALoad1:
+        case jllvm::SingletonOpCodes::ALoad2:
+        case jllvm::SingletonOpCodes::ALoad3:
+        case jllvm::SingletonOpCodes::AReturn:
+        case jllvm::SingletonOpCodes::ArrayLength:
+        case jllvm::SingletonOpCodes::AStore0:
+        case jllvm::SingletonOpCodes::AStore1:
+        case jllvm::SingletonOpCodes::AStore2:
+        case jllvm::SingletonOpCodes::AStore3:
+        case jllvm::SingletonOpCodes::AThrow:
+        case jllvm::SingletonOpCodes::BALoad:
+        case jllvm::SingletonOpCodes::BAStore:
+        case jllvm::SingletonOpCodes::CALoad:
+        case jllvm::SingletonOpCodes::CAStore:
+        case jllvm::SingletonOpCodes::D2F:
+        case jllvm::SingletonOpCodes::D2I:
+        case jllvm::SingletonOpCodes::D2L:
+        case jllvm::SingletonOpCodes::DAdd:
+        case jllvm::SingletonOpCodes::DALoad:
+        case jllvm::SingletonOpCodes::DAStore:
+        case jllvm::SingletonOpCodes::DCmpG:
+        case jllvm::SingletonOpCodes::DCmpL:
+        case jllvm::SingletonOpCodes::DConst0:
+        case jllvm::SingletonOpCodes::DConst1:
+        case jllvm::SingletonOpCodes::DDiv:
+        case jllvm::SingletonOpCodes::DLoad0:
+        case jllvm::SingletonOpCodes::DLoad1:
+        case jllvm::SingletonOpCodes::DLoad2:
+        case jllvm::SingletonOpCodes::DLoad3:
+        case jllvm::SingletonOpCodes::DMul:
+        case jllvm::SingletonOpCodes::DNeg:
+        case jllvm::SingletonOpCodes::DRem:
+        case jllvm::SingletonOpCodes::DReturn:
+        case jllvm::SingletonOpCodes::DStore0:
+        case jllvm::SingletonOpCodes::DStore1:
+        case jllvm::SingletonOpCodes::DStore2:
+        case jllvm::SingletonOpCodes::DStore3:
+        case jllvm::SingletonOpCodes::DSub:
+        case jllvm::SingletonOpCodes::Dup:
+        case jllvm::SingletonOpCodes::DupX1:
+        case jllvm::SingletonOpCodes::DupX2:
+        case jllvm::SingletonOpCodes::Dup2:
+        case jllvm::SingletonOpCodes::Dup2X1:
+        case jllvm::SingletonOpCodes::Dup2X2:
+        case jllvm::SingletonOpCodes::F2D:
+        case jllvm::SingletonOpCodes::F2I:
+        case jllvm::SingletonOpCodes::F2L:
+        case jllvm::SingletonOpCodes::FAdd:
+        case jllvm::SingletonOpCodes::FALoad:
+        case jllvm::SingletonOpCodes::FAStore:
+        case jllvm::SingletonOpCodes::FCmpG:
+        case jllvm::SingletonOpCodes::FCmpL:
+        case jllvm::SingletonOpCodes::FConst0:
+        case jllvm::SingletonOpCodes::FConst1:
+        case jllvm::SingletonOpCodes::FConst2:
+        case jllvm::SingletonOpCodes::FDiv:
+        case jllvm::SingletonOpCodes::FLoad0:
+        case jllvm::SingletonOpCodes::FLoad1:
+        case jllvm::SingletonOpCodes::FLoad2:
+        case jllvm::SingletonOpCodes::FLoad3:
+        case jllvm::SingletonOpCodes::FMul:
+        case jllvm::SingletonOpCodes::FNeg:
+        case jllvm::SingletonOpCodes::FRem:
+        case jllvm::SingletonOpCodes::FReturn:
+        case jllvm::SingletonOpCodes::FStore0:
+        case jllvm::SingletonOpCodes::FStore1:
+        case jllvm::SingletonOpCodes::FStore2:
+        case jllvm::SingletonOpCodes::FStore3:
+        case jllvm::SingletonOpCodes::FSub:
+        case jllvm::SingletonOpCodes::I2B:
+        case jllvm::SingletonOpCodes::I2C:
+        case jllvm::SingletonOpCodes::I2D:
+        case jllvm::SingletonOpCodes::I2F:
+        case jllvm::SingletonOpCodes::I2L:
+        case jllvm::SingletonOpCodes::I2S:
+        case jllvm::SingletonOpCodes::IAdd:
+        case jllvm::SingletonOpCodes::IALoad:
+        case jllvm::SingletonOpCodes::IAnd:
+        case jllvm::SingletonOpCodes::IAStore:
+        case jllvm::SingletonOpCodes::IConstM1:
+        case jllvm::SingletonOpCodes::IConst0:
+        case jllvm::SingletonOpCodes::IConst1:
+        case jllvm::SingletonOpCodes::IConst2:
+        case jllvm::SingletonOpCodes::IConst3:
+        case jllvm::SingletonOpCodes::IConst4:
+        case jllvm::SingletonOpCodes::IConst5:
+        case jllvm::SingletonOpCodes::IDiv:
+        case jllvm::SingletonOpCodes::ILoad0:
+        case jllvm::SingletonOpCodes::ILoad1:
+        case jllvm::SingletonOpCodes::ILoad2:
+        case jllvm::SingletonOpCodes::ILoad3:
+        case jllvm::SingletonOpCodes::IMul:
+        case jllvm::SingletonOpCodes::INeg:
+        case jllvm::SingletonOpCodes::IOr:
+        case jllvm::SingletonOpCodes::IRem:
+        case jllvm::SingletonOpCodes::IReturn:
+        case jllvm::SingletonOpCodes::IShl:
+        case jllvm::SingletonOpCodes::IShr:
+        case jllvm::SingletonOpCodes::IStore0:
+        case jllvm::SingletonOpCodes::IStore1:
+        case jllvm::SingletonOpCodes::IStore2:
+        case jllvm::SingletonOpCodes::IStore3:
+        case jllvm::SingletonOpCodes::ISub:
+        case jllvm::SingletonOpCodes::IUShr:
+        case jllvm::SingletonOpCodes::IXor:
+        case jllvm::SingletonOpCodes::L2D:
+        case jllvm::SingletonOpCodes::L2F:
+        case jllvm::SingletonOpCodes::L2I:
+        case jllvm::SingletonOpCodes::LAdd:
+        case jllvm::SingletonOpCodes::LALoad:
+        case jllvm::SingletonOpCodes::LAnd:
+        case jllvm::SingletonOpCodes::LAStore:
+        case jllvm::SingletonOpCodes::LCmp:
+        case jllvm::SingletonOpCodes::LConst0:
+        case jllvm::SingletonOpCodes::LConst1:
+        case jllvm::SingletonOpCodes::LDiv:
+        case jllvm::SingletonOpCodes::LLoad0:
+        case jllvm::SingletonOpCodes::LLoad1:
+        case jllvm::SingletonOpCodes::LLoad2:
+        case jllvm::SingletonOpCodes::LLoad3:
+        case jllvm::SingletonOpCodes::LMul:
+        case jllvm::SingletonOpCodes::LNeg:
+        case jllvm::SingletonOpCodes::LOr:
+        case jllvm::SingletonOpCodes::LRem:
+        case jllvm::SingletonOpCodes::LReturn:
+        case jllvm::SingletonOpCodes::LShl:
+        case jllvm::SingletonOpCodes::LShr:
+        case jllvm::SingletonOpCodes::LStore0:
+        case jllvm::SingletonOpCodes::LStore1:
+        case jllvm::SingletonOpCodes::LStore2:
+        case jllvm::SingletonOpCodes::LStore3:
+        case jllvm::SingletonOpCodes::LSub:
+        case jllvm::SingletonOpCodes::LUShr:
+        case jllvm::SingletonOpCodes::LXor:
+        case jllvm::SingletonOpCodes::MonitorEnter:
+        case jllvm::SingletonOpCodes::MonitorExit:
+        case jllvm::SingletonOpCodes::Nop:
+        case jllvm::SingletonOpCodes::Pop:
+        case jllvm::SingletonOpCodes::Pop2:
+        case jllvm::SingletonOpCodes::Return:
+        case jllvm::SingletonOpCodes::SALoad:
+        case jllvm::SingletonOpCodes::SAStore:
+        case jllvm::SingletonOpCodes::Swap:
         {
-            return jllvm::consume<jllvm::SingletonOp>(bytes);
+            return jllvm::SingletonOp{jllvm::consume<jllvm::SingletonOpCodes>(bytes), currentOffset};
         }
     }
 }
 
-std::optional<jllvm::LocalIndexedOp> consumeLocalIndex(llvm::ArrayRef<char> bytes)
+std::optional<jllvm::LocalIndexedOp> consumeLocalIndex(llvm::ArrayRef<char> bytes, std::size_t currentOffset)
 {
     auto opCode = static_cast<jllvm::LocalIndexedOpCodes>(bytes.front());
     switch (opCode)
@@ -189,12 +189,12 @@ std::optional<jllvm::LocalIndexedOp> consumeLocalIndex(llvm::ArrayRef<char> byte
         case jllvm::LocalIndexedOpCodes::Ret:
         {
             return jllvm::LocalIndexedOp{jllvm::consume<jllvm::LocalIndexedOpCodes>(bytes),
-                                         jllvm::consume<std::uint8_t>(bytes)};
+                                         jllvm::consume<std::uint8_t>(bytes), currentOffset};
         };
     }
 }
 
-std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes)
+std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes, std::size_t currentOffset)
 {
     auto opCode = static_cast<jllvm::PoolIndexedOpCodes>(bytes.front());
     switch (opCode)
@@ -206,7 +206,7 @@ std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes)
         case jllvm::PoolIndexedOpCodes::LDC:
         {
             return jllvm::PoolIndexedOp{jllvm::consume<jllvm::PoolIndexedOpCodes>(bytes),
-                                        jllvm::consume<std::uint8_t>(bytes)};
+                                        jllvm::consume<std::uint8_t>(bytes), currentOffset};
         }
         case jllvm::PoolIndexedOpCodes::ANewArray:
         case jllvm::PoolIndexedOpCodes::CheckCast:
@@ -223,7 +223,7 @@ std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes)
         case jllvm::PoolIndexedOpCodes::PutStatic:
         {
             return jllvm::PoolIndexedOp{jllvm::consume<jllvm::PoolIndexedOpCodes>(bytes),
-                                        jllvm::consume<std::uint16_t>(bytes)};
+                                        jllvm::consume<std::uint16_t>(bytes), currentOffset};
         }
         case jllvm::PoolIndexedOpCodes::InvokeDynamic:
         case jllvm::PoolIndexedOpCodes::InvokeInterface:
@@ -241,7 +241,7 @@ std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes)
                 assert(count != 0);
             }
             assert(padding == 0);
-            return jllvm::PoolIndexedOp{opCode, index};
+            return jllvm::PoolIndexedOp{opCode, index, currentOffset};
         }
     }
 }
@@ -288,17 +288,17 @@ std::optional<jllvm::BranchOffsetOp> consumeBranchOffset(llvm::ArrayRef<char> by
 
 jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
 {
-    if (auto singleton = consumeSingleton(m_current))
+    if (auto singleton = consumeSingleton(m_current, m_offset))
     {
         return singleton.value();
     }
 
-    if (auto localIndex = consumeLocalIndex(m_current))
+    if (auto localIndex = consumeLocalIndex(m_current, m_offset))
     {
         return localIndex.value();
     }
 
-    if (auto poolIndex = consumePoolIndex(m_current))
+    if (auto poolIndex = consumePoolIndex(m_current, m_offset))
     {
         return poolIndex.value();
     }
@@ -315,19 +315,19 @@ jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
         default: llvm_unreachable("Unknown opcode");
         case SpecialOpCodes::BIPush:
         {
-            return BIPushOp{consume<std::int8_t>(copy)};
+            return BIPushOp{consume<std::int8_t>(copy), m_offset};
         }
         case SpecialOpCodes::NewArray:
         {
-            return NewArrayOp{consume<NewArrayOp::ArrayType>(copy)};
+            return NewArrayOp{consume<NewArrayOp::ArrayType>(copy), m_offset};
         }
         case SpecialOpCodes::IInc:
         {
-            return IIncOp{consume<std::uint8_t>(copy), consume<std::int8_t>(copy)};
+            return IIncOp{consume<std::uint8_t>(copy), consume<std::int8_t>(copy), m_offset};
         }
         case SpecialOpCodes::SIPush:
         {
-            return SIPushOp{consume<std::int16_t>(copy)};
+            return SIPushOp{consume<std::int16_t>(copy), m_offset};
         }
         case SpecialOpCodes::LookupSwitch:
         case SpecialOpCodes::MultiANewArray:
