@@ -3,10 +3,347 @@
 #include <llvm/Support/Alignment.h>
 #include <llvm/Support/Endian.h>
 
+#include <jllvm/support/Bytes.hpp>
+
+std::optional<jllvm::SingletonOp> consumeSingleton(llvm::ArrayRef<char> bytes)
+{
+    auto opCode = static_cast<jllvm::SingletonOp>(bytes.front());
+    switch (opCode)
+    {
+        default:
+        {
+            return std::nullopt;
+        }
+        case jllvm::SingletonOp::AALoad:
+        case jllvm::SingletonOp::AAStore:
+        case jllvm::SingletonOp::AConstNull:
+        case jllvm::SingletonOp::ALoad0:
+        case jllvm::SingletonOp::ALoad1:
+        case jllvm::SingletonOp::ALoad2:
+        case jllvm::SingletonOp::ALoad3:
+        case jllvm::SingletonOp::AReturn:
+        case jllvm::SingletonOp::ArrayLength:
+        case jllvm::SingletonOp::AStore0:
+        case jllvm::SingletonOp::AStore1:
+        case jllvm::SingletonOp::AStore2:
+        case jllvm::SingletonOp::AStore3:
+        case jllvm::SingletonOp::AThrow:
+        case jllvm::SingletonOp::BALoad:
+        case jllvm::SingletonOp::BAStore:
+        case jllvm::SingletonOp::CALoad:
+        case jllvm::SingletonOp::CAStore:
+        case jllvm::SingletonOp::D2F:
+        case jllvm::SingletonOp::D2I:
+        case jllvm::SingletonOp::D2L:
+        case jllvm::SingletonOp::DAdd:
+        case jllvm::SingletonOp::DALoad:
+        case jllvm::SingletonOp::DAStore:
+        case jllvm::SingletonOp::DCmpG:
+        case jllvm::SingletonOp::DCmpL:
+        case jllvm::SingletonOp::DConst0:
+        case jllvm::SingletonOp::DConst1:
+        case jllvm::SingletonOp::DDiv:
+        case jllvm::SingletonOp::DLoad0:
+        case jllvm::SingletonOp::DLoad1:
+        case jllvm::SingletonOp::DLoad2:
+        case jllvm::SingletonOp::DLoad3:
+        case jllvm::SingletonOp::DMul:
+        case jllvm::SingletonOp::DNeg:
+        case jllvm::SingletonOp::DRem:
+        case jllvm::SingletonOp::DReturn:
+        case jllvm::SingletonOp::DStore0:
+        case jllvm::SingletonOp::DStore1:
+        case jllvm::SingletonOp::DStore2:
+        case jllvm::SingletonOp::DStore3:
+        case jllvm::SingletonOp::DSub:
+        case jllvm::SingletonOp::Dup:
+        case jllvm::SingletonOp::DupX1:
+        case jllvm::SingletonOp::DupX2:
+        case jllvm::SingletonOp::Dup2:
+        case jllvm::SingletonOp::Dup2X1:
+        case jllvm::SingletonOp::Dup2X2:
+        case jllvm::SingletonOp::F2D:
+        case jllvm::SingletonOp::F2I:
+        case jllvm::SingletonOp::F2L:
+        case jllvm::SingletonOp::FAdd:
+        case jllvm::SingletonOp::FALoad:
+        case jllvm::SingletonOp::FAStore:
+        case jllvm::SingletonOp::FCmpG:
+        case jllvm::SingletonOp::FCmpL:
+        case jllvm::SingletonOp::FConst0:
+        case jllvm::SingletonOp::FConst1:
+        case jllvm::SingletonOp::FConst2:
+        case jllvm::SingletonOp::FDiv:
+        case jllvm::SingletonOp::FLoad0:
+        case jllvm::SingletonOp::FLoad1:
+        case jllvm::SingletonOp::FLoad2:
+        case jllvm::SingletonOp::FLoad3:
+        case jllvm::SingletonOp::FMul:
+        case jllvm::SingletonOp::FNeg:
+        case jllvm::SingletonOp::FRem:
+        case jllvm::SingletonOp::FReturn:
+        case jllvm::SingletonOp::FStore0:
+        case jllvm::SingletonOp::FStore1:
+        case jllvm::SingletonOp::FStore2:
+        case jllvm::SingletonOp::FStore3:
+        case jllvm::SingletonOp::FSub:
+        case jllvm::SingletonOp::I2B:
+        case jllvm::SingletonOp::I2C:
+        case jllvm::SingletonOp::I2D:
+        case jllvm::SingletonOp::I2F:
+        case jllvm::SingletonOp::I2L:
+        case jllvm::SingletonOp::I2S:
+        case jllvm::SingletonOp::IAdd:
+        case jllvm::SingletonOp::IALoad:
+        case jllvm::SingletonOp::IAnd:
+        case jllvm::SingletonOp::IAStore:
+        case jllvm::SingletonOp::IConstM1:
+        case jllvm::SingletonOp::IConst0:
+        case jllvm::SingletonOp::IConst1:
+        case jllvm::SingletonOp::IConst2:
+        case jllvm::SingletonOp::IConst3:
+        case jllvm::SingletonOp::IConst4:
+        case jllvm::SingletonOp::IConst5:
+        case jllvm::SingletonOp::IDiv:
+        case jllvm::SingletonOp::ILoad0:
+        case jllvm::SingletonOp::ILoad1:
+        case jllvm::SingletonOp::ILoad2:
+        case jllvm::SingletonOp::ILoad3:
+        case jllvm::SingletonOp::IMul:
+        case jllvm::SingletonOp::INeg:
+        case jllvm::SingletonOp::IOr:
+        case jllvm::SingletonOp::IRem:
+        case jllvm::SingletonOp::IReturn:
+        case jllvm::SingletonOp::IShl:
+        case jllvm::SingletonOp::IShr:
+        case jllvm::SingletonOp::IStore0:
+        case jllvm::SingletonOp::IStore1:
+        case jllvm::SingletonOp::IStore2:
+        case jllvm::SingletonOp::IStore3:
+        case jllvm::SingletonOp::ISub:
+        case jllvm::SingletonOp::IUShr:
+        case jllvm::SingletonOp::IXor:
+        case jllvm::SingletonOp::L2D:
+        case jllvm::SingletonOp::L2F:
+        case jllvm::SingletonOp::L2I:
+        case jllvm::SingletonOp::LAdd:
+        case jllvm::SingletonOp::LALoad:
+        case jllvm::SingletonOp::LAnd:
+        case jllvm::SingletonOp::LAStore:
+        case jllvm::SingletonOp::LCmp:
+        case jllvm::SingletonOp::LConst0:
+        case jllvm::SingletonOp::LConst1:
+        case jllvm::SingletonOp::LDiv:
+        case jllvm::SingletonOp::LLoad0:
+        case jllvm::SingletonOp::LLoad1:
+        case jllvm::SingletonOp::LLoad2:
+        case jllvm::SingletonOp::LLoad3:
+        case jllvm::SingletonOp::LMul:
+        case jllvm::SingletonOp::LNeg:
+        case jllvm::SingletonOp::LOr:
+        case jllvm::SingletonOp::LRem:
+        case jllvm::SingletonOp::LReturn:
+        case jllvm::SingletonOp::LShl:
+        case jllvm::SingletonOp::LShr:
+        case jllvm::SingletonOp::LStore0:
+        case jllvm::SingletonOp::LStore1:
+        case jllvm::SingletonOp::LStore2:
+        case jllvm::SingletonOp::LStore3:
+        case jllvm::SingletonOp::LSub:
+        case jllvm::SingletonOp::LUShr:
+        case jllvm::SingletonOp::LXor:
+        case jllvm::SingletonOp::MonitorEnter:
+        case jllvm::SingletonOp::MonitorExit:
+        case jllvm::SingletonOp::Nop:
+        case jllvm::SingletonOp::Pop:
+        case jllvm::SingletonOp::Pop2:
+        case jllvm::SingletonOp::Return:
+        case jllvm::SingletonOp::SALoad:
+        case jllvm::SingletonOp::SAStore:
+        case jllvm::SingletonOp::Swap:
+        {
+            return jllvm::consume<jllvm::SingletonOp>(bytes);
+        }
+    }
+}
+
+std::optional<jllvm::LocalIndexedOp> consumeLocalIndex(llvm::ArrayRef<char> bytes)
+{
+    auto opCode = static_cast<jllvm::LocalIndexedOpCodes>(bytes.front());
+    switch (opCode)
+    {
+        default:
+        {
+            return std::nullopt;
+        }
+        case jllvm::LocalIndexedOpCodes::ALoad:
+        case jllvm::LocalIndexedOpCodes::AStore:
+        case jllvm::LocalIndexedOpCodes::DLoad:
+        case jllvm::LocalIndexedOpCodes::DStore:
+        case jllvm::LocalIndexedOpCodes::FLoad:
+        case jllvm::LocalIndexedOpCodes::FStore:
+        case jllvm::LocalIndexedOpCodes::ILoad:
+        case jllvm::LocalIndexedOpCodes::IStore:
+        case jllvm::LocalIndexedOpCodes::LLoad:
+        case jllvm::LocalIndexedOpCodes::LStore:
+        case jllvm::LocalIndexedOpCodes::Ret:
+        {
+            return jllvm::LocalIndexedOp{jllvm::consume<jllvm::LocalIndexedOpCodes>(bytes),
+                                         jllvm::consume<std::uint8_t>(bytes)};
+        };
+    }
+}
+
+std::optional<jllvm::PoolIndexedOp> consumePoolIndex(llvm::ArrayRef<char> bytes)
+{
+    auto opCode = static_cast<jllvm::PoolIndexedOpCodes>(bytes.front());
+    switch (opCode)
+    {
+        default:
+        {
+            return std::nullopt;
+        }
+        case jllvm::PoolIndexedOpCodes::LDC:
+        {
+            return jllvm::PoolIndexedOp{jllvm::consume<jllvm::PoolIndexedOpCodes>(bytes),
+                                        jllvm::consume<std::uint8_t>(bytes)};
+        }
+        case jllvm::PoolIndexedOpCodes::ANewArray:
+        case jllvm::PoolIndexedOpCodes::CheckCast:
+        case jllvm::PoolIndexedOpCodes::GetField:
+        case jllvm::PoolIndexedOpCodes::GetStatic:
+        case jllvm::PoolIndexedOpCodes::InstanceOf:
+        case jllvm::PoolIndexedOpCodes::InvokeSpecial:
+        case jllvm::PoolIndexedOpCodes::InvokeStatic:
+        case jllvm::PoolIndexedOpCodes::InvokeVirtual:
+        case jllvm::PoolIndexedOpCodes::LDCW:
+        case jllvm::PoolIndexedOpCodes::LDC2W:
+        case jllvm::PoolIndexedOpCodes::New:
+        case jllvm::PoolIndexedOpCodes::PutField:
+        case jllvm::PoolIndexedOpCodes::PutStatic:
+        {
+            return jllvm::PoolIndexedOp{jllvm::consume<jllvm::PoolIndexedOpCodes>(bytes),
+                                        jllvm::consume<std::uint16_t>(bytes)};
+        }
+        case jllvm::PoolIndexedOpCodes::InvokeDynamic:
+        case jllvm::PoolIndexedOpCodes::InvokeInterface:
+        {
+            opCode = jllvm::consume<jllvm::PoolIndexedOpCodes>(bytes);
+            auto index = jllvm::consume<std::uint16_t>(bytes);
+            auto count = jllvm::consume<std::uint8_t>(bytes);
+            auto padding = jllvm::consume<std::uint8_t>(bytes);
+            if (opCode == jllvm::PoolIndexedOpCodes::InvokeDynamic)
+            {
+                assert(count == 0);
+            }
+            else
+            {
+                assert(count != 0);
+            }
+            assert(padding == 0);
+            return jllvm::PoolIndexedOp{opCode, index};
+        }
+    }
+}
+
+std::optional<jllvm::BranchOffsetOp> consumeBranchOffset(llvm::ArrayRef<char> bytes, std::size_t currentOffset)
+{
+    auto opCode = static_cast<jllvm::BranchOffsetOpCodes>(bytes.front());
+    switch (opCode)
+    {
+        default:
+        {
+            return std::nullopt;
+        }
+        case jllvm::BranchOffsetOpCodes::Goto:
+        case jllvm::BranchOffsetOpCodes::IfACmpEq:
+        case jllvm::BranchOffsetOpCodes::IfACmpNe:
+        case jllvm::BranchOffsetOpCodes::IfICmpEq:
+        case jllvm::BranchOffsetOpCodes::IfICmpNe:
+        case jllvm::BranchOffsetOpCodes::IfICmpLt:
+        case jllvm::BranchOffsetOpCodes::IfICmpGe:
+        case jllvm::BranchOffsetOpCodes::IfICmpGt:
+        case jllvm::BranchOffsetOpCodes::IfICmpLe:
+        case jllvm::BranchOffsetOpCodes::IfEq:
+        case jllvm::BranchOffsetOpCodes::IfNe:
+        case jllvm::BranchOffsetOpCodes::IfLt:
+        case jllvm::BranchOffsetOpCodes::IfGe:
+        case jllvm::BranchOffsetOpCodes::IfGt:
+        case jllvm::BranchOffsetOpCodes::IfLe:
+        case jllvm::BranchOffsetOpCodes::IfNonNull:
+        case jllvm::BranchOffsetOpCodes::IfNull:
+        case jllvm::BranchOffsetOpCodes::JSR:
+        {
+            return jllvm::BranchOffsetOp{jllvm::consume<jllvm::BranchOffsetOpCodes>(bytes),
+                                         jllvm::consume<std::int16_t>(bytes), currentOffset};
+        }
+        case jllvm::BranchOffsetOpCodes::GotoW:
+        case jllvm::BranchOffsetOpCodes::JSRw:
+        {
+            return jllvm::BranchOffsetOp{jllvm::consume<jllvm::BranchOffsetOpCodes>(bytes),
+                                         jllvm::consume<std::int32_t>(bytes), currentOffset};
+        }
+    }
+}
+
+jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
+{
+    if (auto singleton = consumeSingleton(m_current))
+    {
+        return singleton.value();
+    }
+
+    if (auto localIndex = consumeLocalIndex(m_current))
+    {
+        return localIndex.value();
+    }
+
+    if (auto poolIndex = consumePoolIndex(m_current))
+    {
+        return poolIndex.value();
+    }
+
+    if (auto branchOffset = consumeBranchOffset(m_current, m_offset))
+    {
+        return branchOffset.value();
+    }
+
+    auto copy = m_current;
+
+    switch (consume<SpecialOpCodes>(copy))
+    {
+        default: llvm_unreachable("Unknown opcode");
+        case SpecialOpCodes::BIPush:
+        {
+            return BIPushOp{consume<std::int8_t>(copy)};
+        }
+        case SpecialOpCodes::NewArray:
+        {
+            return NewArrayOp{consume<NewArrayOp::ArrayType>(copy)};
+        }
+        case SpecialOpCodes::IInc:
+        {
+            return IIncOp{consume<std::uint8_t>(copy), consume<std::int8_t>(copy)};
+        }
+        case SpecialOpCodes::SIPush:
+        {
+            return SIPushOp{consume<std::int16_t>(copy)};
+        }
+        case SpecialOpCodes::LookupSwitch:
+        case SpecialOpCodes::MultiANewArray:
+        case SpecialOpCodes::TableSwitch:
+        case SpecialOpCodes::Wide:
+        {
+            llvm_unreachable("NOT YET IMPLEMENTED");
+        }
+    }
+}
+
 std::size_t jllvm::ByteCodeIterator::currentOpSize() const
 {
-    switch (static_cast<OpCodes>(*m_current))
+    switch (static_cast<OpCodes>(m_current.front()))
     {
+        default: llvm_unreachable("Unknown opcode");
         case OpCodes::AALoad:
         case OpCodes::AAStore:
         case OpCodes::AConstNull:
@@ -154,6 +491,7 @@ std::size_t jllvm::ByteCodeIterator::currentOpSize() const
         case OpCodes::SALoad:
         case OpCodes::SAStore:
         case OpCodes::Swap: return 1;
+
         case OpCodes::ALoad:
         case OpCodes::AStore:
         case OpCodes::BIPush:
@@ -210,11 +548,9 @@ std::size_t jllvm::ByteCodeIterator::currentOpSize() const
 
         case OpCodes::LookupSwitch:
         {
-            std::uint64_t padding = llvm::offsetToAlignedAddr(m_current + 1, llvm::Align(4));
-            const char* pairCountPtr = m_current + 5 + padding;
-            std::uint32_t pairCount;
-            std::memcpy(&pairCount, pairCountPtr, sizeof(std::uint32_t));
-            pairCount = llvm::support::endian::byte_swap(pairCount, llvm::support::big);
+            std::uint64_t padding = llvm::offsetToAlignedAddr(m_current.drop_front().data(), llvm::Align(4));
+            auto pairCountPtr = m_current.drop_front(5 + padding);
+            auto pairCount = consume<std::uint32_t>(pairCountPtr);
             return 1 + padding + 4 + 8 * pairCount;
         }
 
@@ -222,19 +558,13 @@ std::size_t jllvm::ByteCodeIterator::currentOpSize() const
 
         case OpCodes::TableSwitch:
         {
-            std::uint64_t padding = llvm::offsetToAlignedAddr(m_current + 1, llvm::Align(4));
-            const char* padded = m_current + 5 + padding;
-            std::uint32_t lowByte;
-            std::memcpy(&lowByte, padded, sizeof(std::uint32_t));
-            lowByte = llvm::support::endian::byte_swap(lowByte, llvm::support::big);
-            padded += sizeof(std::uint32_t);
-            std::uint32_t highByte;
-            std::memcpy(&highByte, padded, sizeof(std::uint32_t));
-            highByte = llvm::support::endian::byte_swap(highByte, llvm::support::big);
+            std::uint64_t padding = llvm::offsetToAlignedAddr(m_current.drop_front().data(), llvm::Align(4));
+            auto padded = m_current.drop_front(5 + padding);
+            auto lowByte = consume<std::uint32_t>(padded);
+            auto highByte = consume<std::uint32_t>(padded);
 
             return 1 + padding + 4 + 4 + 4 + (highByte - lowByte + 1) * 4;
         }
         case OpCodes::Wide: return static_cast<OpCodes>(m_current[1]) == OpCodes::IInc ? 6 : 4;
     }
-    llvm_unreachable("Unknown opcode");
 }
