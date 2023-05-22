@@ -259,13 +259,13 @@ struct ArrayOp : ByteCodeBase
     ArrayType atype{};
 };
 
-#define BYTECODE_OP(name, base, body) struct name : base body;
-#define BYTECODE_END_OP(name, base, body) struct name : base body;
+#define GENERATE_SELECTOR(name, base, body, parser) struct name : base body;
+#define GENERATE_SELECTOR_END(name, base, body, parser) struct name : base body;
 #include "ByteCode.def"
 
 using ByteCodeOp = std::variant<
-#define BYTECODE_OP(name, base, body) name,
-#define BYTECODE_END_OP(name, base, body) name
+#define GENERATE_SELECTOR(name, base, body, parser) name,
+#define GENERATE_SELECTOR_END(name, base, body, parser) name
 #include "ByteCode.def"
     >;
 

@@ -1,12 +1,12 @@
-#ifndef BYTECODE_OP
-    #error BYTECODE_OP(name, base, body) has to be defined to include this file
+#ifndef GENERATE_SELECTOR
+    #error GENERATE_SELECTOR(name, base, body, parser) has to be defined to include this file
 #endif
 
-#ifndef BYTECODE_END_OP
-    #error BYTECODE_END_OP(name, base, body) has to be defined to include this file
+#ifndef GENERATE_SELECTOR_END
+    #error GENERATE_SELECTOR_END(name, base, body, parser) has to be defined to include this file
 #endif
 
-#define SINGLETON_OP(name) BYTECODE_OP(name, SingletonOp, {})
+#define SINGLETON_OP(name) GENERATE_SELECTOR(name, SingletonOp, {}, parseSingleton)
 
 SINGLETON_OP(AALoad)
 SINGLETON_OP(AAStore)
@@ -156,7 +156,7 @@ SINGLETON_OP(SALoad)
 SINGLETON_OP(SAStore)
 SINGLETON_OP(Swap)
 
-#define LOCAL_INDEX_OP(name) BYTECODE_OP(name, LocalIndexedOp, {})
+#define LOCAL_INDEX_OP(name) GENERATE_SELECTOR(name, LocalIndexedOp, {}, parseLocalIndexed)
 
 LOCAL_INDEX_OP(ALoad)
 LOCAL_INDEX_OP(AStore)
@@ -170,16 +170,16 @@ LOCAL_INDEX_OP(LLoad)
 LOCAL_INDEX_OP(LStore)
 LOCAL_INDEX_OP(Ret)
 
-#define POOL_INDEX_OP(name) BYTECODE_OP(name, PoolIndexedOp, {})
+#define POOL_INDEX_OP(name) GENERATE_SELECTOR(name, PoolIndexedOp, {}, parsePoolIndexed)
 
-POOL_INDEX_OP(LDC) /* TODO only 1 byte */
+POOL_INDEX_OP(LDC)
 POOL_INDEX_OP(ANewArray)
 POOL_INDEX_OP(CheckCast)
 POOL_INDEX_OP(GetField)
 POOL_INDEX_OP(GetStatic)
 POOL_INDEX_OP(InstanceOf)
-POOL_INDEX_OP(InvokeDynamic)   /* TODO check padding 0 + 0 */
-POOL_INDEX_OP(InvokeInterface) /* TODO check padding not 0 + 0 */
+POOL_INDEX_OP(InvokeDynamic)
+POOL_INDEX_OP(InvokeInterface)
 POOL_INDEX_OP(InvokeSpecial)
 POOL_INDEX_OP(InvokeStatic)
 POOL_INDEX_OP(InvokeVirtual)
@@ -189,7 +189,7 @@ POOL_INDEX_OP(New)
 POOL_INDEX_OP(PutField)
 POOL_INDEX_OP(PutStatic)
 
-#define BRANCH_OFFSET_OP(name) BYTECODE_OP(name, BranchOffsetOp, {})
+#define BRANCH_OFFSET_OP(name) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset)
 
 BRANCH_OFFSET_OP(Goto)
 BRANCH_OFFSET_OP(GotoW)
@@ -212,18 +212,26 @@ BRANCH_OFFSET_OP(IfNull)
 BRANCH_OFFSET_OP(JSR)
 BRANCH_OFFSET_OP(JSRw)
 
-BYTECODE_OP(BIPush, ByteCodeBase , {std::int8_t value{};})
-BYTECODE_OP(NewArray, ArrayOp , {})
-BYTECODE_OP(IInc, ByteCodeBase , { std::uint8_t index{}; std::int8_t byte{}; })
-BYTECODE_OP(SIPush, ByteCodeBase , { std::int16_t value{}; })
-BYTECODE_OP(LookupSwitch, ByteCodeBase , { /* TODO */ })
-BYTECODE_OP(MultiANewArray, ByteCodeBase , { /* TODO */ })
-BYTECODE_OP(TableSwitch, ByteCodeBase , { /* TODO */ })
-BYTECODE_END_OP(Wide, ByteCodeBase , { /* TODO */ })
+GENERATE_SELECTOR(
+    BIPush, ByteCodeBase, { std::int8_t value{}; }, parseBIPush)
+GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray)
+GENERATE_SELECTOR(
+    IInc, ByteCodeBase,
+    {
+        std::uint8_t index{};
+        std::int8_t byte{};
+    },
+    parseIInc)
+GENERATE_SELECTOR(
+    SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush)
+GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented)
+GENERATE_SELECTOR(MultiANewArray, ByteCodeBase, {/* TODO */}, parseNotImplemented)
+GENERATE_SELECTOR(TableSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented)
+GENERATE_SELECTOR_END(Wide, ByteCodeBase, {/* TODO */}, parseNotImplemented)
 
 #undef BRANCH_OFFSET_OP
 #undef POOL_INDEX_OP
 #undef LOCAL_INDEX_OP
 #undef SINGLETON_OP
-#undef BYTECODE_OP
-#undef BYTECODE_END_OP
+#undef GENERATE_SELECTOR_END
+#undef GENERATE_SELECTOR
