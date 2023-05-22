@@ -316,4 +316,29 @@ inline auto getOffset(ByteCodeOp op)
     return match(op, [](auto op) { return op.offset; });
 }
 
+namespace detail
+{
+template <class First, class... Rest>
+struct MechanismForBase
+{
+    using Base = std::conditional_t<
+        std::is_base_of_v<SingletonOp, First>, SingletonOp,
+        std::conditional_t<std::is_base_of_v<LocalIndexedOp, First>, LocalIndexedOp,
+                           std::conditional_t<std::is_base_of_v<PoolIndexedOp, First>, PoolIndexedOp, BranchOffsetOp>>>;
+
+    static_assert((std::is_base_of_v<Base, Rest> && ...));
+};
+} // namespace detail
+
+template <class... Args>
+struct OneOf : detail::MechanismForBase<Args...>::Base
+{
+    using Base = typename detail::MechanismForBase<Args...>::Base;
+
+    template <class T, std::enable_if_t<(std::is_same_v<T, Args> || ...)>* = nullptr>
+    OneOf(const T& value) : Base(value)
+    {
+    }
+};
+
 } // namespace jllvm

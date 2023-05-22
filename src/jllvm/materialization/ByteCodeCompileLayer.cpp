@@ -466,7 +466,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
     // Calculate BasicBlocks
-    for (auto [opCode, offset, current] : byteCodeRange(code.getCode()))
+    for (auto operation : byteCodeRange(code.getCode()))
     {
         auto addBasicBlock = [&](std::uint16_t target)
         {
@@ -477,60 +477,32 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
             }
         };
-        switch (opCode)
-        {
-            case OpCodes::Goto:
+        match(
+            operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
+            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
+                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                    cmpOp)
             {
-                auto target = consume<std::int16_t>(current);
-                addBasicBlock(target + offset);
-                break;
-            }
-            case OpCodes::GotoW:
-            {
-                auto target = consume<std::int32_t>(current);
-                addBasicBlock(target + offset);
-                break;
-            }
-            case OpCodes::IfACmpEq:
-            case OpCodes::IfACmpNe:
-            case OpCodes::IfICmpEq:
-            case OpCodes::IfICmpNe:
-            case OpCodes::IfICmpLt:
-            case OpCodes::IfICmpGe:
-            case OpCodes::IfICmpGt:
-            case OpCodes::IfICmpLe:
-            case OpCodes::IfEq:
-            case OpCodes::IfNe:
-            case OpCodes::IfLt:
-            case OpCodes::IfGe:
-            case OpCodes::IfGt:
-            case OpCodes::IfLe:
-            case OpCodes::IfNonNull:
-            case OpCodes::IfNull:
-            {
-                auto target = consume<std::int16_t>(current);
-                addBasicBlock(target + offset);
-                addBasicBlock(current.data() - code.getCode().data());
-                break;
-            }
-            default: break;
-        }
+                addBasicBlock(cmpOp.target + cmpOp.offset);
+                addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
+            },
+            [](auto) {});
     }
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
-    for (auto [opCode, offset, current] : byteCodeRange(code.getCode()))
+    for (auto operation : byteCodeRange(code.getCode()))
     {
-        if (auto result = startHandlers.find(offset); result != startHandlers.end())
+        if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
         {
             activeHandlers.push_back(result->second);
         }
-        if (auto result = endHandlers.find(offset); result != endHandlers.end())
+        if (auto result = endHandlers.find(getOffset(operation)); result != endHandlers.end())
         {
             auto iter = std::find(activeHandlers.rbegin(), activeHandlers.rend(), result->second);
             assert(iter != activeHandlers.rend());
             activeHandlers.erase(std::prev(iter.base()));
         }
 
-        if (auto result = basicBlocks.find(offset); result != basicBlocks.end())
+        if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
         {
             // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to set
             // this manually to the new insert point. This essentially implements implicit fallthrough from JVM
@@ -547,10 +519,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.setTopOfStack(resultStackPointer->second);
             }
         }
-        switch (opCode)
-        {
-            default: llvm_unreachable("NOT YET IMPLEMENTED");
-            case OpCodes::AALoad:
+        match(
+            operation,
+            [&](AALoad)
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
@@ -558,9 +529,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), gep));
-                break;
-            }
-            case OpCodes::AAStore:
+            },
+            [&](AAStore)
             {
                 llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
@@ -569,43 +539,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
-
-                break;
-            }
-            case OpCodes::AConstNull:
+            },
+            [&](AConstNull)
+            { operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext()))); },
+            [&](ALoad aLoad)
+            { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[aLoad.index])); },
+            [&](ALoad0) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[0])); },
+            [&](ALoad1) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[1])); },
+            [&](ALoad2) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[2])); },
+            [&](ALoad3) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[3])); },
+            [&](ANewArray aNewArray)
             {
-                operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext())));
-                break;
-            }
-            case OpCodes::ALoad:
-            {
-                auto index = consume<std::uint8_t>(current);
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[index]));
-                break;
-            }
-            case OpCodes::ALoad0:
-            {
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[0]));
-                break;
-            }
-            case OpCodes::ALoad1:
-            {
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[1]));
-                break;
-            }
-            case OpCodes::ALoad2:
-            {
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[2]));
-                break;
-            }
-            case OpCodes::ALoad3:
-            {
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[3]));
-                break;
-            }
-            case OpCodes::ANewArray:
-            {
-                auto index = consume<PoolIndex<ClassInfo>>(current);
+                auto index = PoolIndex<ClassInfo>{aNewArray.index};
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* classObject = helper.getClassObject(
@@ -626,15 +571,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 builder.CreateStore(count, gep);
 
                 operandStack.push_back(object);
-                break;
-            }
-            case OpCodes::AReturn:
+            },
+            [&](AReturn)
             {
                 llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
                 builder.CreateRet(value);
-                break;
-            }
-            case OpCodes::ArrayLength:
+            },
+            [&](ArrayLength)
             {
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
@@ -642,48 +585,28 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
                                               {builder.getInt32(0), builder.getInt32(1)});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
-                break;
-            }
-            case OpCodes::AStore:
-            {
-                auto index = consume<std::uint8_t>(current);
-                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[index]);
-                break;
-            }
-            case OpCodes::AStore0:
-            {
-                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[0]);
-                break;
-            }
-            case OpCodes::AStore1:
-            {
-                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[1]);
-                break;
-            }
-            case OpCodes::AStore2:
-            {
-                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]);
-                break;
-            }
-            case OpCodes::AStore3:
-            {
-                builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]);
-                break;
-            }
+            },
+            [&](AStore aStore)
+            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[aStore.index]); },
+            [&](AStore0)
+            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[0]); },
+            [&](AStore1)
+            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[1]); },
+            [&](AStore2)
+            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]); },
+            [&](AStore3)
+            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]); },
             // TODO: AThrow
             // TODO: BALoad
             // TODO: BAStore
-            case OpCodes::BIPush:
+            [&](BIPush biPush)
             {
-                auto byte = consume<std::int8_t>(current);
-                llvm::Value* res = builder.getInt32(byte);
+                llvm::Value* res = builder.getInt32(biPush.value);
                 operandStack.push_back(res);
-                break;
-            }
+            },
             // TODO: CALoad
             // TODO: CAStore
             // TODO: CheckCast
-
             // TODO: D2F
             // TODO: D2I
             // TODO: D2L
@@ -710,41 +633,36 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: DStore2
             // TODO: DStore3
             // TODO: DSub
-            case OpCodes::Dup:
+            [&](Dup)
             {
                 llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
                 operandStack.push_back(val);
                 operandStack.push_back(val);
-                break;
-            }
+            },
             // TODO: DupX1
             // TODO: DupX2
             // TODO: Dup2
             // TODO: Dup2X1
             // TODO: Dup2X2
-            case OpCodes::F2D:
+            [&](F2D)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFPExt(value, builder.getDoubleTy()));
-                break;
-            }
-            case OpCodes::F2I:
-            case OpCodes::F2L:
+            },
+            [&](OneOf<F2I, F2L>)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
-                llvm::Type* type = opCode == OpCodes::F2I ? builder.getInt32Ty() : builder.getInt64Ty();
+                llvm::Type* type = std::holds_alternative<F2I>(operation) ? builder.getInt32Ty() : builder.getInt64Ty();
 
                 operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
-                break;
-            }
-            case OpCodes::FAdd:
+            },
+            [&](FAdd)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFAdd(lhs, rhs));
-                break;
-            }
-            case OpCodes::FALoad:
+            },
+            [&](FALoad)
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
                 // TODO: throw NullPointerException if array is null
@@ -755,9 +673,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                                               {builder.getInt32(0), builder.getInt32(2), index});
 
                 operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), gep));
-                break;
-            }
-            case OpCodes::FAStore:
+            },
+            [&](FAStore)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
@@ -768,11 +685,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
-
-                break;
-            }
-            case OpCodes::FCmpG:
-            case OpCodes::FCmpL:
+            },
+            [&](OneOf<FCmpG, FCmpL>)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
@@ -783,145 +697,75 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* otherCmp;
                 llvm::Value* otherCase;
 
-                switch (opCode)
+                if (std::holds_alternative<FCmpG>(operation))
                 {
-                    default: llvm_unreachable("Invalid comparison operation");
-                    case OpCodes::FCmpG:
-                    {
-                        // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
-                        notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
-                        // using ordered less than to check lhs < rhs
-                        otherCmp = builder.CreateFCmpOLT(lhs, rhs);
-                        // return -1 if lhs < rhs
-                        otherCase = builder.getInt32(-1);
-                        break;
-                    }
-                    case OpCodes::FCmpL:
-                    {
-                        // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
-                        notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
-                        // using ordered greater than to check lhs > rhs
-                        otherCmp = builder.CreateFCmpOGT(lhs, rhs);
-                        // return -1 if lhs > rhs
-                        otherCase = builder.getInt32(1);
-                        break;
-                    }
+                    // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
+                    notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
+                    // using ordered less than to check lhs < rhs
+                    otherCmp = builder.CreateFCmpOLT(lhs, rhs);
+                    // return -1 if lhs < rhs
+                    otherCase = builder.getInt32(-1);
+                }
+                else
+                {
+                    // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
+                    notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
+                    // using ordered greater than to check lhs > rhs
+                    otherCmp = builder.CreateFCmpOGT(lhs, rhs);
+                    // return -1 if lhs > rhs
+                    otherCase = builder.getInt32(1);
                 }
 
                 // select the non-default or the 0-or-default value based on the result of otherCmp
                 operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
-
-                break;
-            }
-            case OpCodes::FConst0:
-            {
-                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 0.0));
-                break;
-            }
-            case OpCodes::FConst1:
-            {
-                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 1.0));
-                break;
-            }
-            case OpCodes::FConst2:
-            {
-                operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 2.0));
-                break;
-            }
-            case OpCodes::FDiv:
+            },
+            [&](FConst0) { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 0.0)); },
+            [&](FConst1) { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 1.0)); },
+            [&](FConst2) { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), 2.0)); },
+            [&](FDiv)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFDiv(lhs, rhs));
-                break;
-            }
-            case OpCodes::FLoad:
-            {
-                auto index = consume<std::uint8_t>(current);
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[index]));
-                break;
-            }
-            case OpCodes::FLoad0:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[0]));
-                break;
-            }
-            case OpCodes::FLoad1:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[1]));
-                break;
-            }
-            case OpCodes::FLoad2:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[2]));
-                break;
-            }
-            case OpCodes::FLoad3:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[3]));
-                break;
-            }
-            case OpCodes::FMul:
+            },
+            [&](FLoad fLoad) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[fLoad.index])); },
+            [&](FLoad0) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[0])); },
+            [&](FLoad1) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[1])); },
+            [&](FLoad2) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[2])); },
+            [&](FLoad3) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[3])); },
+            [&](FMul)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFMul(lhs, rhs));
-                break;
-            }
-            case OpCodes::FNeg:
+            },
+            [&](FNeg)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFNeg(value));
-                break;
-            }
-            case OpCodes::FRem:
+            },
+            [&](FRem)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFRem(lhs, rhs));
-                break;
-            }
-            case OpCodes::FReturn:
-            {
-                builder.CreateRet(operandStack.pop_back(builder.getFloatTy()));
-                break;
-            }
-            case OpCodes::FStore:
-            {
-                auto index = consume<std::uint8_t>(current);
-                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[index]);
-                break;
-            }
-            case OpCodes::FStore0:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[0]);
-                break;
-            }
-            case OpCodes::FStore1:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[1]);
-                break;
-            }
-            case OpCodes::FStore2:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[2]);
-                break;
-            }
-            case OpCodes::FStore3:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[3]);
-                break;
-            }
-            case OpCodes::FSub:
+            },
+            [&](FReturn) { builder.CreateRet(operandStack.pop_back(builder.getFloatTy())); },
+            [&](FStore fStore)
+            { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[fStore.index]); },
+            [&](FStore0) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[0]); },
+            [&](FStore1) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[1]); },
+            [&](FStore2) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[2]); },
+            [&](FStore3) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[3]); },
+            [&](FSub)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFSub(lhs, rhs));
-                break;
-            }
-            case OpCodes::GetField:
+            },
+            [&](GetField getField)
             {
-                const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
+                const auto* refInfo = PoolIndex<FieldRefInfo>{getField.index}.resolve(classFile);
                 const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(classFile);
                 FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
                 llvm::Type* type = descriptorToType(descriptor, builder.getContext());
@@ -941,15 +785,15 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     baseType && baseType->getValue() < BaseType::Int)
                 {
                     // Extend to the operands stack i32 type.
-                    field = builder.CreateIntCast(field, builder.getInt32Ty(), /*isSigned=*/!baseType->isUnsigned());
+                    field = builder.CreateIntCast(field, builder.getInt32Ty(),
+                                                  /*isSigned=*/!baseType->isUnsigned());
                 }
 
                 operandStack.push_back(field);
-                break;
-            }
-            case OpCodes::GetStatic:
+            },
+            [&](GetStatic getStatic)
             {
-                const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
+                const auto* refInfo = PoolIndex<FieldRefInfo>{getStatic.index}.resolve(classFile);
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
@@ -965,65 +809,58 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     baseType && baseType->getValue() < BaseType::Int)
                 {
                     // Extend to the operands stack i32 type.
-                    field = builder.CreateIntCast(field, builder.getInt32Ty(), /*isSigned=*/!baseType->isUnsigned());
+                    field = builder.CreateIntCast(field, builder.getInt32Ty(),
+                                                  /*isSigned=*/!baseType->isUnsigned());
                 }
                 operandStack.push_back(field);
-                break;
-            }
-            case OpCodes::Goto:
+            },
+            [&](Goto gotoOp)
             {
-                auto target = consume<std::int16_t>(current);
-                basicBlockStackPointers.insert({basicBlocks[target + offset], operandStack.getTopOfStack()});
-                builder.CreateBr(basicBlocks[target + offset]);
-                break;
-            }
-            case OpCodes::I2B:
+                auto index = gotoOp.target + gotoOp.offset;
+                basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStack()});
+                builder.CreateBr(basicBlocks[index]);
+            },
+            // TODO: GotoW
+            [&](I2B)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
                 operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
-                break;
-            }
-            case OpCodes::I2C:
+            },
+            [&](I2C)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
                 operandStack.push_back(builder.CreateZExt(value, builder.getInt32Ty()));
-                break;
-            }
-            case OpCodes::I2D:
+            },
+            [&](I2D)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
-                break;
-            }
-            case OpCodes::I2F:
+            },
+            [&](I2F)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
-                break;
-            }
-            case OpCodes::I2L:
+            },
+            [&](I2L)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
-                break;
-            }
-            case OpCodes::I2S:
+            },
+            [&](I2S)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
                 operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
-                break;
-            }
-            case OpCodes::IAdd:
+            },
+            [&](IAdd)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
-                break;
-            }
-            case OpCodes::IALoad:
+            },
+            [&](IALoad)
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
                 // TODO: throw NullPointerException if array is null
@@ -1033,16 +870,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
-                break;
-            }
-            case OpCodes::IAnd:
+            },
+            [&](IAnd)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAnd(lhs, rhs));
-                break;
-            }
-            case OpCodes::IAStore:
+            },
+            [&](IAStore)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
@@ -1053,222 +888,94 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
                                               {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
-
-                break;
-            }
-            case OpCodes::IConstM1:
-            {
-                operandStack.push_back(builder.getInt32(-1));
-                break;
-            }
-            case OpCodes::IConst0:
-            {
-                operandStack.push_back(builder.getInt32(0));
-                break;
-            }
-            case OpCodes::IConst1:
-            {
-                operandStack.push_back(builder.getInt32(1));
-                break;
-            }
-            case OpCodes::IConst2:
-            {
-                operandStack.push_back(builder.getInt32(2));
-                break;
-            }
-            case OpCodes::IConst3:
-            {
-                operandStack.push_back(builder.getInt32(3));
-                break;
-            }
-            case OpCodes::IConst4:
-            {
-                operandStack.push_back(builder.getInt32(4));
-                break;
-            }
-            case OpCodes::IConst5:
-            {
-                operandStack.push_back(builder.getInt32(5));
-                break;
-            }
-            case OpCodes::IDiv:
+            },
+            [&](IConstM1) { operandStack.push_back(builder.getInt32(-1)); },
+            [&](IConst0) { operandStack.push_back(builder.getInt32(0)); },
+            [&](IConst1) { operandStack.push_back(builder.getInt32(1)); },
+            [&](IConst2) { operandStack.push_back(builder.getInt32(2)); },
+            [&](IConst3) { operandStack.push_back(builder.getInt32(3)); },
+            [&](IConst4) { operandStack.push_back(builder.getInt32(4)); },
+            [&](IConst5) { operandStack.push_back(builder.getInt32(5)); },
+            [&](IDiv)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSDiv(lhs, rhs));
-                break;
-            }
-            case OpCodes::IfACmpEq:
-            case OpCodes::IfACmpNe:
-            case OpCodes::IfICmpEq:
-            case OpCodes::IfICmpNe:
-            case OpCodes::IfICmpLt:
-            case OpCodes::IfICmpGe:
-            case OpCodes::IfICmpGt:
-            case OpCodes::IfICmpLe:
-            case OpCodes::IfEq:
-            case OpCodes::IfNe:
-            case OpCodes::IfLt:
-            case OpCodes::IfGe:
-            case OpCodes::IfGt:
-            case OpCodes::IfLe:
-            case OpCodes::IfNonNull:
-            case OpCodes::IfNull:
+            },
+            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
+                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                    cmpOp)
             {
-                auto target = consume<std::int16_t>(current);
-                llvm::BasicBlock* basicBlock = basicBlocks[target + offset];
-                llvm::BasicBlock* next = basicBlocks[current.data() - code.getCode().data()];
+                llvm::BasicBlock* basicBlock = basicBlocks[cmpOp.target + cmpOp.offset];
+                llvm::BasicBlock* next = basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t)];
 
                 llvm::Value* rhs;
                 llvm::Value* lhs;
                 llvm::CmpInst::Predicate predicate;
 
-                switch (opCode)
-                {
-                    default: llvm_unreachable("Invalid comparison operation");
-                    case OpCodes::IfACmpEq:
-                    case OpCodes::IfACmpNe:
+                match(
+                    operation,
+                    [&](OneOf<IfACmpEq, IfACmpNe>)
                     {
                         rhs = operandStack.pop_back(referenceType(builder.getContext()));
                         lhs = operandStack.pop_back(referenceType(builder.getContext()));
-                        break;
-                    }
-                    case OpCodes::IfICmpEq:
-                    case OpCodes::IfICmpNe:
-                    case OpCodes::IfICmpLt:
-                    case OpCodes::IfICmpGe:
-                    case OpCodes::IfICmpGt:
-                    case OpCodes::IfICmpLe:
+                    },
+                    [&](OneOf<IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
                     {
                         rhs = operandStack.pop_back(builder.getInt32Ty());
                         lhs = operandStack.pop_back(builder.getInt32Ty());
-                        break;
-                    }
-                    case OpCodes::IfEq:
-                    case OpCodes::IfNe:
-                    case OpCodes::IfLt:
-                    case OpCodes::IfGe:
-                    case OpCodes::IfGt:
-                    case OpCodes::IfLe:
+                    },
+                    [&](OneOf<IfEq, IfNe, IfLt, IfGe, IfGt, IfLe>)
                     {
                         rhs = builder.getInt32(0);
                         lhs = operandStack.pop_back(builder.getInt32Ty());
-                        break;
-                    }
-                    case OpCodes::IfNonNull:
-                    case OpCodes::IfNull:
+                    },
+                    [&](OneOf<IfNonNull, IfNull>)
                     {
                         lhs = operandStack.pop_back(referenceType(builder.getContext()));
                         rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
-                        break;
-                    }
-                }
+                    },
+                    [](auto) { llvm_unreachable("Invalid comparison operation"); });
 
-                switch (opCode)
-                {
-                    default: llvm_unreachable("Invalid comparison operation");
-                    case OpCodes::IfACmpEq:
-                    case OpCodes::IfICmpEq:
-                    case OpCodes::IfEq:
-                    case OpCodes::IfNull:
-                    {
-                        predicate = llvm::CmpInst::ICMP_EQ;
-                        break;
-                    }
-                    case OpCodes::IfACmpNe:
-                    case OpCodes::IfICmpNe:
-                    case OpCodes::IfNe:
-                    case OpCodes::IfNonNull:
-                    {
-                        predicate = llvm::CmpInst::ICMP_NE;
-                        break;
-                    }
-                    case OpCodes::IfICmpLt:
-                    case OpCodes::IfLt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLT;
-                        break;
-                    }
-                    case OpCodes::IfICmpLe:
-                    case OpCodes::IfLe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SLE;
-                        break;
-                    }
-                    case OpCodes::IfICmpGt:
-                    case OpCodes::IfGt:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGT;
-                        break;
-                    }
-                    case OpCodes::IfICmpGe:
-                    case OpCodes::IfGe:
-                    {
-                        predicate = llvm::CmpInst::ICMP_SGE;
-                        break;
-                    }
-                }
+                match(
+                    operation, [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
+                    [&](OneOf<IfACmpNe, IfICmpNe, IfNe, IfNonNull>) { predicate = llvm::CmpInst::ICMP_NE; },
+                    [&](OneOf<IfICmpLt, IfLt>) { predicate = llvm::CmpInst::ICMP_SLT; },
+                    [&](OneOf<IfICmpLe, IfLe>) { predicate = llvm::CmpInst::ICMP_SLE; },
+                    [&](OneOf<IfICmpGt, IfGt>) { predicate = llvm::CmpInst::ICMP_SGT; },
+                    [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; },
+                    [](auto) { llvm_unreachable("Invalid comparison operation"); });
 
                 llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
                 basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
                 builder.CreateCondBr(cond, basicBlock, next);
-
-                break;
-            }
-            case OpCodes::IInc:
+            },
+            [&](IInc iInc)
             {
-                auto index = consume<std::uint8_t>(current);
-                auto constant = consume<std::int8_t>(current);
-
-                llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[index]);
-                builder.CreateStore(builder.CreateAdd(local, builder.getInt32(constant)), locals[index]);
-
-                break;
-            }
-            case OpCodes::ILoad:
-            {
-                auto index = consume<std::uint8_t>(current);
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[index]));
-                break;
-            }
-            case OpCodes::ILoad0:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[0]));
-                break;
-            }
-            case OpCodes::ILoad1:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[1]));
-                break;
-            }
-            case OpCodes::ILoad2:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[2]));
-                break;
-            }
-            case OpCodes::ILoad3:
-            {
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[3]));
-                break;
-            }
-            case OpCodes::IMul:
+                llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
+                builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
+            },
+            [&](ILoad iLoad) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[iLoad.index])); },
+            [&](ILoad0) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[0])); },
+            [&](ILoad1) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[1])); },
+            [&](ILoad2) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[2])); },
+            [&](ILoad3) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[3])); },
+            [&](IMul)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateMul(lhs, rhs));
-                break;
-            }
-            case OpCodes::INeg:
+            },
+            [&](INeg)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateNeg(value));
-                break;
-            }
-            case OpCodes::InstanceOf:
+            },
+            [&](InstanceOf instanceOf)
             {
                 llvm::StringRef className =
-                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
+                    PoolIndex<ClassInfo>{instanceOf.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
                 llvm::PointerType* ty = referenceType(builder.getContext());
                 llvm::Value* object = operandStack.pop_back(ty);
@@ -1306,15 +1013,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 phi->addIncoming(call, instanceOfBlock);
 
                 operandStack.push_back(phi);
-                break;
-            }
+            },
             // TODO: InvokeDynamic
-            case OpCodes::InvokeInterface:
+            [&](InvokeInterface invokeInterface)
             {
-                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
-                // Legacy bytes that have become unused.
-                consume<std::uint8_t>(current);
-                consume<std::uint8_t>(current);
+                const RefInfo* refInfo = PoolIndex<RefInfo>{invokeInterface.index}.resolve(classFile);
 
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
@@ -1383,15 +1086,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     operandStack.push_back(call);
                 }
-
-                break;
-            }
-            case OpCodes::InvokeSpecial:
-            case OpCodes::InvokeStatic:
+            },
+            [&](OneOf<InvokeSpecial, InvokeStatic> invoke)
             {
-                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
+                const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
 
-                bool isStatic = opCode == OpCodes::InvokeStatic;
+                bool isStatic = std::holds_alternative<InvokeStatic>(operation);
 
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
@@ -1422,12 +1122,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     operandStack.push_back(call);
                 }
-
-                break;
-            }
-            case OpCodes::InvokeVirtual:
+            },
+            [&](InvokeVirtual invokeVirtual)
             {
-                const RefInfo* refInfo = consume<PoolIndex<RefInfo>>(current).resolve(classFile);
+                const RefInfo* refInfo = PoolIndex<RefInfo>{invokeVirtual.index}.resolve(classFile);
 
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
@@ -1464,23 +1162,20 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     operandStack.push_back(call);
                 }
-                break;
-            }
-            case OpCodes::IOr:
+            },
+            [&](IOr)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateOr(lhs, rhs));
-                break;
-            }
-            case OpCodes::IRem:
+            },
+            [&](IRem)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSRem(lhs, rhs));
-                break;
-            }
-            case OpCodes::IReturn:
+            },
+            [&](IReturn)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 if (methodType.returnType == FieldType(BaseType::Boolean))
@@ -1492,75 +1187,49 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     value = builder.CreateTrunc(value, function->getReturnType());
                 }
                 builder.CreateRet(value);
-                break;
             }
-            case OpCodes::IShl:
+            [&](IShl)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* maskedRhs = builder.CreateAnd(
                     rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
-                break;
-            }
-            case OpCodes::IShr:
+            },
+            [&](IShr)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* maskedRhs = builder.CreateAnd(
                     rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
-                break;
-            }
-            case OpCodes::IStore:
-            {
-                auto index = consume<std::uint8_t>(current);
-                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[index]);
-                break;
-            }
-            case OpCodes::IStore0:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[0]);
-                break;
-            }
-            case OpCodes::IStore1:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[1]);
-                break;
-            }
-            case OpCodes::IStore2:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[2]);
-                break;
-            }
-            case OpCodes::IStore3:
-            {
-                builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[3]);
-                break;
-            }
-            case OpCodes::ISub:
+            },
+            [&](IStore iStore)
+            { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[iStore.index]); },
+            [&](IStore0) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[0]); },
+            [&](IStore1) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[1]); },
+            [&](IStore2) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[2]); },
+            [&](IStore3) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[3]); },
+            [&](ISub)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSub(lhs, rhs));
-                break;
-            }
-            case OpCodes::IUShr:
+            },
+            [&](IUShr)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* maskedRhs = builder.CreateAnd(
                     rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
-                break;
-            }
-            case OpCodes::IXor:
+            },
+            [&](IXor)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateXor(lhs, rhs));
-                break;
-            }
+            },
             // TODO: JSR
             // TODO: JSRw
             // TODO: L2D
@@ -1573,12 +1242,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: LCmp
             // TODO: LConst0
             // TODO: LConst1
-            case OpCodes::LDC:
+            [&](LDC ldc)
             {
-                auto index = consume<std::uint8_t>(current);
                 PoolIndex<IntegerInfo, FloatInfo, StringInfo, MethodRefInfo, InterfaceMethodRefInfo, ClassInfo,
                           MethodTypeInfo, DynamicInfo>
-                    pool(index);
+                    pool(ldc.index);
 
                 match(
                     pool.resolve(classFile),
@@ -1611,9 +1279,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                         operandStack.push_back(classObject);
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
-
-                break;
-            }
+            },
             // TODO: LDCW
             // TODO: LDC2W
             // TODO: LDiv
@@ -1641,10 +1307,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: MonitorEnter
             // TODO: MonitorExit
             // TODO: MultiANewArray
-            case OpCodes::New:
+            [&](New newOp)
             {
                 llvm::StringRef className =
-                    consume<PoolIndex<ClassInfo>>(current).resolve(classFile)->nameIndex.resolve(classFile)->text;
+                    PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
                 llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
 
@@ -1659,101 +1325,85 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // Store object header (which in our case is just the class object) in the object.
                 builder.CreateStore(classObject, object);
                 operandStack.push_back(object);
-
-                break;
-            }
-            case OpCodes::NewArray:
+            },
+            [&](NewArray newArray)
             {
-                enum class ArrayType : std::uint8_t
-                {
-                    TBoolean = 4,
-                    TChar = 5,
-                    TFloat = 6,
-                    TDouble = 7,
-                    TByte = 8,
-                    TShort = 9,
-                    TInt = 10,
-                    TLong = 11
-                };
-
-                auto type = consume<ArrayType>(current);
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
-                auto resolveTypeDescriptor = [](ArrayType type) -> llvm::StringRef
+                // TODO: move into ArrayOp
+                auto resolveTypeDescriptor = [](ArrayOp::ArrayType type) -> llvm::StringRef
                 {
                     switch (type)
                     {
-                        case ArrayType::TBoolean: return "Z";
-                        case ArrayType::TChar: return "C";
-                        case ArrayType::TFloat: return "F";
-                        case ArrayType::TDouble: return "D";
-                        case ArrayType::TByte: return "B";
-                        case ArrayType::TShort: return "S";
-                        case ArrayType::TInt: return "I";
+                        case ArrayOp::ArrayType::TBoolean: return "Z";
+                        case ArrayOp::ArrayType::TChar: return "C";
+                        case ArrayOp::ArrayType::TFloat: return "F";
+                        case ArrayOp::ArrayType::TDouble: return "D";
+                        case ArrayOp::ArrayType::TByte: return "B";
+                        case ArrayOp::ArrayType::TShort: return "S";
+                        case ArrayOp::ArrayType::TInt: return "I";
                         default: return "J";
                     }
                 };
 
-                auto resolveTypeSize = [](ArrayType type)
+                auto resolveTypeSize = [](ArrayOp::ArrayType type)
                 {
                     switch (type)
                     {
-                        case ArrayType::TBoolean:
-                        case ArrayType::TChar:
-                        case ArrayType::TByte: return sizeof(std::uint8_t);
-                        case ArrayType::TShort: return sizeof(std::uint16_t);
-                        case ArrayType::TInt: return sizeof(std::uint32_t);
-                        case ArrayType::TFloat: return sizeof(float);
-                        case ArrayType::TDouble: return sizeof(double);
+                        case ArrayOp::ArrayType::TBoolean:
+                        case ArrayOp::ArrayType::TChar:
+                        case ArrayOp::ArrayType::TByte: return sizeof(std::uint8_t);
+                        case ArrayOp::ArrayType::TShort: return sizeof(std::uint16_t);
+                        case ArrayOp::ArrayType::TInt: return sizeof(std::uint32_t);
+                        case ArrayOp::ArrayType::TFloat: return sizeof(float);
+                        case ArrayOp::ArrayType::TDouble: return sizeof(double);
                         default: return sizeof(std::uint64_t);
                     }
                 };
 
-                auto resolveElementType = [&builder](ArrayType type) -> llvm::Type*
+                auto resolveElementType = [&](ArrayOp::ArrayType type) -> llvm::Type*
                 {
                     switch (type)
                     {
-                        case ArrayType::TBoolean:
-                        case ArrayType::TChar:
-                        case ArrayType::TByte: return builder.getInt8Ty();
-                        case ArrayType::TShort: return builder.getInt16Ty();
-                        case ArrayType::TInt: return builder.getInt32Ty();
-                        case ArrayType::TFloat: return builder.getFloatTy();
-                        case ArrayType::TDouble: return builder.getDoubleTy();
+                        case ArrayOp::ArrayType::TBoolean:
+                        case ArrayOp::ArrayType::TChar:
+                        case ArrayOp::ArrayType::TByte: return builder.getInt8Ty();
+                        case ArrayOp::ArrayType::TShort: return builder.getInt16Ty();
+                        case ArrayOp::ArrayType::TInt: return builder.getInt32Ty();
+                        case ArrayOp::ArrayType::TFloat: return builder.getFloatTy();
+                        case ArrayOp::ArrayType::TDouble: return builder.getDoubleTy();
                         default: return builder.getInt64Ty();
                     }
                 };
 
-                llvm::Value* classObject = helper.getClassObject(builder, "[" + resolveTypeDescriptor(type));
+                llvm::Value* classObject = helper.getClassObject(builder, "[" + resolveTypeDescriptor(newArray.atype));
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the elements)
                 // plus element count * element size.
                 llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
-                bytesNeeded =
-                    builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(resolveTypeSize(type))));
+                bytesNeeded = builder.CreateAdd(
+                    bytesNeeded, builder.CreateMul(count, builder.getInt32(resolveTypeSize(newArray.atype))));
 
                 // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
                 builder.CreateStore(classObject, object);
                 // Array length.
-                auto* gep = builder.CreateGEP(arrayStructType(resolveElementType(type)), object,
+                auto* gep = builder.CreateGEP(arrayStructType(resolveElementType(newArray.atype)), object,
                                               {builder.getInt32(0), builder.getInt32(1)});
                 builder.CreateStore(count, gep);
 
                 operandStack.push_back(object);
-                break;
-            }
+            },
             // TODO: Nop
-            case OpCodes::Pop:
+            [&](Pop)
             {
                 // Type does not matter as we do not use the result
                 operandStack.pop_back(referenceType(builder.getContext()));
-                break;
-            }
+            },
             // TODO: Pop2
-            case OpCodes::PutField:
+            [&](PutField putField)
             {
-                const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
+                const auto* refInfo = PoolIndex<FieldRefInfo>{putField.index}.resolve(classFile);
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
@@ -1777,11 +1427,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 }
 
                 builder.CreateStore(value, fieldPtr);
-                break;
-            }
-            case OpCodes::PutStatic:
+            },
+            [&](PutStatic putStatic)
             {
-                const auto* refInfo = consume<PoolIndex<FieldRefInfo>>(current).resolve(classFile);
+                const auto* refInfo = PoolIndex<FieldRefInfo>{putStatic.index}.resolve(classFile);
 
                 llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
                 llvm::StringRef fieldName =
@@ -1801,26 +1450,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 }
 
                 builder.CreateStore(value, fieldPtr);
-                break;
-            }
+            },
             // TODO: Ret
-            case OpCodes::Return:
-            {
-                builder.CreateRetVoid();
-                break;
-            }
+            [&](Return) { builder.CreateRetVoid(); },
             // TODO: SALoad
             // TODO: SAStore
-            case OpCodes::SIPush:
-            {
-                auto value = consume<std::int16_t>(current);
-                operandStack.push_back(builder.getInt32(value));
-                break;
-            }
-                // TODO: Swap
-                // TODO: TableSwitch
-                // TODO: Wide
-        }
+            [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); },
+            // TODO: Swap
+            // TODO: TableSwitch
+            // TODO: Wide
+            [](auto) { llvm_unreachable("NOT YET IMPLEMENTED"); });
     }
 }
 

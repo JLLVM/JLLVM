@@ -97,7 +97,7 @@ ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
 template <class OpCode>
 ByteCodeOp parseNotImplemented(const char* bytes, std::size_t offset)
 {
-    llvm_unreachable("NOT YET IMPLEMENTED");
+    llvm::report_fatal_error("NOT YET IMPLEMENTED");
 }
 
 std::size_t lookupSwitchSize(const char* bytes)

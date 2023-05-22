@@ -223,7 +223,7 @@ GENERATE_SELECTOR(
         std::uint8_t index{};
         std::int8_t byte{};
     },
-    parseIIncm, 3)
+    parseIInc, 3)
 GENERATE_SELECTOR(
     SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush, 3)
 GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, lookupSwitchSize(m_current))
