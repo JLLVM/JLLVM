@@ -7,7 +7,6 @@
 #include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/object/Object.hpp>
-#include <jllvm/support/Bytes.hpp>
 
 #include <utility>
 
@@ -486,7 +485,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 addBasicBlock(cmpOp.target + cmpOp.offset);
                 addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
             },
-            [](auto) {});
+            [](...) {}); // NOLINT(cert-dcl50-cpp) we need this to be the lowest priority
     }
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
     for (auto operation : byteCodeRange(code.getCode()))
@@ -520,7 +519,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
         }
         match(
-            operation,
+            // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
+            operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
             [&](AALoad)
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
@@ -914,7 +914,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::CmpInst::Predicate predicate;
 
                 match(
-                    operation,
+                    // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
+                    operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
                     [&](OneOf<IfACmpEq, IfACmpNe>)
                     {
                         rhs = operandStack.pop_back(referenceType(builder.getContext()));
@@ -934,17 +935,17 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     {
                         lhs = operandStack.pop_back(referenceType(builder.getContext()));
                         rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
-                    },
-                    [](auto) { llvm_unreachable("Invalid comparison operation"); });
+                    });
 
                 match(
-                    operation, [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
+                    // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
+                    operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
+                    [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
                     [&](OneOf<IfACmpNe, IfICmpNe, IfNe, IfNonNull>) { predicate = llvm::CmpInst::ICMP_NE; },
                     [&](OneOf<IfICmpLt, IfLt>) { predicate = llvm::CmpInst::ICMP_SLT; },
                     [&](OneOf<IfICmpLe, IfLe>) { predicate = llvm::CmpInst::ICMP_SLE; },
                     [&](OneOf<IfICmpGt, IfGt>) { predicate = llvm::CmpInst::ICMP_SGT; },
-                    [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; },
-                    [](auto) { llvm_unreachable("Invalid comparison operation"); });
+                    [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
                 llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
                 basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
@@ -1187,7 +1188,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     value = builder.CreateTrunc(value, function->getReturnType());
                 }
                 builder.CreateRet(value);
-            }
+            },
             [&](IShl)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1455,11 +1456,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             [&](Return) { builder.CreateRetVoid(); },
             // TODO: SALoad
             // TODO: SAStore
-            [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); },
+            [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
             // TODO: Swap
             // TODO: TableSwitch
             // TODO: Wide
-            [](auto) { llvm_unreachable("NOT YET IMPLEMENTED"); });
+        );
     }
 }
 
