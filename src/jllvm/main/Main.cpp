@@ -47,12 +47,17 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     llvmArgs.push_back("-max-registers-for-gc-values=1000");
 #endif
 
+    CommandLine commandLine(args);
+
 #ifndef NDEBUG
+    llvm::SmallString<64> buffer;
     llvmArgs.push_back("-jllvm-gc-every-alloc=1");
+    if (llvm::StringRef value = commandLine.getArgs().getLastArgValue(OPT_Xdebug_EQ); !value.empty())
+    {
+        llvmArgs.push_back(("-debug-only=" + value).toNullTerminatedStringRef(buffer).data());
+    }
 #endif
     llvm::cl::ParseCommandLineOptions(llvmArgs.size(), llvmArgs.data());
-
-    CommandLine commandLine(args);
 
     auto inputFiles = commandLine.getArgs().getAllArgValues(OPT_INPUT);
     if (inputFiles.empty())
