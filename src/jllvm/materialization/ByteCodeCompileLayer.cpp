@@ -429,7 +429,7 @@ llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
 }
 
 void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
-                 StringInterner& stringInterner)
+                 StringInterner& stringInterner, const MethodType& methodType)
 {
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
     OperandStack operandStack(code.getMaxStack(), builder);
@@ -1482,7 +1482,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
             case OpCodes::IReturn:
             {
-                builder.CreateRet(operandStack.pop_back(builder.getInt32Ty()));
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                if (methodType.returnType == FieldType(BaseType::Boolean))
+                {
+                    value = builder.CreateAnd(value, builder.getInt32(1));
+                }
+                if (function->getReturnType() != value->getType())
+                {
+                    value = builder.CreateTrunc(value, function->getReturnType());
+                }
+                builder.CreateRet(value);
                 break;
             }
             case OpCodes::IShl:
@@ -1837,7 +1846,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     codeGenBody(function, *code, *classFile,
                 LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager, m_callbackManager,
                                       m_baseLayer, m_interner, m_dataLayout),
-                m_stringInterner);
+                m_stringInterner, descriptor);
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
