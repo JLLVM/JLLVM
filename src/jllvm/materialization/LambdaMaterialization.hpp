@@ -7,12 +7,12 @@
 namespace jllvm
 {
 /// Struct that should be specialized to provide a mapping between C++ and LLVM types and constants.
-template <class T, class = void>
+template <class T>
 struct CppToLLVMType;
 
 /// Specialization for any integer type.
 template <class T>
-struct CppToLLVMType<T, std::enable_if_t<std::is_integral_v<T>>>
+requires(std::is_integral_v<T>) struct CppToLLVMType<T>
 {
     static llvm::Type* get(llvm::LLVMContext* context)
     {

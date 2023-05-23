@@ -465,7 +465,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
     // Calculate BasicBlocks
-    for (auto operation : byteCodeRange(code.getCode()))
+    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
         auto addBasicBlock = [&](std::uint16_t target)
         {
@@ -485,10 +485,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 addBasicBlock(cmpOp.target + cmpOp.offset);
                 addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
             },
-            [](...) {}); // NOLINT(cert-dcl50-cpp) we need this to be the lowest priority
+            [](...) {});
     }
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
-    for (auto operation : byteCodeRange(code.getCode()))
+    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
         if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
         {
@@ -519,7 +519,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             }
         }
         match(
-            // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
             operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
             [&](AALoad)
             {
@@ -652,7 +651,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             [&](OneOf<F2I, F2L>)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
-                llvm::Type* type = std::holds_alternative<F2I>(operation) ? builder.getInt32Ty() : builder.getInt64Ty();
+                llvm::Type* type = holds_alternative<F2I>(operation) ? builder.getInt32Ty() : builder.getInt64Ty();
 
                 operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
             },
@@ -697,7 +696,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* otherCmp;
                 llvm::Value* otherCase;
 
-                if (std::holds_alternative<FCmpG>(operation))
+                if (holds_alternative<FCmpG>(operation))
                 {
                     // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
                     notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
@@ -914,7 +913,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::CmpInst::Predicate predicate;
 
                 match(
-                    // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
                     operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
                     [&](OneOf<IfACmpEq, IfACmpNe>)
                     {
@@ -938,7 +936,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     });
 
                 match(
-                    // NOLINTNEXTLINE(cert-dcl50-cpp) we need this to be the lowest priority
                     operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
                     [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
                     [&](OneOf<IfACmpNe, IfICmpNe, IfNe, IfNonNull>) { predicate = llvm::CmpInst::ICMP_NE; },
@@ -1092,7 +1089,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
 
-                bool isStatic = std::holds_alternative<InvokeStatic>(operation);
+                bool isStatic = holds_alternative<InvokeStatic>(operation);
 
                 MethodType descriptor = parseMethodType(
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);

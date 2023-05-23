@@ -65,7 +65,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
     llvm::cantFail(m_stubsManager->createStub(
         key,
         llvm::cantFail(m_callbackManager.getCompileCallback(
-            [=]
+            [=, this]
             {
                 // Reference:
                 // https://docs.oracle.com/en/java/javase/17/docs/specs/jni/design.html#resolving-native-method-names

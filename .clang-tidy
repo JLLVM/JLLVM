@@ -52,7 +52,6 @@ Checks: >
   bugprone-unused-return-value,
   bugprone-use-after-move,
   bugprone-virtual-near-miss,
-  cert-dcl50-cpp,
   cert-dcl58-cpp,
   cert-err34-c,
   cert-err52-cpp,

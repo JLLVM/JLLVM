@@ -10,7 +10,7 @@ namespace
 using namespace jllvm;
 
 template <class Singleton>
-ByteCodeOp parseSingleton(const char* bytes, std::size_t offset)
+ByteCodeOp parseSingleton(const char*, std::size_t offset)
 {
     return Singleton{offset};
 }
@@ -66,36 +66,36 @@ ByteCodeOp parseBranchOffset(const char* bytes, std::size_t offset)
     }
 }
 
-template <class OpCode, class = std::enable_if_t<std::is_same_v<OpCode, BIPush>>>
-ByteCodeOp parseBIPush(const char* bytes, std::size_t offset)
+template <class OpCode>
+requires(std::is_same_v<OpCode, BIPush>) ByteCodeOp parseBIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return BIPush{offset, consume<std::int8_t>(bytes)};
 }
 
-template <class OpCode, class = std::enable_if_t<std::is_same_v<OpCode, NewArray>>>
-ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
+template <class OpCode>
+requires(std::is_same_v<OpCode, NewArray>) ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return NewArray{offset, consume<ArrayOp::ArrayType>(bytes)};
 }
 
-template <class OpCode, class = std::enable_if_t<std::is_same_v<OpCode, IInc>>>
-ByteCodeOp parseIInc(const char* bytes, std::size_t offset)
+template <class OpCode>
+requires(std::is_same_v<OpCode, IInc>) ByteCodeOp parseIInc(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return IInc{offset, consume<std::uint8_t>(bytes), consume<std::int8_t>(bytes)};
 }
 
-template <class OpCode, class = std::enable_if_t<std::is_same_v<OpCode, SIPush>>>
-ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
+template <class OpCode>
+requires(std::is_same_v<OpCode, SIPush>) ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return SIPush{offset, consume<std::int16_t>(bytes)};
 }
 
 template <class OpCode>
-ByteCodeOp parseNotImplemented(const char* bytes, std::size_t offset)
+ByteCodeOp parseNotImplemented(const char*, std::size_t)
 {
     llvm::report_fatal_error("NOT YET IMPLEMENTED");
 }

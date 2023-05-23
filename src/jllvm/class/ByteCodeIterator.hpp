@@ -6,7 +6,8 @@
 #include <jllvm/support/Variant.hpp>
 
 #include <cstdint>
-#include <variant>
+
+#include <swl/variant.hpp>
 
 namespace jllvm
 {
@@ -263,7 +264,7 @@ struct ArrayOp : ByteCodeBase
 #define GENERATE_SELECTOR_END(name, base, body, parser, size) struct name : base body;
 #include "ByteCode.def"
 
-using ByteCodeOp = std::variant<
+using ByteCodeOp = swl::variant<
 #define GENERATE_SELECTOR(name, base, body, parser, size) name,
 #define GENERATE_SELECTOR_END(name, base, body, parser, size) name
 #include "ByteCode.def"
@@ -311,9 +312,9 @@ inline auto byteCodeRange(llvm::ArrayRef<char> current)
     return llvm::make_range(ByteCodeIterator(current.begin()), ByteCodeIterator(current.end()));
 }
 
-inline auto getOffset(ByteCodeOp op)
+inline auto getOffset(const ByteCodeOp& op)
 {
-    return match(op, [](auto op) { return op.offset; });
+    return match(op, [](const auto& op) { return op.offset; });
 }
 
 namespace detail
@@ -335,8 +336,8 @@ struct OneOf : detail::MechanismForBase<Args...>::Base
 {
     using Base = typename detail::MechanismForBase<Args...>::Base;
 
-    template <class T, std::enable_if_t<(std::is_same_v<T, Args> || ...)>* = nullptr>
-    OneOf(const T& value) : Base(value)
+    template <class T>
+    requires(std::is_same_v<std::decay_t<T>, Args> || ...) OneOf(T&& value) : Base(std::forward<T>(value))
     {
     }
 };

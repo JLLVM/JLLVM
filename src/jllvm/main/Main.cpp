@@ -11,7 +11,7 @@
 
 namespace
 {
-template <class T, class = void>
+template <class T>
 struct TrivialPrinter
 {
     auto operator()(void*, void*, T value)
@@ -21,7 +21,7 @@ struct TrivialPrinter
 };
 
 template <class T>
-struct TrivialPrinter<T, std::enable_if_t<std::is_floating_point_v<T>>>
+requires(std::is_floating_point_v<T>) struct TrivialPrinter<T>
 {
     auto operator()(void*, void*, T value)
     {
