@@ -609,7 +609,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]); },
             [&](AStore3)
             { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]); },
-            // TODO: AThrow
+            [&](AThrow) {
+                // TODO: Properly implement throwing exception. Pure stop gap solution for now.
+                operandStack.pop_back(referenceType(builder.getContext()));
+            },
             // TODO: BALoad
             // TODO: BAStore
             [&](BIPush biPush)
@@ -1316,8 +1319,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: LSub
             // TODO: LUShr
             // TODO: LXor
-            // TODO: MonitorEnter
-            // TODO: MonitorExit
+            [&](OneOf<MonitorEnter, MonitorExit>)
+            {
+                // Pop object as is required by the instruction.
+                // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
+                //  (un)locking it.
+                operandStack.pop_back(referenceType(builder.getContext()));
+            },
             // TODO: MultiANewArray
             [&](New newOp)
             {
