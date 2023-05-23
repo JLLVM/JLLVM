@@ -106,7 +106,7 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::Me
     llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.parameters.size());
     for (auto&& [param, attrs] : llvm::zip(methodType.parameters, paramAttrs))
     {
-        const auto* baseType = std::get_if<BaseType>(&param);
+        const auto* baseType = get_if<BaseType>(&param);
         if (!baseType || !baseType->isIntegerType())
         {
             continue;
@@ -115,7 +115,7 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::Me
     }
 
     llvm::AttributeSet retAttrs;
-    if (const auto* baseType = std::get_if<BaseType>(&methodType.returnType); baseType && baseType->isIntegerType())
+    if (const auto* baseType = get_if<BaseType>(&methodType.returnType); baseType && baseType->isIntegerType())
     {
         retAttrs =
             retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
@@ -937,7 +937,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (const auto* baseType = std::get_if<BaseType>(&descriptor);
+                if (const auto* baseType = get_if<BaseType>(&descriptor);
                     baseType && baseType->getValue() < BaseType::Int)
                 {
                     // Extend to the operands stack i32 type.
@@ -961,7 +961,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 FieldType descriptor = parseFieldType(fieldType);
                 llvm::Type* type = descriptorToType(descriptor, builder.getContext());
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (const auto* baseType = std::get_if<BaseType>(&descriptor);
+                if (const auto* baseType = get_if<BaseType>(&descriptor);
                     baseType && baseType->getValue() < BaseType::Int)
                 {
                     // Extend to the operands stack i32 type.

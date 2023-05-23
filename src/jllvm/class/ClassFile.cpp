@@ -185,8 +185,8 @@ jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llv
     for (std::size_t i = 0; i < constantPoolLength; i++)
     {
         result.m_constantPool[i] = parseConstantPoolInfo(bytes, stringSaver);
-        if (std::holds_alternative<DoubleInfo>(result.m_constantPool[i])
-            || std::holds_alternative<LongInfo>(result.m_constantPool[i]))
+        if (holds_alternative<DoubleInfo>(result.m_constantPool[i])
+            || holds_alternative<LongInfo>(result.m_constantPool[i]))
         {
             i++;
         }
