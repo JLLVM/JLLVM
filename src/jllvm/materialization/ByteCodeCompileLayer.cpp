@@ -609,7 +609,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]); },
             [&](AStore3)
             { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]); },
-            [&](AThrow) {
+            [&](AThrow)
+            {
                 // TODO: Properly implement throwing exception. Pure stop gap solution for now.
                 operandStack.pop_back(referenceType(builder.getContext()));
             },
@@ -1257,11 +1258,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: LCmp
             // TODO: LConst0
             // TODO: LConst1
-            [&](LDC ldc)
+            [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
-                PoolIndex<IntegerInfo, FloatInfo, StringInfo, MethodRefInfo, InterfaceMethodRefInfo, ClassInfo,
-                          MethodTypeInfo, DynamicInfo>
-                    pool(ldc.index);
+                PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
+                          InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
+                    pool{ldc.index};
 
                 match(
                     pool.resolve(classFile),
@@ -1269,6 +1270,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     { operandStack.push_back(builder.getInt32(integerInfo->value)); },
                     [&](const FloatInfo* floatInfo)
                     { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), floatInfo->value)); },
+                    [&](const LongInfo* longInfo) { operandStack.push_back(builder.getInt64(longInfo->value)); },
+                    [&](const DoubleInfo* doubleInfo)
+                    { operandStack.push_back(llvm::ConstantFP::get(builder.getDoubleTy(), doubleInfo->value)); },
                     [&](const StringInfo* stringInfo)
                     {
                         llvm::StringRef text = stringInfo->stringValue.resolve(classFile)->text;
@@ -1295,8 +1299,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
             },
-            // TODO: LDCW
-            // TODO: LDC2W
             // TODO: LDiv
             // TODO: LLoad
             // TODO: LLoad0
