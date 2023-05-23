@@ -1,6 +1,7 @@
 
 #pragma once
-#include <llvm/Support/Compiler.h>
+
+#include <utility>
 
 namespace jllvm
 {
