@@ -132,9 +132,19 @@ public:
         return javaThis.isArray();
     }
 
+    static bool desiredAssertionStatus0(VirtualMachine&, ClassObject*)
+    {
+#ifndef NDEBUG
+        return true;
+#else
+        return false;
+#endif
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
-        std::make_tuple(addMember<&ClassModel::registerNatives>(), addMember<&ClassModel::isArray>());
+        std::make_tuple(addMember<&ClassModel::registerNatives>(), addMember<&ClassModel::isArray>(),
+                        addMember<&ClassModel::desiredAssertionStatus0>());
 };
 
 /// Register any models for builtin Java classes in the VM.
