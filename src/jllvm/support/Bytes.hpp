@@ -30,6 +30,22 @@ T consume(llvm::ArrayRef<char>& bytes)
     return result;
 }
 
+template <class T>
+T consume(const char*& bytes)
+{
+    static_assert(std::is_trivially_copyable_v<T> && sizeof(T) <= 8, "T must be trivially copyable");
+    std::conditional_t<sizeof(T) <= 2, std::conditional_t<sizeof(T) <= 1, std::uint8_t, std::uint16_t>,
+                       std::conditional_t<(sizeof(T) > 4), std::uint64_t, std::uint32_t>>
+        asBytes;
+    std::memcpy(&asBytes, bytes, sizeof(T));
+    bytes += sizeof(T);
+    asBytes = llvm::support::endian::byte_swap(asBytes, llvm::support::big);
+
+    T result;
+    std::memcpy(&result, &asBytes, sizeof(T));
+    return result;
+}
+
 /// Reads in 'length' amount of bytes from 'bytes', returns it as a 'StringRef' and advanced 'bytes' by the amount of
 /// bytes read.
 /// Asserts if 'bytes' does not contain enough bytes.

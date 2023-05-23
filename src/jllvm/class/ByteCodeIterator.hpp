@@ -1,10 +1,13 @@
-
 #pragma once
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/iterator.h>
 
+#include <jllvm/support/Variant.hpp>
+
 #include <cstdint>
+
+#include <swl/variant.hpp>
 
 namespace jllvm
 {
@@ -216,16 +219,56 @@ enum class OpCodes : std::uint8_t
     Wide = 0xc4,
 };
 
-/// Helper struct containing for bytecode relevant information that is returned by the iterator.
-struct ByteCodeOp
+struct ByteCodeBase
 {
-    OpCodes opCode{};
-    /// 0-based offset of this operation.
     std::size_t offset{};
-    /// Reference to any variable-length extra data this operation contains.
-    /// Does not include the identifying byte of the instruction.
-    llvm::ArrayRef<char> data;
 };
+
+struct SingletonOp : ByteCodeBase
+{
+};
+
+struct LocalIndexedOp : ByteCodeBase
+{
+    std::uint8_t index{};
+};
+
+struct PoolIndexedOp : ByteCodeBase
+{
+    std::uint16_t index{};
+};
+
+struct BranchOffsetOp : ByteCodeBase
+{
+    std::int32_t target{};
+};
+
+struct ArrayOp : ByteCodeBase
+{
+    enum class ArrayType : std::uint8_t
+    {
+        TBoolean = 4,
+        TChar = 5,
+        TFloat = 6,
+        TDouble = 7,
+        TByte = 8,
+        TShort = 9,
+        TInt = 10,
+        TLong = 11
+    };
+
+    ArrayType atype{};
+};
+
+#define GENERATE_SELECTOR(name, base, body, parser, size) struct name : base body;
+#define GENERATE_SELECTOR_END(name, base, body, parser, size) struct name : base body;
+#include "ByteCode.def"
+
+using ByteCodeOp = swl::variant<
+#define GENERATE_SELECTOR(name, base, body, parser, size) name,
+#define GENERATE_SELECTOR_END(name, base, body, parser, size) name
+#include "ByteCode.def"
+    >;
 
 class ByteCodeIterator : public llvm::iterator_facade_base<ByteCodeIterator, std::forward_iterator_tag, ByteCodeOp,
                                                            std::ptrdiff_t, ByteCodeOp, ByteCodeOp>
@@ -235,6 +278,8 @@ class ByteCodeIterator : public llvm::iterator_facade_base<ByteCodeIterator, std
 
     // Returns the size of the operation, including the identifying byte.
     std::size_t currentOpSize() const;
+
+    ByteCodeOp currentOp() const;
 
 public:
     ByteCodeIterator() = default;
@@ -256,8 +301,7 @@ public:
 
     value_type operator*() const
     {
-        std::size_t size = currentOpSize();
-        return {static_cast<OpCodes>(*m_current), m_offset, llvm::ArrayRef(m_current + 1, size - 1)};
+        return currentOp();
     }
 };
 
@@ -267,5 +311,35 @@ inline auto byteCodeRange(llvm::ArrayRef<char> current)
 {
     return llvm::make_range(ByteCodeIterator(current.begin()), ByteCodeIterator(current.end()));
 }
+
+inline auto getOffset(const ByteCodeOp& op)
+{
+    return match(op, [](const auto& op) { return op.offset; });
+}
+
+namespace detail
+{
+template <class First, class... Rest>
+struct MechanismForBase
+{
+    using Base = std::conditional_t<
+        std::is_base_of_v<SingletonOp, First>, SingletonOp,
+        std::conditional_t<std::is_base_of_v<LocalIndexedOp, First>, LocalIndexedOp,
+                           std::conditional_t<std::is_base_of_v<PoolIndexedOp, First>, PoolIndexedOp, BranchOffsetOp>>>;
+
+    static_assert((std::is_base_of_v<Base, Rest> && ...));
+};
+} // namespace detail
+
+template <class... Args>
+struct OneOf : detail::MechanismForBase<Args...>::Base
+{
+    using Base = typename detail::MechanismForBase<Args...>::Base;
+
+    template <class T, std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>* = nullptr>
+    OneOf(T&& value) : Base(std::forward<T>(value))
+    {
+    }
+};
 
 } // namespace jllvm

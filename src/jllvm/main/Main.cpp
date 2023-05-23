@@ -12,28 +12,33 @@
 namespace
 {
 template <class T>
-auto trivialPrintFunction()
+struct TrivialPrinter
 {
-    return [](void*, void*, T value)
+    auto operator()(void*, void*, T value)
     {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            std::stringstream str;
-            str << std::defaultfloat << value << '\n';
-            llvm::outs() << str.str();
-        }
-        else
-        {
-            llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n';
-        }
-    };
-}
+        llvm::outs() << static_cast<std::ptrdiff_t>(value) << '\n';
+    }
+};
+
+template <class T>
+requires(std::is_floating_point_v<T>) struct TrivialPrinter<T>
+{
+    auto operator()(void*, void*, T value)
+    {
+        std::stringstream str;
+        str << std::defaultfloat << value << '\n';
+        llvm::outs() << str.str();
+    }
+};
 
 template <>
-auto trivialPrintFunction<jllvm::String>()
+struct TrivialPrinter<jllvm::String>
 {
-    return [](void*, void*, jllvm::String* string) { llvm::outs() << string->toUTF8() << '\n'; };
-}
+    auto operator()(void*, void*, jllvm::String* string)
+    {
+        llvm::outs() << string->toUTF8() << '\n';
+    }
+};
 
 } // namespace
 
@@ -91,15 +96,15 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     if (commandLine.getArgs().hasArg(OPT_Xenable_test_utils))
     {
         JIT& jit = vm.getJIT();
-        jit.addJNISymbol("Java_Test_print__B", trivialPrintFunction<std::int8_t>());
-        jit.addJNISymbol("Java_Test_print__D", trivialPrintFunction<double>());
-        jit.addJNISymbol("Java_Test_print__F", trivialPrintFunction<float>());
-        jit.addJNISymbol("Java_Test_print__I", trivialPrintFunction<std::int32_t>());
-        jit.addJNISymbol("Java_Test_print__J", trivialPrintFunction<std::int64_t>());
-        jit.addJNISymbol("Java_Test_print__S", trivialPrintFunction<std::int16_t>());
-        jit.addJNISymbol("Java_Test_print__C", trivialPrintFunction<std::uint16_t>());
-        jit.addJNISymbol("Java_Test_print__Z", trivialPrintFunction<bool>());
-        jit.addJNISymbol("Java_Test_print__Ljava/lang/String;", trivialPrintFunction<String>());
+        jit.addJNISymbol("Java_Test_print__B", TrivialPrinter<std::int8_t>{});
+        jit.addJNISymbol("Java_Test_print__D", TrivialPrinter<double>{});
+        jit.addJNISymbol("Java_Test_print__F", TrivialPrinter<float>{});
+        jit.addJNISymbol("Java_Test_print__I", TrivialPrinter<std::int32_t>{});
+        jit.addJNISymbol("Java_Test_print__J", TrivialPrinter<std::int64_t>{});
+        jit.addJNISymbol("Java_Test_print__S", TrivialPrinter<std::int16_t>{});
+        jit.addJNISymbol("Java_Test_print__C", TrivialPrinter<std::uint16_t>{});
+        jit.addJNISymbol("Java_Test_print__Z", TrivialPrinter<bool>{});
+        jit.addJNISymbol("Java_Test_print__Ljava/lang/String;", TrivialPrinter<String>{});
     }
 
     return vm.executeMain(inputFiles.front(), llvm::to_vector_of<llvm::StringRef>(llvm::drop_begin(inputFiles)));
