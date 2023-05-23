@@ -63,33 +63,6 @@ Checks: >
   cert-msc51-cpp,
   cert-oop57-cpp,
   cert-oop58-cpp,
-  clang-analyzer-apiModeling.llvm.CastValue,
-  clang-analyzer-apiModeling.llvm.ReturnValue,
-  clang-analyzer-apiModeling.StdCLibraryFunctions,
-  clang-analyzer-apiModeling.TrustNonnull,
-  clang-analyzer-core.builtin.BuiltinFunctions,
-  clang-analyzer-core.builtin.NoReturnFunctions,
-  clang-analyzer-core.DynamicTypePropagation,
-  clang-analyzer-core.NonnilStringConstants,
-  clang-analyzer-core.NonNullParamChecker,
-  clang-analyzer-core.NullDereference,
-  clang-analyzer-core.StackAddrEscapeBase,
-  clang-analyzer-core.StackAddressEscape,
-  clang-analyzer-core.UndefinedBinaryOperatorResult,
-  clang-analyzer-core.uninitialized.ArraySubscript,
-  clang-analyzer-core.uninitialized.Assign,
-  clang-analyzer-core.uninitialized.Branch,
-  clang-analyzer-core.uninitialized.UndefReturn,
-  clang-analyzer-core.VLASize,
-  clang-analyzer-cplusplus.*
-  clang-analyzer-deadcode.DeadStores,
-  clang-analyzer-optin.cplusplus.*
-  clang-analyzer-optin.performance.Padding,
-  clang-analyzer-optin.portability.UnixAPI,
-  clang-analyzer-security.FloatLoopCounter,
-  clang-analyzer-security.insecureAPI.*
-  clang-analyzer-unix.*
-  clang-analyzer-valist.*
   cppcoreguidelines-avoid-goto,
   cppcoreguidelines-interfaces-global-init,
   cppcoreguidelines-prefer-member-initializer,
