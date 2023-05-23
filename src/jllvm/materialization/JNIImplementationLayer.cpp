@@ -135,7 +135,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
                 for (auto&& [index, type] : llvm::enumerate(methodType.parameters))
                 {
-                    const auto* baseType = std::get_if<BaseType>(&type);
+                    const auto* baseType = get_if<BaseType>(&type);
                     if (!baseType || !baseType->isIntegerType())
                     {
                         continue;

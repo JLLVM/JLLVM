@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(JLLVM)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 if( NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
     option(JLLVM_ENABLE_ASSERTIONS "Enable assertions" OFF)
@@ -66,6 +66,7 @@ set(JLLVM_TOOLS_DIR ${CMAKE_BINARY_DIR}/bin)
 
 include_directories(src)
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
+include_directories(SYSTEM 3rdParty)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 

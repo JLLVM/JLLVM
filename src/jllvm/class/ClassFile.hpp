@@ -10,8 +10,9 @@
 
 #include <cstdint>
 #include <tuple>
-#include <variant>
 #include <vector>
+
+#include <swl/variant.hpp>
 
 namespace jllvm
 {
@@ -186,7 +187,7 @@ struct PackageInfo
 /// Note the 'std::monostate' is used because there are "empty" constant pool entries following
 /// any 'LongInfo' entries and 'DoubleInfo' as required by the spec. These are always unreferenced however.
 using ConstantPoolInfo =
-    std::variant<std::monostate, ClassInfo, FieldRefInfo, MethodRefInfo, InterfaceMethodRefInfo, StringInfo,
+    swl::variant<std::monostate, ClassInfo, FieldRefInfo, MethodRefInfo, InterfaceMethodRefInfo, StringInfo,
                  IntegerInfo, FloatInfo, LongInfo, DoubleInfo, NameAndTypeInfo, Utf8Info, MethodHandleInfo,
                  MethodTypeInfo, DynamicInfo, InvokeDynamicInfo, ModuleInfo, PackageInfo>;
 
@@ -486,7 +487,7 @@ public:
 template <class First, class... Rest>
 decltype(auto) PoolIndex<First, Rest...>::resolve(const jllvm::ClassFile& classFile) const
 {
-    using Result = std::conditional_t<(sizeof...(Rest) > 0), std::variant<const First*, const Rest*...>, const First*>;
+    using Result = std::conditional_t<(sizeof...(Rest) > 0), swl::variant<const First*, const Rest*...>, const First*>;
     return jllvm::match(classFile.m_constantPool[m_index - 1],
                         [](const auto& alt) -> Result
                         {

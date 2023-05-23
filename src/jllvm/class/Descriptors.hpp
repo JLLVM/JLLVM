@@ -4,8 +4,9 @@
 #include <llvm/Support/ErrorHandling.h>
 
 #include <memory>
-#include <variant>
 #include <vector>
+
+#include <swl/variant.hpp>
 
 namespace jllvm
 {
@@ -89,7 +90,7 @@ struct ObjectType
 
 struct ArrayType;
 
-using FieldType = std::variant<BaseType, ObjectType, ArrayType>;
+using FieldType = swl::variant<BaseType, ObjectType, ArrayType>;
 
 /// <ArrayType> ::= '[' <FieldType>
 struct ArrayType
