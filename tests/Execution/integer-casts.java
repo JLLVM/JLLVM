@@ -58,5 +58,18 @@ class Test
         print((double) y);
         //CHECK: -129
         print((double) z);
+
+        // Testing narrowing conversions
+        int b = 2 * Byte.MAX_VALUE;
+        //CHECK: -2
+        print((int)(byte) b);
+
+        int c = 2 * Character.MAX_VALUE;
+        //CHECK: 65534
+        print((int)(char) c);
+
+        int s = 2 * Short.MAX_VALUE;
+        //CHECK: -2
+        print((int)(short) s);
     }
 }
