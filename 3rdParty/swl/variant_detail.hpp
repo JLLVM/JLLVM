@@ -3,7 +3,7 @@
 template <int N>
 constexpr int find_first_true(bool (&&arr)[N]){
 	for (int k = 0; k < N; ++k)
-		if (arr[k]) 
+		if (arr[k])
 			return k;
 	return -1;
 }
@@ -11,7 +11,7 @@ constexpr int find_first_true(bool (&&arr)[N]){
 template <class T, class... Ts>
 inline constexpr bool appears_exactly_once = (static_cast<unsigned short>(std::is_same_v<T, Ts>) + ...) == 1;
 
-// ============= type pack element 
+// ============= type pack element
 
 template <unsigned char = 1>
 struct find_type_i;
@@ -42,25 +42,25 @@ struct overload_frag {
 	template <class T>
 		requires requires { arr1<A>{std::declval<T>()}; }
 	auto operator()(A, T&&) -> overload_frag<N, A>;
-}; 
+};
 
 template <class Seq, class... Args>
 struct make_overload;
 
 template <std::size_t... Idx, class... Args>
 struct make_overload<std::integer_sequence<std::size_t, Idx...>, Args...>
-	 : overload_frag<Idx, Args>... { 
+	 : overload_frag<Idx, Args>... {
 	using overload_frag<Idx, Args>::operator()...;
 };
 
 template <class T, class... Ts>
-using best_overload_match = typename decltype( 
+using best_overload_match = typename decltype(
 	make_overload<std::make_index_sequence<sizeof...(Ts)>, Ts...>{}
 	( std::declval<T>(), std::declval<T>() )
 )::type;
-	
+
 template <class T, class... Ts>
-concept has_non_ambiguous_match = 
+concept has_non_ambiguous_match =
 	requires { typename best_overload_match<T, Ts...>; };
 
 // ================================== rel ops
@@ -69,17 +69,17 @@ template <class From, class To>
 concept convertible = std::is_convertible_v<From, To>;
 
 template <class T>
-concept has_eq_comp = requires (T a, T b) { 
-	{ a == b } -> convertible<bool>; 
+concept has_eq_comp = requires (T a, T b) {
+	{ a == b } -> convertible<bool>;
 };
 
 template <class T>
-concept has_lesser_comp = requires (T a, T b) { 
-	{ a < b } -> convertible<bool>; 
+concept has_lesser_comp = requires (T a, T b) {
+	{ a < b } -> convertible<bool>;
 };
 
 template <class T>
-concept has_less_or_eq_comp = requires (T a, T b) { 
+concept has_less_or_eq_comp = requires (T a, T b) {
 	{ a <= b } -> convertible<bool>;
 };
 
@@ -87,7 +87,7 @@ template <class A>
 struct emplace_no_dtor_from_elem {
 	template <class T>
 	constexpr void operator()(T&& elem, auto index_) const {
-		a.template emplace_no_dtor<index_>( static_cast<T&&>(elem) ); 
+		a.template emplace_no_dtor<index_>( static_cast<T&&>(elem) );
 	}
 	A& a;
 };
@@ -97,11 +97,11 @@ constexpr void destruct(T& obj){
 	if constexpr (not std::is_trivially_destructible_v<E>)
 		obj.~E();
 }
-	
+
 // =============================== variant union types
-	
-// =================== base variant storage type 
-// this type is used to build a N-ary tree of union. 
+
+// =================== base variant storage type
+// this type is used to build a N-ary tree of union.
 
 struct dummy_type{ static constexpr int elem_size = 0; }; // used to fill the back of union nodes
 
@@ -109,9 +109,14 @@ using union_index_t = unsigned;
 
 #define TRAIT(trait) ( std::is_##trait##_v<A> && std::is_##trait##_v<B> )
 
+#if __clang_major__ >= 15
 #define SFM(signature, trait) \
 	signature = default; \
-	signature requires (TRAIT(trait) and not TRAIT(trivially_##trait)) {} 
+	signature requires (TRAIT(trait) and not TRAIT(trivially_##trait)) {}
+#else
+#define SFM(signature, trait) \
+	signature {}
+#endif
 
 // given the two members of type A and B of an union X
 // this create the proper conditionally trivial special members functions
@@ -130,7 +135,7 @@ struct node_trait<true> {
 
 	template <class A, class B>
 	static constexpr auto elem_size = not( std::is_same_v<B, dummy_type> ) ? 2 : 1;
-	
+
 	template <std::size_t, class>
 	static constexpr char ctor_branch = 0;
 };
@@ -139,7 +144,7 @@ template <>
 struct node_trait<false> {
 	template <class A, class B>
 	static constexpr auto elem_size = A::elem_size + B::elem_size;
-	
+
 	template <std::size_t Index, class A>
 	static constexpr char ctor_branch = (Index < A::elem_size) ? 1 : 2;
 };
@@ -148,43 +153,43 @@ template <bool IsLeaf, class A, class B>
 struct union_node {
 
 	union {
-		A a; 
+		A a;
 		B b;
 	};
-	
+
 	static constexpr auto elem_size = node_trait<IsLeaf>::template elem_size<A, B>;
-	
+
 	constexpr union_node() = default;
-	
+
 	template <std::size_t Index, class... Args>
 		requires (node_trait<IsLeaf>::template ctor_branch<Index, A> == 1)
 	constexpr union_node(in_place_index_t<Index>, Args&&... args)
-	: a{ in_place_index<Index>, static_cast<Args&&>(args)... } 
+	: a{ in_place_index<Index>, static_cast<Args&&>(args)... }
 	{}
-	
+
 	template <std::size_t Index, class... Args>
 		requires (node_trait<IsLeaf>::template ctor_branch<Index, A> == 2)
 	constexpr union_node(in_place_index_t<Index>, Args&&... args)
-	: b{ in_place_index<Index - A::elem_size>, static_cast<Args&&>(args)... } 
+	: b{ in_place_index<Index - A::elem_size>, static_cast<Args&&>(args)... }
 	{}
-	
+
 	template <class... Args>
 		requires (IsLeaf)
 	constexpr union_node(in_place_index_t<0>, Args&&... args)
-	: a{static_cast<Args&&>(args)...} 
+	: a{static_cast<Args&&>(args)...}
 	{}
-	
+
 	template <class... Args>
 		requires (IsLeaf)
 	constexpr union_node(in_place_index_t<1>, Args&&... args)
-	: b{static_cast<Args&&>(args)...} 
+	: b{static_cast<Args&&>(args)...}
 	{}
-	
+
 	constexpr union_node(dummy_type)
 		requires (std::is_same_v<dummy_type, B>)
 	: b{}
 	{}
-	
+
 	template <union_index_t Index>
 	constexpr auto& get()
 	{
@@ -192,18 +197,18 @@ struct union_node {
 		{
 			if constexpr ( Index == 0 )
 				return a;
-			else 
+			else
 				return b;
 		}
-		else 
+		else
 		{
 			if constexpr ( Index < A::elem_size )
 				return a.template get<Index>();
-			else 
-				return b.template get<Index - A::elem_size>();	
+			else
+				return b.template get<Index - A::elem_size>();
 		}
 	}
-	
+
 	INJECT_UNION_SFM(union_node)
 };
 
@@ -211,7 +216,7 @@ struct union_node {
 #undef SFM
 #undef TRAIT
 
-// =================== algorithm to build the tree of unions 
+// =================== algorithm to build the tree of unions
 // take a sequence of types and perform an order preserving fold until only one type is left
 // the first parameter is the numbers of types remaining for the current pass
 
@@ -227,16 +232,16 @@ struct make_tree<2, 1, IsFirstPass> {
 	template <unsigned Remaining, class A, class B, class... Ts>
 	using f = typename make_tree
 	<
-	 pick_next(Remaining - 2), 
+	 pick_next(Remaining - 2),
 	 sizeof...(Ts) != 0,
 	 IsFirstPass
 	>
 	::template f
 	<
-	 Remaining - 2, 
-	 Ts..., 
+	 Remaining - 2,
+	 Ts...,
 	 union_node<IsFirstPass, A, B>
-	>; 
+	>;
 };
 
 // only one type left, stop
@@ -252,8 +257,8 @@ struct make_tree<0, 1, IsFirstPass> {
 	template <unsigned Remaining, class... Ts>
 	using f = typename make_tree
 	<
-	 pick_next(sizeof...(Ts)), 
-	 (sizeof...(Ts) != 1), 
+	 pick_next(sizeof...(Ts)),
+	 (sizeof...(Ts) != 1),
 	 false  // <- both first pass and tail call recurse into a tail call
 	>
 	::template f<sizeof...(Ts), Ts...>;
@@ -276,33 +281,33 @@ struct make_tree<1, 1, true> {
 };
 
 template <class... Ts>
-using make_tree_union = typename 
+using make_tree_union = typename
 	make_tree<pick_next(sizeof...(Ts)), 1, true>::template f<sizeof...(Ts), Ts...>;
 
 // ============================================================
 
-// Ts... must be sorted in ascending size 
+// Ts... must be sorted in ascending size
 template <std::size_t Num, class... Ts>
-using smallest_suitable_integer_type = 
+using smallest_suitable_integer_type =
 	type_pack_element<(static_cast<unsigned char>(Num > std::numeric_limits<Ts>::max()) + ...),
 					  Ts...
 					  >;
 
-// why do we need this again? i think something to do with GCC? 
+// why do we need this again? i think something to do with GCC?
 namespace swap_trait {
-	using std::swap;    
-	
+	using std::swap;
+
 	template <class A>
 	concept able = requires (A a, A b) { swap(a, b); };
-	
+
 	template <class A>
 	inline constexpr bool nothrow = noexcept( swap(std::declval<A&>(), std::declval<A&>()) );
 }
 
 #ifndef SWL_VARIANT_NO_STD_HASH
 	template <class T>
-	inline constexpr bool has_std_hash = requires (T t) { 
-		std::size_t( ::std::hash< std::remove_cvref_t<T> >{}(t) ); 
+	inline constexpr bool has_std_hash = requires (T t) {
+		std::size_t( ::std::hash< std::remove_cvref_t<T> >{}(t) );
 	};
 #endif
 
