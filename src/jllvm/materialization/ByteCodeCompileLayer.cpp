@@ -487,7 +487,21 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             [](...) {});
     }
+
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
+    for (const auto& iter : code.getExceptionTable())
+    {
+        auto [result, inserted] = basicBlocks.insert({iter.handlerPc, nullptr});
+        if (!inserted)
+        {
+            continue;
+        }
+        // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
+        // required that we register that fact in 'basicBlockStackPointers' explicitly.
+        result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
+    }
+
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
         if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
