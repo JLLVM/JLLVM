@@ -147,8 +147,17 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                         className = classOfMethodResolution(classObject, method);
                     }
 
-                    iTable->getMethods()[index] = reinterpret_cast<VTableSlot>(
-                        llvm::cantFail(m_jit.lookup(className, method.getName(), method.getType())).getAddress());
+                    // Lookup can and will fail if an abstract class declares the method as abstract. It is still
+                    // supposed to be found however, but the interface method is simply forced to be implemented by
+                    // derived classes.
+                    auto lookup = m_jit.lookup(className, method.getName(), method.getType());
+                    if (!lookup)
+                    {
+                        llvm::consumeError(lookup.takeError());
+                        continue;
+                    }
+
+                    iTable->getMethods()[index] = reinterpret_cast<VTableSlot>(lookup->getAddress());
                 }
             }
         },
