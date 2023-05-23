@@ -336,8 +336,8 @@ struct OneOf : detail::MechanismForBase<Args...>::Base
 {
     using Base = typename detail::MechanismForBase<Args...>::Base;
 
-    template <class T>
-    requires(std::is_same_v<std::decay_t<T>, Args> || ...) OneOf(T&& value) : Base(std::forward<T>(value))
+    template <class T, std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>* = nullptr>
+    OneOf(T&& value) : Base(std::forward<T>(value))
     {
     }
 };

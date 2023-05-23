@@ -136,9 +136,11 @@ jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
     switch (static_cast<OpCodes>(*m_current))
     {
 #define GENERATE_SELECTOR(name, base, body, parser, size) \
-    case OpCodes::name: return parser<name>(m_current, m_offset);
+    case OpCodes::name:                                   \
+        return parser<name>(m_current, m_offset); // NOLINT(bugprone-macro-parentheses) parser is always a function
 #define GENERATE_SELECTOR_END(name, base, body, parser, size) \
-    case OpCodes::name: return parser<name>(m_current, m_offset);
+    case OpCodes::name:                                       \
+        return parser<name>(m_current, m_offset); // NOLINT(bugprone-macro-parentheses) parser is always a function
 #include "ByteCode.def"
         default: llvm_unreachable("Unknown opcode");
     }
@@ -149,9 +151,9 @@ std::size_t jllvm::ByteCodeIterator::currentOpSize() const
     switch (static_cast<OpCodes>(*m_current))
     {
 #define GENERATE_SELECTOR(name, base, body, parser, size) \
-    case OpCodes::name: return size;
+    case OpCodes::name: return (size);
 #define GENERATE_SELECTOR_END(name, base, body, parser, size) \
-    case OpCodes::name: return size;
+    case OpCodes::name: return (size);
 #include "ByteCode.def"
         default: llvm_unreachable("Unknown opcode");
     }
