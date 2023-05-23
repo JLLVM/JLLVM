@@ -16,26 +16,29 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                                std::size_t vTableSlots, std::uint32_t fieldAreaSize,
                                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                               llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className,
-                                               const jllvm::ClassObject* superClass)
+                                               llvm::ArrayRef<const ClassObject*> bases, llvm::StringRef className)
 {
     llvm::SmallVector<ITable*> iTables;
     llvm::df_iterator_default_set<const jllvm::ClassObject*> seen;
-    for (const ClassObject* root : interfaces)
+    for (const ClassObject* root : bases)
     {
-        for (const ClassObject* interface : llvm::depth_first_ext(InterfaceGraph{root}, seen))
+        for (const ClassObject* classObject : llvm::depth_first_ext(ClassGraph{root}, seen))
         {
+            if (!classObject->isInterface())
+            {
+                continue;
+            }
             // TODO: We should probably calculate the method count of an interface once and store it in the interface.
             iTables.push_back(ITable::create(
-                allocator, interface->getInterfaceId(),
-                llvm::count_if(interface->getMethods(), [](const Method& method) { return !method.isStatic(); })));
+                allocator, classObject->getInterfaceId(),
+                llvm::count_if(classObject->getMethods(), [](const Method& method) { return !method.isStatic(); })));
         }
     }
 
     auto* result =
         new (allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(vTableSlots), alignof(ClassObject)))
             ClassObject(metaClass, fieldAreaSize, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
-                        arrayRefAlloc(allocator, interfaces), arrayRefAlloc(allocator, iTables), className, superClass);
+                        arrayRefAlloc(allocator, bases), arrayRefAlloc(allocator, iTables), className);
     // Zero out vTable.
     std::memset(result->getVTable(), 0, vTableSlots * sizeof(VTableSlot));
     return result;
@@ -43,16 +46,15 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize,
                                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                llvm::ArrayRef<const ClassObject*> interfaces, llvm::ArrayRef<ITable*> iTables,
-                                llvm::StringRef className, const jllvm::ClassObject* superClass)
+                                llvm::ArrayRef<const ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
+                                llvm::StringRef className)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(fieldAreaSize),
       m_methods(methods),
       m_fields(fields),
-      m_interfaces(interfaces),
+      m_bases(bases),
       m_iTables(iTables),
-      m_className(className),
-      m_superClassOrInterfaceId(superClass)
+      m_className(className)
 {
 }
 
@@ -71,13 +73,13 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
     }
 
     auto* result = create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
-                          stringSaver.save("[L" + componentType->getClassName() + ";"), nullptr);
-    result->m_componentType = componentType;
+                          stringSaver.save("[L" + componentType->getClassName() + ";"));
+    result->m_componentTypeOrInterfaceId = componentType;
     return result;
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, instanceSize - sizeof(void*), {}, {}, {}, {}, name, nullptr)
+    : ClassObject(nullptr, instanceSize - sizeof(void*), {}, {}, {}, {}, name)
 {
     m_isPrimitive = true; // NOLINT(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
 }
@@ -105,9 +107,9 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interf
       m_fieldAreaSize(0),
       m_methods(methods),
       m_fields(fields),
-      m_interfaces(interfaces),
+      m_bases(interfaces),
       m_className(className),
-      m_superClassOrInterfaceId(interfaceId)
+      m_componentTypeOrInterfaceId(interfaceId)
 {
 }
 

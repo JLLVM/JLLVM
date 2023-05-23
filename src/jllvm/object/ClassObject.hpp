@@ -3,12 +3,12 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/GraphTraits.h>
-#include <llvm/ADT/iterator.h>
 #include <llvm/ADT/PointerEmbeddedInt.h>
 #include <llvm/ADT/PointerIntPair.h>
 #include <llvm/ADT/PointerUnion.h>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/iterator.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
@@ -222,6 +222,8 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     friend class llvm::TrailingObjects<ClassObject, VTableSlot>;
     ObjectHeader m_objectHeader;
 
+    using InterfaceId = llvm::PointerEmbeddedInt<std::size_t, std::numeric_limits<std::size_t>::digits - 1>;
+
     // Field layout from Java!
     Object* m_cachedConstructor = nullptr;
     // This is purely used as a cache by the JVM and lazily init.
@@ -230,7 +232,7 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     Object* m_classLoader = nullptr;
     Object* m_classData = nullptr;
     String* m_packageName = nullptr;
-    const ClassObject* m_componentType = nullptr;
+    llvm::PointerUnion<const ClassObject*, InterfaceId> m_componentTypeOrInterfaceId;
     Object* m_reflectionData = nullptr;
     std::int32_t m_classRedefinedCount = 0;
     Object* m_genericInfo = nullptr;
@@ -245,18 +247,16 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     std::int32_t m_fieldAreaSize;
     llvm::ArrayRef<Method> m_methods;
     llvm::ArrayRef<Field> m_fields;
-    llvm::ArrayRef<const ClassObject*> m_interfaces;
+    // Contains all the bases of this class object. For classes, this contains the superclass (except for 'Object')
+    // followed by all direct superinterfaces. For interfaces, this is simply their direct superinterfaces.
+    llvm::ArrayRef<const ClassObject*> m_bases;
     llvm::ArrayRef<ITable*> m_iTables;
     llvm::StringRef m_className;
-
-    using InterfaceId = llvm::PointerEmbeddedInt<std::size_t, std::numeric_limits<std::size_t>::digits - 1>;
-
-    llvm::PointerUnion<const ClassObject*, InterfaceId> m_superClassOrInterfaceId;
     bool m_isPrimitive = false;
 
     ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
-                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, const ClassObject* superClass);
+                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
+                llvm::StringRef className);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
@@ -294,13 +294,14 @@ public:
     /// with 'vTableSlots' amount of v-table slots.
     /// 'fieldAreaSize' is the size of an instance of this class WITHOUT the object header. In other words, this is
     /// only the size of all the fields added up (including of subclasses).
-    /// 'methods', 'fields' and 'interfaces' are allocated within 'allocator' to preserve their lifetimes.
+    /// 'methods', 'fields' and 'bases' are allocated within 'allocator' to preserve their lifetimes.
+    /// 'bases' must contain all direct superclasses and interfaces implemented by the class object, with the
+    /// superclass in the very first position (if it has one).
     /// 'className' is the name of the user class in the JVM internal format.
-    /// 'superClass' is the super class of this class if it has one.
     static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass, std::size_t vTableSlots,
                                std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                               llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
-                               llvm::StringRef className, const ClassObject* superClass);
+                               llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> bases,
+                               llvm::StringRef className);
 
     /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
     /// 'interfaceId' is the globally unique id of this interface.
@@ -308,7 +309,8 @@ public:
     /// 'className' is the name of the user class in the JVM internal format.
     static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                         std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                                        llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
+                                        llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                                        llvm::StringRef className);
 
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
@@ -362,10 +364,16 @@ public:
     /// Returns nullptr if no field was found.
     const Field* getField(llvm::StringRef fieldName, llvm::StringRef fieldType, bool isStatic) const;
 
+    /// Returns all direct superclasses and superinterfaces of the class object.
+    llvm::ArrayRef<const ClassObject*> getBases() const
+    {
+        return m_bases;
+    }
+
     /// Returns the direct interfaces implemented by this class.
     llvm::ArrayRef<const ClassObject*> getInterfaces() const
     {
-        return m_interfaces;
+        return m_bases.drop_front(isClass() ? 1 : 0);
     }
 
     /// Returns a range containing all direct and indirect interfaces of this class in an unspecified order.
@@ -381,7 +389,7 @@ public:
     /// This is notably the case for array types, primitives and java/lang/Object.
     const ClassObject* getSuperClass() const
     {
-        return m_superClassOrInterfaceId.dyn_cast<const ClassObject*>();
+        return (m_bases.empty() || !m_bases.front()->isClass()) ? nullptr : m_bases.front();
     }
 
     /// Returns a range of all super classes of this class object, by default starting with this class object.
@@ -399,19 +407,19 @@ public:
     /// Returns true if this class is an interface.
     bool isInterface() const
     {
-        return m_superClassOrInterfaceId.is<InterfaceId>();
+        return m_componentTypeOrInterfaceId.is<InterfaceId>();
     }
 
     /// Returns the globally unique interface id of this interface.
     std::size_t getInterfaceId() const
     {
-        return m_superClassOrInterfaceId.get<InterfaceId>();
+        return m_componentTypeOrInterfaceId.get<InterfaceId>();
     }
 
     /// Returns the component type of the array type or null if this is not an array type.
     const ClassObject* getComponentType() const
     {
-        return m_componentType;
+        return m_componentTypeOrInterfaceId.dyn_cast<const ClassObject*>();
     }
 
     /// Returns true if this is a primitive type.
@@ -468,8 +476,8 @@ static_assert(std::is_trivially_destructible_v<Field>);
 static_assert(std::is_trivially_destructible_v<Method>);
 static_assert(std::is_standard_layout_v<ClassObject>);
 
-/// Adaptor class for LLVMs GraphTraits used to indicate we want to traverse the interfaces of a 'ClassObject'.
-struct InterfaceGraph
+/// Adaptor class for LLVMs GraphTraits used to indicate we want to traverse the class object graph of a 'ClassObject'.
+struct ClassGraph
 {
     const ClassObject* root;
 };
@@ -477,51 +485,113 @@ struct InterfaceGraph
 } // namespace jllvm
 
 template <>
-struct llvm::GraphTraits<jllvm::InterfaceGraph>
+struct llvm::GraphTraits<jllvm::ClassGraph>
 {
     using NodeRef = const jllvm::ClassObject*;
     using ChildIteratorType = llvm::ArrayRef<const jllvm::ClassObject*>::iterator;
 
-    static NodeRef getEntryNode(jllvm::InterfaceGraph interfaceGraph)
+    static NodeRef getEntryNode(jllvm::ClassGraph classGraph)
     {
-        return interfaceGraph.root;
+        return classGraph.root;
     }
 
-    static ChildIteratorType child_begin(NodeRef interface)
+    static ChildIteratorType child_begin(NodeRef classObject)
     {
-        return interface->getInterfaces().begin();
+        return classObject->getBases().begin();
     }
 
-    static ChildIteratorType child_end(NodeRef interface)
+    static ChildIteratorType child_end(NodeRef classObject)
     {
-        return interface->getInterfaces().end();
+        return classObject->getBases().end();
     }
 };
 
 inline auto jllvm::ClassObject::getAllInterfaces() const
 {
-    return llvm::drop_begin(llvm::depth_first(InterfaceGraph{this}));
-}
-
-inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
-{
-    // Adaptor for ReversePostOrderTraversal which drops this first element (as that is 'this').
-    // llvm::drop_begin doesn't work here since that does not keep the range passed to it alive, just the iterators.
-    class RPODropFront
+    // Range class which combines a depth first walk over the class graph with a filter for interface classes.
+    // The reason we can't compose this out of other ranges is because there is a bug in LLVMs 'llvm::depth_first' and
+    // other graph traversal iterators causing compilation errors with the filter class.
+    // See https://reviews.llvm.org/D151198
+    class OwningFilterRange
     {
-        llvm::ReversePostOrderTraversal<InterfaceGraph> m_traversal;
+        llvm::df_iterator_default_set<llvm::GraphTraits<ClassGraph>::NodeRef> m_set;
+        llvm::iterator_range<llvm::df_ext_iterator<ClassGraph>> m_range;
 
     public:
-        explicit RPODropFront(const ClassObject* object) : m_traversal(InterfaceGraph{object}) {}
+        explicit OwningFilterRange(const ClassObject* object)
+            : m_range(llvm::depth_first_ext(ClassGraph{object}, m_set))
+        {
+        }
+
+        class iterator : public llvm::iterator_facade_base<iterator, std::input_iterator_tag, const ClassObject*,
+                                                           std::ptrdiff_t, const ClassObject**, const ClassObject*>
+        {
+            llvm::df_ext_iterator<ClassGraph> m_current;
+            llvm::df_ext_iterator<ClassGraph> m_end;
+
+        public:
+            explicit iterator(const llvm::df_ext_iterator<ClassGraph>& begin,
+                              const llvm::df_ext_iterator<ClassGraph>& end)
+                : m_current(std::find_if(begin, end, std::mem_fn(&ClassObject::isInterface))), m_end(end)
+            {
+            }
+
+            bool operator==(const iterator& rhs) const
+            {
+                return m_current == rhs.m_current;
+            }
+
+            const ClassObject* operator*() const
+            {
+                return *m_current;
+            }
+
+            iterator& operator++()
+            {
+                do
+                {
+                    ++m_current;
+                } while (m_current != m_end && !m_current->isInterface());
+                return *this;
+            }
+        };
 
         auto begin() const
         {
-            return std::next(m_traversal.begin());
+            return iterator(m_range.begin(), m_range.end());
         }
 
         auto end() const
         {
-            return m_traversal.end();
+            return iterator(m_range.end(), m_range.end());
+        }
+    };
+
+    return OwningFilterRange(this);
+}
+
+inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
+{
+    // Adaptor for ReversePostOrderTraversal which keeps the range alive and filters non-classes.
+    class RPODropFront
+    {
+        llvm::ReversePostOrderTraversal<ClassGraph> m_traversal;
+
+    public:
+        explicit RPODropFront(const ClassObject* object) : m_traversal(ClassGraph{object}) {}
+
+        auto begin() const
+        {
+            return llvm::filter_iterator<decltype(m_traversal)::const_rpo_iterator,
+                                         decltype(std::mem_fn(&ClassObject::isInterface))>(
+                m_traversal.begin(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface));
+        }
+
+        auto end() const
+        {
+            return llvm::filter_iterator<decltype(m_traversal)::const_rpo_iterator,
+                                         decltype(std::mem_fn(&ClassObject::isInterface))>(
+                m_traversal.end(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface));
         }
     };
 
