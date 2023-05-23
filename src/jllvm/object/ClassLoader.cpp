@@ -215,16 +215,16 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     }
     else
     {
+        if (superClass)
+        {
+            interfaces.insert(interfaces.begin(), superClass);
+        }
         result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.vTableCount, instanceSize,
-                                     methods, fields, interfaces, className, superClass);
+                                     methods, fields, interfaces, className);
     }
     m_mapping.insert({("L" + className + ";").str(), result});
 
     // 5.5 Initialization, step 7: Initialize super class and interfaces recursively.
-    if (superClass)
-    {
-        initialize(*superClass);
-    }
     llvm::for_each(interfaces, [this](ClassObject* interface) { initialize(*interface); });
 
     return *result;
