@@ -824,13 +824,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
-                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+                operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
             },
             [&](I2C)
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
-                operandStack.push_back(builder.CreateZExt(value, builder.getInt32Ty()));
+                operandStack.push_back(builder.CreateZExt(truncated, builder.getInt32Ty()));
             },
             [&](I2D)
             {
@@ -851,7 +851,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
-                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+                operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
             },
             [&](IAdd)
             {
