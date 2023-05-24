@@ -5,8 +5,6 @@
 
 #include <jllvm/support/Bytes.hpp>
 
-#include "jllvm/object/Object.hpp"
-
 namespace
 {
 using namespace jllvm;
@@ -132,31 +130,6 @@ std::size_t wideSize(const char* bytes)
     return static_cast<OpCodes>(bytes[1]) == OpCodes::IInc ? 6 : 4;
 }
 } // namespace
-
-jllvm::ArrayOp::ArrayInfo jllvm::ArrayOp::resolve(llvm::IRBuilder<>& builder)
-{
-    switch (atype)
-    {
-        case ArrayType::TBoolean:
-            return {"Z", builder.getInt8Ty(), sizeof(std::uint8_t), jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayType::TChar:
-            return {"C", builder.getInt16Ty(), sizeof(std::uint16_t),
-                    jllvm::Array<std::uint16_t>::arrayElementsOffset()};
-        case ArrayType::TFloat:
-            return {"F", builder.getFloatTy(), sizeof(float), jllvm::Array<float>::arrayElementsOffset()};
-        case ArrayType::TDouble:
-            return {"D", builder.getDoubleTy(), sizeof(double), jllvm::Array<double>::arrayElementsOffset()};
-        case ArrayType::TByte:
-            return {"B", builder.getInt8Ty(), sizeof(std::uint8_t), jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayType::TShort:
-            return {"S", builder.getInt16Ty(), sizeof(std::int16_t), jllvm::Array<std::int16_t>::arrayElementsOffset()};
-        case ArrayType::TInt:
-            return {"I", builder.getInt32Ty(), sizeof(std::int32_t), jllvm::Array<std::int32_t>::arrayElementsOffset()};
-        case ArrayType::TLong:
-            return {"J", builder.getInt64Ty(), sizeof(std::int64_t), jllvm::Array<std::int64_t>::arrayElementsOffset()};
-        default: llvm_unreachable("Invalid array type");
-    }
-}
 
 jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
 {
