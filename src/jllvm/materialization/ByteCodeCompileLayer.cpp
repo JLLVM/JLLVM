@@ -559,20 +559,24 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             [&](AALoad)
             {
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
                 operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), gep));
             },
             [&](AAStore)
             {
                 llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
             },
             [&](AConstNull)
@@ -617,8 +621,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // The element type of the array type here is actually irrelevant.
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(1)});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
+                                                     {builder.getInt32(0), builder.getInt32(1)});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
             },
             [&](AStore aStore)
@@ -636,15 +640,65 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // TODO: Properly implement throwing exception. Pure stop gap solution for now.
                 operandStack.pop_back(referenceType(builder.getContext()));
             },
-            // TODO: BALoad
-            // TODO: BAStore
+            [&](BALoad)
+            {
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt8Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                llvm::Value* value = builder.CreateLoad(builder.getInt8Ty(), gep);
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+            },
+            [&](BAStore)
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt8Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                value = builder.CreateTrunc(value, builder.getInt8Ty());
+                builder.CreateStore(value, gep);
+            },
             [&](BIPush biPush)
             {
                 llvm::Value* res = builder.getInt32(biPush.value);
                 operandStack.push_back(res);
             },
-            // TODO: CALoad
-            // TODO: CAStore
+            [&](CALoad)
+            {
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt16Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                llvm::Value* value = builder.CreateLoad(builder.getInt16Ty(), gep);
+                operandStack.push_back(builder.CreateZExt(value, builder.getInt32Ty()));
+            },
+            [&](CAStore)
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt16Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                value = builder.CreateTrunc(value, builder.getInt16Ty());
+                builder.CreateStore(value, gep);
+            },
             // TODO: CheckCast
             // TODO: D2F
             // TODO: D2I
@@ -708,8 +762,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
 
                 operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), gep));
             },
@@ -721,8 +775,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
             },
             [&](OneOf<FCmpG, FCmpL>)
@@ -906,8 +960,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
             },
             [&](IAnd)
@@ -924,8 +978,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
                 builder.CreateStore(value, gep);
             },
             [&](IConstM1) { operandStack.push_back(builder.getInt32(-1)); },
@@ -1372,68 +1426,22 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             [&](NewArray newArray)
             {
+                auto [descriptor, size, type] = newArray.resolve(builder);
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
-                // TODO: move into ArrayOp
-                auto resolveTypeDescriptor = [](ArrayOp::ArrayType type) -> llvm::StringRef
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean: return "Z";
-                        case ArrayOp::ArrayType::TChar: return "C";
-                        case ArrayOp::ArrayType::TFloat: return "F";
-                        case ArrayOp::ArrayType::TDouble: return "D";
-                        case ArrayOp::ArrayType::TByte: return "B";
-                        case ArrayOp::ArrayType::TShort: return "S";
-                        case ArrayOp::ArrayType::TInt: return "I";
-                        default: return "J";
-                    }
-                };
-
-                auto resolveTypeSize = [](ArrayOp::ArrayType type)
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean:
-                        case ArrayOp::ArrayType::TChar:
-                        case ArrayOp::ArrayType::TByte: return sizeof(std::uint8_t);
-                        case ArrayOp::ArrayType::TShort: return sizeof(std::uint16_t);
-                        case ArrayOp::ArrayType::TInt: return sizeof(std::uint32_t);
-                        case ArrayOp::ArrayType::TFloat: return sizeof(float);
-                        case ArrayOp::ArrayType::TDouble: return sizeof(double);
-                        default: return sizeof(std::uint64_t);
-                    }
-                };
-
-                auto resolveElementType = [&](ArrayOp::ArrayType type) -> llvm::Type*
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean:
-                        case ArrayOp::ArrayType::TChar:
-                        case ArrayOp::ArrayType::TByte: return builder.getInt8Ty();
-                        case ArrayOp::ArrayType::TShort: return builder.getInt16Ty();
-                        case ArrayOp::ArrayType::TInt: return builder.getInt32Ty();
-                        case ArrayOp::ArrayType::TFloat: return builder.getFloatTy();
-                        case ArrayOp::ArrayType::TDouble: return builder.getDoubleTy();
-                        default: return builder.getInt64Ty();
-                    }
-                };
-
-                llvm::Value* classObject = helper.getClassObject(builder, "[" + resolveTypeDescriptor(newArray.atype));
+                llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the elements)
                 // plus element count * element size.
                 llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
-                bytesNeeded = builder.CreateAdd(
-                    bytesNeeded, builder.CreateMul(count, builder.getInt32(resolveTypeSize(newArray.atype))));
+                bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(size)));
 
                 // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
                 builder.CreateStore(classObject, object);
                 // Array length.
-                auto* gep = builder.CreateGEP(arrayStructType(resolveElementType(newArray.atype)), object,
-                                              {builder.getInt32(0), builder.getInt32(1)});
+                llvm::Value* gep =
+                    builder.CreateGEP(arrayStructType(type), object, {builder.getInt32(0), builder.getInt32(1)});
                 builder.CreateStore(count, gep);
 
                 operandStack.push_back(object);
@@ -1497,8 +1505,33 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             // TODO: Ret
             [&](Return) { builder.CreateRetVoid(); },
-            // TODO: SALoad
-            // TODO: SAStore
+            [&](SALoad)
+            {
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt16Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                llvm::Value* value = builder.CreateLoad(builder.getInt16Ty(), gep);
+                operandStack.push_back(builder.CreateSExt(value, builder.getInt32Ty()));
+            },
+            [&](SAStore)
+            {
+                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
+                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(builder.getInt16Ty()), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+
+                value = builder.CreateTrunc(value, builder.getInt16Ty());
+                builder.CreateStore(value, gep);
+            },
             [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
             // TODO: Swap
             // TODO: TableSwitch

@@ -2,6 +2,8 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/iterator.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Type.h>
 
 #include <jllvm/support/Variant.hpp>
 
@@ -256,6 +258,8 @@ struct ArrayOp : ByteCodeBase
         TInt = 10,
         TLong = 11
     };
+
+    std::tuple<llvm::StringRef, std::size_t, llvm::Type*> resolve(llvm::IRBuilder<>&);
 
     ArrayType atype{};
 };

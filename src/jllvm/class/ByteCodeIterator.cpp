@@ -131,6 +131,21 @@ std::size_t wideSize(const char* bytes)
 }
 } // namespace
 
+std::tuple<llvm::StringRef, std::size_t, llvm::Type*> jllvm::ArrayOp::resolve(llvm::IRBuilder<>& builder)
+{
+    switch (atype)
+    {
+        case ArrayType::TBoolean: return {"Z", sizeof(std::uint8_t), builder.getInt8Ty()};
+        case ArrayType::TChar: return {"C", sizeof(std::uint16_t), builder.getInt16Ty()};
+        case ArrayType::TFloat: return {"F", sizeof(float), builder.getFloatTy()};
+        case ArrayType::TDouble: return {"D", sizeof(double), builder.getDoubleTy()};
+        case ArrayType::TByte: return {"B", sizeof(std::uint8_t), builder.getInt8Ty()};
+        case ArrayType::TShort: return {"S", sizeof(std::int16_t), builder.getInt16Ty()};
+        case ArrayType::TInt: return {"I", sizeof(std::int32_t), builder.getInt32Ty()};
+        case ArrayType::TLong: return {"J", sizeof(std::int64_t), builder.getInt64Ty()};
+    }
+}
+
 jllvm::ByteCodeOp jllvm::ByteCodeIterator::currentOp() const
 {
     switch (static_cast<OpCodes>(*m_current))
