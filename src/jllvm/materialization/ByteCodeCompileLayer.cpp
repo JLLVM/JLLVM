@@ -1426,14 +1426,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             [&](NewArray newArray)
             {
-                auto [descriptor, size, type] = newArray.resolve(builder);
+                auto [descriptor, type, size, elementOffset] = newArray.resolve(builder);
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the elements)
                 // plus element count * element size.
-                llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
+                llvm::Value* bytesNeeded = builder.getInt32(elementOffset);
                 bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(size)));
 
                 // Type object.

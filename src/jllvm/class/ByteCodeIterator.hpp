@@ -259,7 +259,15 @@ struct ArrayOp : ByteCodeBase
         TLong = 11
     };
 
-    std::tuple<llvm::StringRef, std::size_t, llvm::Type*> resolve(llvm::IRBuilder<>&);
+    struct ArrayInfo
+    {
+        llvm::StringRef descriptor;
+        llvm::Type* type{};
+        std::size_t size{};
+        std::size_t elementOffset{};
+    };
+
+    ArrayInfo resolve(llvm::IRBuilder<>&);
 
     ArrayType atype{};
 };
