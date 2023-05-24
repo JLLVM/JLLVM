@@ -449,6 +449,44 @@ llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
                                                                                         builder.getInt32Ty();
 }
 
+auto resolveNewArrayInfo(ArrayOp arrayOp, llvm::IRBuilder<>& builder)
+{
+    struct ArrayInfo
+    {
+        llvm::StringRef descriptor;
+        llvm::Type* type{};
+        std::size_t size{};
+        std::size_t elementOffset{};
+    };
+
+    switch (arrayOp.atype)
+    {
+        case ArrayOp::ArrayType::TBoolean:
+            return ArrayInfo{"Z", builder.getInt8Ty(), sizeof(std::uint8_t),
+                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TChar:
+            return ArrayInfo{"C", builder.getInt16Ty(), sizeof(std::uint16_t),
+                             jllvm::Array<std::uint16_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TFloat:
+            return ArrayInfo{"F", builder.getFloatTy(), sizeof(float), jllvm::Array<float>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TDouble:
+            return ArrayInfo{"D", builder.getDoubleTy(), sizeof(double), jllvm::Array<double>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TByte:
+            return ArrayInfo{"B", builder.getInt8Ty(), sizeof(std::uint8_t),
+                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TShort:
+            return ArrayInfo{"S", builder.getInt16Ty(), sizeof(std::int16_t),
+                             jllvm::Array<std::int16_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TInt:
+            return ArrayInfo{"I", builder.getInt32Ty(), sizeof(std::int32_t),
+                             jllvm::Array<std::int32_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TLong:
+            return ArrayInfo{"J", builder.getInt64Ty(), sizeof(std::int64_t),
+                             jllvm::Array<std::int64_t>::arrayElementsOffset()};
+        default: llvm_unreachable("Invalid array type");
+    }
+}
+
 void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
                  StringInterner& stringInterner, const MethodType& methodType)
 {
@@ -556,23 +594,74 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         }
         match(
             operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
-            [&](AALoad)
+            [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
             {
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
+                    [&](AALoad) -> llvm::Type* { return referenceType(builder.getContext()); },
+                    [&](BALoad) -> llvm::Type* { return builder.getInt8Ty(); },
+                    [&](OneOf<CALoad, SALoad>) -> llvm::Type* { return builder.getInt16Ty(); },
+                    [&](DALoad) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](FALoad) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](IALoad) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](LALoad) -> llvm::Type* { return builder.getInt64Ty(); });
+
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
-                operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), gep));
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep =
+                    builder.CreateGEP(arrayStructType(type), array, {builder.getInt32(0), builder.getInt32(2), index});
+                llvm::Value* value = builder.CreateLoad(type, gep);
+
+                match(
+                    operation, [](...) {},
+                    [&](OneOf<BALoad, SALoad>) { value = builder.CreateSExt(value, builder.getInt32Ty()); },
+                    [&](CALoad) { value = builder.CreateZExt(value, builder.getInt32Ty()); });
+
+                operandStack.push_back(value);
             },
-            [&](AAStore)
+            [&](OneOf<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
             {
-                llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
+                auto [popType, arrayType] = match(
+                    operation,
+                    [](...) -> std::pair<llvm::Type*, llvm::Type*>
+                    { llvm_unreachable("Invalid array load operation"); },
+                    [&](AAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {referenceType(builder.getContext()), referenceType(builder.getContext())};
+                    },
+                    [&](BAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getInt32Ty(), builder.getInt8Ty()};
+                    },
+                    [&](OneOf<CAStore, SAStore>) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getInt32Ty(), builder.getInt16Ty()};
+                    },
+                    [&](DAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getDoubleTy(), builder.getDoubleTy()};
+                    },
+                    [&](FAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getFloatTy(), builder.getFloatTy()};
+                    },
+                    [&](IAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getInt32Ty(), builder.getInt32Ty()};
+                    },
+                    [&](LAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                        return {builder.getInt64Ty(), builder.getInt64Ty()};
+                    });
+
+                llvm::Value* value = operandStack.pop_back(popType);
                 llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+                // TODO: throw NullPointerException if array is null
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
+                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(arrayType), array,
+                                                     {builder.getInt32(0), builder.getInt32(2), index});
+                match(
+                    operation, [](...) {},
+                    [&,arrayType=arrayType](OneOf<BAStore, CAStore, SAStore>) { value = builder.CreateTrunc(value, arrayType); });
+
                 builder.CreateStore(value, gep);
             },
             [&](AConstNull)
@@ -591,8 +680,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* classObject = helper.getClassObject(
                     builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
 
-                // Size required is the size of the array prior to the elements (equal to the offset to the elements)
-                // plus element count * element size.
+                // Size required is the size of the array prior to the elements (equal to the offset to the
+                // elements) plus element count * element size.
                 llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
                 bytesNeeded =
                     builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(Object*))));
@@ -617,8 +706,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
 
                 // The element type of the array type here is actually irrelevant.
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                              {builder.getInt32(0), builder.getInt32(1)});
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
+                                                     {builder.getInt32(0), builder.getInt32(1)});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
             },
             [&](AStore aStore)
@@ -636,22 +725,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // TODO: Properly implement throwing exception. Pure stop gap solution for now.
                 operandStack.pop_back(referenceType(builder.getContext()));
             },
-            // TODO: BALoad
-            // TODO: BAStore
             [&](BIPush biPush)
             {
                 llvm::Value* res = builder.getInt32(biPush.value);
                 operandStack.push_back(res);
             },
-            // TODO: CALoad
-            // TODO: CAStore
             // TODO: CheckCast
             // TODO: D2F
             // TODO: D2I
             // TODO: D2L
             // TODO: DAdd
-            // TODO: DALoad
-            // TODO: DAStore
             // TODO: DCmpG
             // TODO: DCmpL
             // TODO: DConst0
@@ -700,30 +783,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFAdd(lhs, rhs));
-            },
-            [&](FALoad)
-            {
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
-
-                operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), gep));
-            },
-            [&](FAStore)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getFloatTy()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
-                builder.CreateStore(value, gep);
             },
             [&](OneOf<FCmpG, FCmpL>)
             {
@@ -899,34 +958,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAdd(lhs, rhs));
             },
-            [&](IALoad)
-            {
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
-            },
             [&](IAnd)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAnd(lhs, rhs));
-            },
-            [&](IAStore)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                auto* gep = builder.CreateGEP(arrayStructType(builder.getInt32Ty()), array,
-                                              {builder.getInt32(0), builder.getInt32(2), index});
-                builder.CreateStore(value, gep);
             },
             [&](IConstM1) { operandStack.push_back(builder.getInt32(-1)); },
             [&](IConst0) { operandStack.push_back(builder.getInt32(0)); },
@@ -1031,8 +1067,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* classObject;
                 if (className.front() == '[')
                 {
-                    // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's just
-                    // the name of the class. Hence, these two cases.
+                    // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
+                    // just the name of the class. Hence, these two cases.
                     classObject = helper.getClassObject(builder, className);
                 }
                 else
@@ -1274,9 +1310,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: L2F
             // TODO: L2I
             // TODO: LAdd
-            // TODO: LALoad
             // TODO: LAnd
-            // TODO: LAStore
             // TODO: LCmp
             // TODO: LConst0
             // TODO: LConst1
@@ -1372,68 +1406,22 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             [&](NewArray newArray)
             {
+                auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray, builder);
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
-                // TODO: move into ArrayOp
-                auto resolveTypeDescriptor = [](ArrayOp::ArrayType type) -> llvm::StringRef
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean: return "Z";
-                        case ArrayOp::ArrayType::TChar: return "C";
-                        case ArrayOp::ArrayType::TFloat: return "F";
-                        case ArrayOp::ArrayType::TDouble: return "D";
-                        case ArrayOp::ArrayType::TByte: return "B";
-                        case ArrayOp::ArrayType::TShort: return "S";
-                        case ArrayOp::ArrayType::TInt: return "I";
-                        default: return "J";
-                    }
-                };
+                llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
 
-                auto resolveTypeSize = [](ArrayOp::ArrayType type)
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean:
-                        case ArrayOp::ArrayType::TChar:
-                        case ArrayOp::ArrayType::TByte: return sizeof(std::uint8_t);
-                        case ArrayOp::ArrayType::TShort: return sizeof(std::uint16_t);
-                        case ArrayOp::ArrayType::TInt: return sizeof(std::uint32_t);
-                        case ArrayOp::ArrayType::TFloat: return sizeof(float);
-                        case ArrayOp::ArrayType::TDouble: return sizeof(double);
-                        default: return sizeof(std::uint64_t);
-                    }
-                };
-
-                auto resolveElementType = [&](ArrayOp::ArrayType type) -> llvm::Type*
-                {
-                    switch (type)
-                    {
-                        case ArrayOp::ArrayType::TBoolean:
-                        case ArrayOp::ArrayType::TChar:
-                        case ArrayOp::ArrayType::TByte: return builder.getInt8Ty();
-                        case ArrayOp::ArrayType::TShort: return builder.getInt16Ty();
-                        case ArrayOp::ArrayType::TInt: return builder.getInt32Ty();
-                        case ArrayOp::ArrayType::TFloat: return builder.getFloatTy();
-                        case ArrayOp::ArrayType::TDouble: return builder.getDoubleTy();
-                        default: return builder.getInt64Ty();
-                    }
-                };
-
-                llvm::Value* classObject = helper.getClassObject(builder, "[" + resolveTypeDescriptor(newArray.atype));
-
-                // Size required is the size of the array prior to the elements (equal to the offset to the elements)
-                // plus element count * element size.
-                llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
-                bytesNeeded = builder.CreateAdd(
-                    bytesNeeded, builder.CreateMul(count, builder.getInt32(resolveTypeSize(newArray.atype))));
+                // Size required is the size of the array prior to the elements (equal to the offset to the
+                // elements) plus element count * element size.
+                llvm::Value* bytesNeeded = builder.getInt32(elementOffset);
+                bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(size)));
 
                 // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
                 builder.CreateStore(classObject, object);
                 // Array length.
-                auto* gep = builder.CreateGEP(arrayStructType(resolveElementType(newArray.atype)), object,
-                                              {builder.getInt32(0), builder.getInt32(1)});
+                llvm::Value* gep =
+                    builder.CreateGEP(arrayStructType(type), object, {builder.getInt32(0), builder.getInt32(1)});
                 builder.CreateStore(count, gep);
 
                 operandStack.push_back(object);
@@ -1497,8 +1485,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             },
             // TODO: Ret
             [&](Return) { builder.CreateRetVoid(); },
-            // TODO: SALoad
-            // TODO: SAStore
             [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
             // TODO: Swap
             // TODO: TableSwitch

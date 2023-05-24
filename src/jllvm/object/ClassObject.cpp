@@ -79,7 +79,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, instanceSize - sizeof(void*), {}, {}, {}, {}, name)
+    : ClassObject(nullptr, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name)
 {
     m_isPrimitive = true; // NOLINT(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
 }
