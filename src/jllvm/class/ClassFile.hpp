@@ -384,17 +384,10 @@ public:
         return (m_accessFlags & AccessFlag::Abstract) != AccessFlag::None;
     }
 
-    /// Returns true if this method can overwrite subclass methods.
-    bool canOverwrite(const ClassFile& classFile) const
+    /// Returns true if this method requires a VTable slot.
+    bool needsVTableSlot(const ClassFile& classFile) const
     {
-        return !(isPrivate() || isStatic() || getName(classFile) == "<init>");
-    }
-
-    /// Returns true if this method can be overwritten by subclasses.
-    bool canBeOverwritten(const ClassFile& classFile) const
-    {
-        // TODO: Can this be optimized using 'isFinal()'?
-        return canOverwrite(classFile);
+        return !isStatic() && getName(classFile) != "<init>";
     }
 
     /// Returns the name of this method.

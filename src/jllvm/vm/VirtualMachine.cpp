@@ -10,7 +10,8 @@
 
 namespace
 {
-bool canOverride(const jllvm::Method& derived, const jllvm::Method& base)
+bool canOverride(const jllvm::Method& derived, const jllvm::ClassObject* derivedClass, const jllvm::Method& base,
+                 const jllvm::ClassObject* baseClass)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.5
     if (derived.getName() != base.getName() || derived.getType() != base.getType())
@@ -24,15 +25,45 @@ bool canOverride(const jllvm::Method& derived, const jllvm::Method& base)
         case jllvm::Visibility::Public:
         case jllvm::Visibility::Protected: return true;
         case jllvm::Visibility::Package:
-            // TODO: complicated package overriding.
+            // 5.4.5 mA is marked neither ACC_PUBLIC nor ACC_PROTECTED nor ACC_PRIVATE, and either (a) the declaration
+            // of mA appears in the same run-time package as the declaration of mC.
+            // TODO: I am pretty sure this is not how the spec defines packages, but it'll do for now.
+            if (derivedClass->getPackageName() == baseClass->getPackageName())
+            {
+                return true;
+            }
+
+            // TODO: 5.4.5 b)
             llvm_unreachable("NOT YET IMPLEMENTED");
     }
     llvm_unreachable("All visibilities handled");
 }
 
-llvm::StringRef classOfMethodResolution(const jllvm::ClassObject* classObject, const jllvm::Method interfaceMethod)
+jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* classObject,
+                                  const jllvm::Method& resolvedMethod, const jllvm::ClassObject* resolvedMethodClass)
 {
-    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 2.
+    auto doLookup = [&](llvm::StringRef className) -> jllvm::VTableSlot
+    {
+        // Lookup can and will fail if an abstract class declares the method as abstract. It is still
+        // supposed to be found however, but the interface method is simply forced to be implemented by
+        // derived classes.
+        auto lookup = jit.lookup(className, resolvedMethod.getName(), resolvedMethod.getType());
+        if (!lookup)
+        {
+            llvm::consumeError(lookup.takeError());
+            return nullptr;
+        }
+        return reinterpret_cast<jllvm::VTableSlot>(lookup->getAddress());
+    };
+
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
+
+    if (resolvedMethod.getVisibility() == jllvm::Visibility::Private)
+    {
+        return doLookup(resolvedMethodClass->getClassName());
+    }
+
+    // Step 2
 
     // If C contains a declaration of an instance method m that can override mR (§5.4.5), then m is the selected method.
 
@@ -43,9 +74,9 @@ llvm::StringRef classOfMethodResolution(const jllvm::ClassObject* classObject, c
     for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
     {
         if (llvm::any_of(curr->getMethods(), [&](const jllvm::Method& method)
-                         { return !method.isStatic() && canOverride(method, interfaceMethod); }))
+                { return !method.isStatic() && canOverride(method, curr, resolvedMethod, resolvedMethodClass); }))
         {
-            return curr->getClassName();
+            return doLookup(curr->getClassName());
         }
     }
 
@@ -70,15 +101,17 @@ llvm::StringRef classOfMethodResolution(const jllvm::ClassObject* classObject, c
                          [&](const jllvm::Method& method)
                          {
                              return !method.isStatic() && method.getVisibility() != jllvm::Visibility::Private
-                                    && !method.isAbstract() && canOverride(method, interfaceMethod);
+                                    && !method.isAbstract()
+                                    && canOverride(method, interface, resolvedMethod, resolvedMethodClass);
                          }))
         {
-            return interface->getClassName();
+            return doLookup(interface->getClassName());
         }
     }
 
     llvm_unreachable("Method resolution unexpectedly failed");
 }
+
 } // namespace
 
 jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
@@ -108,22 +141,12 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             {
                 for (const Method& iter : curr->getMethods())
                 {
-                    if (iter.isAbstract())
-                    {
-                        continue;
-                    }
-
                     auto slot = iter.getVTableSlot();
                     if (!slot)
                     {
                         continue;
                     }
-                    if (!classObject->getVTable()[*slot])
-                    {
-                        classObject->getVTable()[*slot] = reinterpret_cast<VTableSlot>(
-                            llvm::cantFail(m_jit.lookup(curr->getClassName(), iter.getName(), iter.getType()))
-                                .getAddress());
-                    }
+                    classObject->getVTable()[*slot] = methodSelection(m_jit, classObject, iter, curr);
                 }
             }
 
@@ -139,25 +162,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                 for (auto&& [index, method] : llvm::enumerate(llvm::make_filter_range(
                          interface->getMethods(), [](const Method& method) { return !method.isStatic(); })))
                 {
-                    // JVM 5.4.6 Step 1: If mR is marked ACC_PRIVATE, then it is the selected method.
-                    llvm::StringRef className = interface->getClassName();
-                    if (method.getVisibility() != Visibility::Private)
-                    {
-                        // Step 2.
-                        className = classOfMethodResolution(classObject, method);
-                    }
-
-                    // Lookup can and will fail if an abstract class declares the method as abstract. It is still
-                    // supposed to be found however, but the interface method is simply forced to be implemented by
-                    // derived classes.
-                    auto lookup = m_jit.lookup(className, method.getName(), method.getType());
-                    if (!lookup)
-                    {
-                        llvm::consumeError(lookup.takeError());
-                        continue;
-                    }
-
-                    iTable->getMethods()[index] = reinterpret_cast<VTableSlot>(lookup->getAddress());
+                    iTable->getMethods()[index] = methodSelection(m_jit, classObject, method, interface);
                 }
             }
         },

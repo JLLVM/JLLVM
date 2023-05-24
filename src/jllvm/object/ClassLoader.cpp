@@ -23,7 +23,7 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
 {
     using namespace jllvm;
 
-    llvm::DenseMap<std::pair<llvm::StringRef, llvm::StringRef>, std::pair<std::uint16_t, const Method*>> map;
+    std::uint16_t vTableCount = 0;
     if (superClass)
     {
         for (const jllvm::ClassObject* curr : superClass->getSuperClasses())
@@ -32,49 +32,22 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
             {
                 if (auto slot = iter.getVTableSlot())
                 {
-                    map.insert({{iter.getName(), iter.getType()}, {*slot, &iter}});
+                    vTableCount = std::max(vTableCount, *slot);
                 }
             }
         }
-    }
-    std::uint16_t vTableCount = 0;
-    if (!map.empty())
-    {
-        auto range = llvm::make_first_range(llvm::make_second_range(map));
-        vTableCount = *std::max_element(range.begin(), range.end()) + 1;
+        vTableCount++;
     }
 
     llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> assignment;
     for (const MethodInfo& iter : classFile.getMethods())
     {
         // If the method can never overwrite we don't need to assign it a v-table slot.
-        if (!iter.canOverwrite(classFile))
+        if (!iter.needsVTableSlot(classFile))
         {
             continue;
         }
-
-        auto result = map.find({iter.getName(classFile), iter.getDescriptor(classFile)});
-        if (result == map.end())
-        {
-            // The method does not overwrite any subclass methods. We need to create a v-table slot if it may
-            // potentially be overwritten however.
-            if (iter.canBeOverwritten(classFile))
-            {
-                assignment.insert({&iter, vTableCount++});
-            }
-            continue;
-        }
-
-        auto [superClassSlot, superClassMethod] = result->second;
-        if (superClassMethod->getVisibility() != jllvm::Visibility::Package)
-        {
-            assignment.insert({&iter, superClassSlot});
-            continue;
-        }
-
-        // TODO: We need two v-table slots in the case of overwriting package default v-table slots.
-        //       See 5.4.5 in the JVM spec. This is more complicated.
-        llvm::report_fatal_error("Not yet implemented");
+        assignment.insert({&iter, vTableCount++});
     }
     return {std::move(assignment), vTableCount};
 }
