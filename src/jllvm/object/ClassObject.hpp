@@ -385,6 +385,21 @@ public:
         return m_className;
     }
 
+    /// Returns the name of the package this class is defined in.
+    /// Note: This is not properly checked whether that is how the JVM spec actually defines, but we currently define
+    /// it as the part before the last '/'.
+    llvm::StringRef getPackageName() const
+    {
+        auto [package, clazz] = m_className.rsplit('/');
+        if (clazz.empty())
+        {
+            // If there is no /, 'clazz' is empty and 'package' is actually the class name.
+            // We assume the package to be the empty string for now.
+            return clazz;
+        }
+        return package;
+    }
+
     /// Returns the super class of this class or null if the class does not have a super class.
     /// This is notably the case for array types, primitives and java/lang/Object.
     const ClassObject* getSuperClass() const

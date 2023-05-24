@@ -332,6 +332,16 @@ public:
         return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
                                             [=](const ClassObject* classObject)
                                             {
+                                                // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
+
+                                                // Otherwise, method resolution attempts to locate the referenced method
+                                                // in C and its superclasses:
+
+                                                // Otherwise, if C declares a method with the name and descriptor
+                                                // specified by the method reference, method lookup succeeds.
+
+                                                // Otherwise, if C has a superclass, step 2 of method resolution is
+                                                // recursively invoked on the direct superclass of C.
                                                 for (const ClassObject* curr : classObject->getSuperClasses())
                                                 {
                                                     llvm::ArrayRef<Method> methods = curr->getMethods();
@@ -347,6 +357,18 @@ public:
                                                         return *iter->getVTableSlot();
                                                     }
                                                 }
+
+                                                // TODO: Implement below. Requires a vtable slot per implementing class
+                                                //       For any default interface method.
+
+                                                // Otherwise, method resolution attempts to locate the referenced method
+                                                // in the superinterfaces of the specified class C:
+
+                                                // If the maximally-specific superinterface methods of C for the name
+                                                // and descriptor specified by the method reference include exactly one
+                                                // method that does not have its ACC_ABSTRACT flag set, then this method
+                                                // is chosen and method lookup succeeds.
+
                                                 llvm_unreachable("method not found");
                                             });
     }
