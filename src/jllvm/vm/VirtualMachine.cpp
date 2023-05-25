@@ -166,7 +166,8 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                 }
             }
         },
-        [this](const ClassFile* classFile) { m_jit.add(classFile); }, [&] { return m_gc.allocateStatic(); }),
+        [this](const ClassFile* classFile) { m_jit.add(classFile); },
+        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().ref()); }),
       m_stringInterner(m_classLoader),
       m_gc(/*small random value for now*/ 4096),
       // Seed from the C++ implementations entropy source.
@@ -194,7 +195,24 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
         llvm::report_fatal_error(("Failed to find main method due to " + toString(lookup.takeError())).c_str());
     }
     reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
-    return 0;
+    if (!m_activeException)
+    {
+        return 0;
+    }
+
+    // TODO: Use printStackTrace:()V in the future
+
+    // Equivalent to Throwable:toString() (does not yet work).
+    std::string s = m_activeException->getClass()->getClassName().str();
+    std::replace(s.begin(), s.end(), '/', '.');
+    llvm::errs() << s;
+    if (m_activeException->detailMessage)
+    {
+        llvm::errs() << ": " << m_activeException->detailMessage->toUTF8();
+    }
+    llvm::errs() << '\n';
+
+    return -1;
 }
 
 std::int32_t jllvm::VirtualMachine::createNewHashCode()

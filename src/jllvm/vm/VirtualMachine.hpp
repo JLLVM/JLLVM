@@ -25,7 +25,8 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     StringInterner m_stringInterner;
-    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
+    GCRef<Throwable> m_activeException = static_cast<GCRef<Throwable>>(m_gc.allocateStatic());
+    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get(), m_activeException.ref());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
 

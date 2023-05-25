@@ -52,11 +52,11 @@ class JIT
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions);
+        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, Throwable** activeException);
 
 public:
     static JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                      void* jniFunctions);
+                      void* jniFunctions, Throwable** activeException);
 
     ~JIT();
 

@@ -23,7 +23,8 @@
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
                 llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
-                StringInterner& stringInterner, void* jniFunctions)
+                StringInterner& stringInterner, void* jniFunctions,
+                Throwable** activeException)
     : m_session(std::move(session)),
       m_main(llvm::cantFail(m_session->createJITDylib("<main>"))),
       m_epciu(std::move(epciu)),
@@ -67,10 +68,12 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                                                +[](const Object* object, const ClassObject* classObject) -> std::int32_t
                                                { return object->instanceOf(classObject); })},
          {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)}})));
+    llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
+        {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException)}})));
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                              void* jniFunctions)
+                              void* jniFunctions, Throwable** activeException)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -95,7 +98,8 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, St
     jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
     auto dl = llvm::cantFail(jtmb.getDefaultDataLayoutForTarget());
     return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, stringInterner,
-               jniFunctions);
+               jniFunctions,
+               activeException);
 }
 
 jllvm::JIT::~JIT()

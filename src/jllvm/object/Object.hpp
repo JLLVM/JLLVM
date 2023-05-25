@@ -178,4 +178,19 @@ public:
 
 static_assert(std::is_standard_layout_v<String>);
 
+/// In memory representation for a Java Throwable.
+struct Throwable : ObjectInterface
+{
+    ObjectHeader header;
+
+    Object* backtrace = nullptr;
+    String* detailMessage = nullptr;
+    Throwable* cause = nullptr;
+    Array<Object*>* stackTrace = nullptr;
+    std::int32_t depth{};
+    Object* suppressedExceptions = nullptr;
+};
+
+static_assert(std::is_standard_layout_v<Throwable>);
+
 } // namespace jllvm

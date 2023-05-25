@@ -250,7 +250,7 @@ constexpr auto SLAB_SIZE = 4096 / sizeof(void*);
 
 } // namespace
 
-void** jllvm::GarbageCollector::allocateStatic()
+jllvm::GCRef<jllvm::Object> jllvm::GarbageCollector::allocateStatic()
 {
     if (m_staticRefsSlabs.empty() || m_staticRefsSlabs.back().get() + SLAB_SIZE == m_staticRefsBumpPtr)
     {
@@ -259,7 +259,7 @@ void** jllvm::GarbageCollector::allocateStatic()
 
     void** storage = m_staticRefsBumpPtr;
     m_staticRefsBumpPtr++;
-    return storage;
+    return GCRef<Object>(storage);
 }
 
 void jllvm::GarbageCollector::garbageCollect()

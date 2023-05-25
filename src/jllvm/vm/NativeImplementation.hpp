@@ -147,6 +147,23 @@ public:
                         addMember<&ClassModel::desiredAssertionStatus0>());
 };
 
+/// Model implementation for the native methods of Javas 'Thowable' class.
+class ThrowableModel : public ModelBase<Throwable>
+{
+public:
+    using Base::Base;
+
+    Throwable* fillInStackTrace(int)
+    {
+        // TODO: Set backtrace and depth of 'javaThis'. See
+        // https://github.com/openjdk/jdk/blob/4f096eb7c9066e5127d9ab8c1c893e991a23d316/src/hotspot/share/classfile/javaClasses.cpp#L2491
+        return &javaThis;
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/Throwable";
+    constexpr static auto methods = std::make_tuple(addMember<&ThrowableModel::fillInStackTrace>());
+};
+
 /// Register any models for builtin Java classes in the VM.
 void registerJavaClasses(VirtualMachine& virtualMachine);
 
