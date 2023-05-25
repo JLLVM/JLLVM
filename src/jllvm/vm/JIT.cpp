@@ -63,6 +63,9 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     llvm::cantFail(m_main.define(createLambdaMaterializationUnit(
         "jllvm_gc_alloc", m_optimizeLayer, [&](std::uint32_t size) { return m_gc.allocate(size); }, m_dataLayout,
         m_interner)));
+    llvm::cantFail(m_main.define(createLambdaMaterializationUnit(
+        "jllvm_for_name_loaded", m_optimizeLayer, [&](const char* name) { return m_classLoader.forNameLoaded(name); },
+        m_dataLayout, m_interner)));
     llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
         {{m_interner("jllvm_instance_of"), llvm::JITEvaluatedSymbol::fromPointer(
                                                +[](const Object* object, const ClassObject* classObject) -> std::int32_t

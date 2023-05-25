@@ -518,60 +518,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         }
     }
 
-    // TODO: Implement all the exception handling infrastructure.
-    llvm::DenseMap<std::uint16_t, std::pair<std::uint16_t, PoolIndex<ClassInfo>>> startHandlers;
-    llvm::DenseMap<std::uint16_t, std::pair<std::uint16_t, PoolIndex<ClassInfo>>> endHandlers;
-    for (const auto& iter : code.getExceptionTable())
-    {
-        startHandlers.insert({iter.startPc, {iter.handlerPc, iter.catchType}});
-        endHandlers.insert({iter.endPc, {iter.handlerPc, iter.catchType}});
-    }
-
-    std::vector<std::pair<std::uint16_t, PoolIndex<ClassInfo>>> activeHandlers;
-
-    auto generateEHHandlerChain = [&](llvm::Value* exception, llvm::BasicBlock* newPred)
-    {
-        llvm::IRBuilder<>::InsertPointGuard guard{builder};
-
-        // TODO: Only create these basic blocks for each set of active exception handlers once (but add new entries to
-        //  the phi for each predecessor)
-
-        auto* ehHandler = llvm::BasicBlock::Create(builder.getContext(), "", function);
-        builder.SetInsertPoint(ehHandler);
-
-        llvm::PHINode* phi = builder.CreatePHI(exception->getType(), 0);
-        phi->addIncoming(exception, newPred);
-
-        // TODO: chain of instance of dispatching to each handler here. Don't forget to set activeException to null
-        //  when doing so.
-
-        // Otherwise, propagate exception to parent frame:
-
-        llvm::Type* retType = builder.getCurrentFunctionReturnType();
-        if (retType->isVoidTy())
-        {
-            builder.CreateRetVoid();
-        }
-        else
-        {
-            builder.CreateRet(llvm::UndefValue::get(retType));
-        }
-
-        return ehHandler;
-    };
-
-    auto generateEHDispatch = [&]
-    {
-        llvm::PointerType* referenceTy = referenceType(builder.getContext());
-        llvm::Value* value = builder.CreateLoad(referenceTy, activeException(function->getParent()));
-        llvm::Value* cond = builder.CreateICmpEQ(value, llvm::ConstantPointerNull::get(referenceTy));
-
-        auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-        builder.CreateCondBr(cond, continueBlock, generateEHHandlerChain(value, builder.GetInsertBlock()));
-
-        builder.SetInsertPoint(continueBlock);
-    };
-
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
     // Calculate BasicBlocks
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
@@ -611,17 +557,144 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
     }
 
+    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
+    for (const auto& iter : code.getExceptionTable())
+    {
+        startHandlers[iter.startPc].push_back(iter);
+    }
+
+    using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
+    // std::list because we want the iterator stability when deleting handlers (requires random access).
+    std::list<HandlerInfo> activeHandlers;
+
+    // std::map simply because its the easiest to use with std::list as key.
+    std::map<std::list<HandlerInfo>, llvm::BasicBlock*> alreadyGeneratedEHHandlers;
+
+    llvm::AllocaInst* operandStackBottom = nullptr;
+    if (code.getMaxStack() > 0)
+    {
+        operandStackBottom = *operandStack.getTopOfStack();
+    }
+
+    auto generateEHHandlerChain = [&](llvm::Value* exception, llvm::BasicBlock* newPred)
+    {
+        llvm::IRBuilder<>::InsertPointGuard guard{builder};
+
+        auto result = alreadyGeneratedEHHandlers.find(activeHandlers);
+        if (result != alreadyGeneratedEHHandlers.end())
+        {
+            llvm::BasicBlock* block = result->second;
+            // Adding new predecessors exception object to phi node.
+            llvm::cast<llvm::PHINode>(&block->front())->addIncoming(exception, newPred);
+            return block;
+        }
+
+        auto* ehHandler = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        alreadyGeneratedEHHandlers.emplace(activeHandlers, ehHandler);
+        builder.SetInsertPoint(ehHandler);
+
+        llvm::PHINode* phi = builder.CreatePHI(exception->getType(), 0);
+        phi->addIncoming(exception, newPred);
+
+        for (auto [handlerPC, catchType] : activeHandlers)
+        {
+            llvm::BasicBlock* handlerBB = basicBlocks[handlerPC];
+
+            llvm::PointerType* ty = referenceType(builder.getContext());
+
+            if (!catchType)
+            {
+                // Catch all used to implement 'finally'.
+                // Set exception object as only object on the stack and clear the active exception.
+                builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
+                builder.CreateStore(phi, operandStackBottom);
+                builder.CreateBr(handlerBB);
+                return ehHandler;
+            }
+
+            // Since an exception class must be loaded for any instance of the class to be created, we can be certain
+            // that the exception is not of the type if the class has not yet been loaded.
+            // And most importantly, don't need to eagerly load it.
+            llvm::FunctionCallee forNameLoaded =
+                function->getParent()->getOrInsertFunction("jllvm_for_name_loaded", ty, builder.getPtrTy());
+            llvm::SmallString<64> buffer;
+            llvm::Value* className = builder.CreateGlobalStringPtr(
+                ("L" + catchType.resolve(classFile)->nameIndex.resolve(classFile)->text + ";").toStringRef(buffer));
+            llvm::Value* classObject = builder.CreateCall(forNameLoaded, className);
+            llvm::Value* notLoaded = builder.CreateICmpEQ(classObject, llvm::ConstantPointerNull::get(ty));
+
+            auto* nextHandler = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            auto* instanceOfCheck = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            builder.CreateCondBr(notLoaded, nextHandler, instanceOfCheck);
+
+            builder.SetInsertPoint(instanceOfCheck);
+
+            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                "jllvm_instance_of", builder.getInt32Ty(), ty, classObject->getType());
+            llvm::Value* call = builder.CreateCall(callee, {phi, classObject});
+            call = builder.CreateTrunc(call, builder.getInt1Ty());
+
+            auto* jumpToHandler = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            builder.CreateCondBr(call, jumpToHandler, nextHandler);
+
+            builder.SetInsertPoint(jumpToHandler);
+            // Set exception object as only object on the stack and clear the active exception.
+            builder.CreateStore(phi, operandStackBottom);
+            builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
+            builder.CreateBr(handlerBB);
+
+            builder.SetInsertPoint(nextHandler);
+        }
+
+        // Otherwise, propagate exception to parent frame:
+
+        llvm::Type* retType = builder.getCurrentFunctionReturnType();
+        if (retType->isVoidTy())
+        {
+            builder.CreateRetVoid();
+        }
+        else
+        {
+            builder.CreateRet(llvm::UndefValue::get(retType));
+        }
+
+        return ehHandler;
+    };
+
+    auto generateEHDispatch = [&]
+    {
+        llvm::PointerType* referenceTy = referenceType(builder.getContext());
+        llvm::Value* value = builder.CreateLoad(referenceTy, activeException(function->getParent()));
+        llvm::Value* cond = builder.CreateICmpEQ(value, llvm::ConstantPointerNull::get(referenceTy));
+
+        auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        builder.CreateCondBr(cond, continueBlock, generateEHHandlerChain(value, builder.GetInsertBlock()));
+
+        builder.SetInsertPoint(continueBlock);
+    };
+
+    llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
-        if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
-        {
-            activeHandlers.push_back(result->second);
-        }
         if (auto result = endHandlers.find(getOffset(operation)); result != endHandlers.end())
         {
-            auto iter = std::find(activeHandlers.rbegin(), activeHandlers.rend(), result->second);
-            assert(iter != activeHandlers.rend());
-            activeHandlers.erase(std::prev(iter.base()));
+            for (auto iter : result->second)
+            {
+                activeHandlers.erase(iter);
+            }
+            // No longer needed.
+            endHandlers.erase(result);
+        }
+
+        if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
+        {
+            for (const Code::ExceptionTable& iter : result->second)
+            {
+                activeHandlers.emplace_back(iter.handlerPc, iter.catchType);
+                endHandlers[iter.endPc].push_back(std::prev(activeHandlers.end()));
+            }
+            // No longer needed.
+            startHandlers.erase(result);
         }
 
         if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
