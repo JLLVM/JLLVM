@@ -782,18 +782,46 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                                                      {builder.getInt32(0), builder.getInt32(2), index});
                 match(
                     operation, [](...) {},
-                    [&,arrayType=arrayType](OneOf<BAStore, CAStore, SAStore>) { value = builder.CreateTrunc(value, arrayType); });
+                    [&, arrayType = arrayType](OneOf<BAStore, CAStore, SAStore>)
+                    { value = builder.CreateTrunc(value, arrayType); });
 
                 builder.CreateStore(value, gep);
             },
             [&](AConstNull)
             { operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext()))); },
-            [&](ALoad aLoad)
-            { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[aLoad.index])); },
-            [&](ALoad0) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[0])); },
-            [&](ALoad1) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[1])); },
-            [&](ALoad2) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[2])); },
-            [&](ALoad3) { operandStack.push_back(builder.CreateLoad(referenceType(builder.getContext()), locals[3])); },
+            [&](OneOf<ALoad, DLoad, FLoad, ILoad, LLoad> load)
+            {
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                    [&](ALoad) -> llvm::Type* { return referenceType(builder.getContext()); },
+                    [&](DLoad) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](FLoad) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](ILoad) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](LLoad) -> llvm::Type* { return builder.getInt64Ty(); });
+
+                operandStack.push_back(builder.CreateLoad(type, locals[load.index]));
+            },
+            [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0, ALoad1, DLoad1, FLoad1, ILoad1, LLoad1, ALoad2, DLoad2,
+                      FLoad2, ILoad2, LLoad2, ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>)
+            {
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                    [&](OneOf<ALoad0, ALoad1, ALoad2, ALoad3>) -> llvm::Type*
+                    { return referenceType(builder.getContext()); },
+                    [&](OneOf<DLoad0, DLoad1, DLoad2, DLoad3>) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](OneOf<FLoad0, FLoad1, FLoad2, FLoad3>) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](OneOf<ILoad0, ILoad1, ILoad2, ILoad3>) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](OneOf<LLoad0, LLoad1, LLoad2, LLoad3>) -> llvm::Type* { return builder.getInt64Ty(); });
+
+                std::uint8_t index = match(
+                    operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid load operation"); },
+                    [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0>) { return 0; },
+                    [&](OneOf<ALoad1, DLoad1, FLoad1, ILoad1, LLoad1>) { return 1; },
+                    [&](OneOf<ALoad2, DLoad2, FLoad2, ILoad2, LLoad2>) { return 2; },
+                    [&](OneOf<ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>) { return 3; });
+
+                operandStack.push_back(builder.CreateLoad(type, locals[index]));
+            },
             [&](ANewArray aNewArray)
             {
                 auto index = PoolIndex<ClassInfo>{aNewArray.index};
@@ -827,9 +855,32 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 operandStack.push_back(object);
             },
-            [&](AReturn)
+            [&](OneOf<AReturn, DReturn, FReturn, IReturn, LReturn>)
             {
-                llvm::Value* value = operandStack.pop_back(referenceType(builder.getContext()));
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                    [&](AReturn) -> llvm::Type* { return referenceType(builder.getContext()); },
+                    [&](DReturn) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](FReturn) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](IReturn) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](LReturn) -> llvm::Type* { return builder.getInt64Ty(); });
+
+                llvm::Value* value = operandStack.pop_back(type);
+
+                match(
+                    operation, [](...) {},
+                    [&](IReturn)
+                    {
+                        if (methodType.returnType == FieldType(BaseType::Boolean))
+                        {
+                            value = builder.CreateAnd(value, builder.getInt32(1));
+                        }
+                        if (function->getReturnType() != value->getType())
+                        {
+                            value = builder.CreateTrunc(value, function->getReturnType());
+                        }
+                    });
+
                 builder.CreateRet(value);
             },
             [&](ArrayLength)
@@ -841,16 +892,38 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                                                      {builder.getInt32(0), builder.getInt32(1)});
                 operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
             },
-            [&](AStore aStore)
-            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[aStore.index]); },
-            [&](AStore0)
-            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[0]); },
-            [&](AStore1)
-            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[1]); },
-            [&](AStore2)
-            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[2]); },
-            [&](AStore3)
-            { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]); },
+            [&](OneOf<AStore, DStore, FStore, IStore, LStore> store)
+            {
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
+                    [&](AStore) -> llvm::Type* { return referenceType(builder.getContext()); },
+                    [&](DStore) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](FStore) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](IStore) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](LStore) -> llvm::Type* { return builder.getInt64Ty(); });
+
+                builder.CreateStore(operandStack.pop_back(type), locals[store.index]);
+            },
+            [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
+                      DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
+            {
+                llvm::Type* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
+                    [&](OneOf<AStore0, AStore1, AStore2, AStore3>) -> llvm::Type*
+                    { return referenceType(builder.getContext()); },
+                    [&](OneOf<DStore0, DStore1, DStore2, DStore3>) -> llvm::Type* { return builder.getDoubleTy(); },
+                    [&](OneOf<FStore0, FStore1, FStore2, FStore3>) -> llvm::Type* { return builder.getFloatTy(); },
+                    [&](OneOf<IStore0, IStore1, IStore2, IStore3>) -> llvm::Type* { return builder.getInt32Ty(); },
+                    [&](OneOf<LStore0, LStore1, LStore2, LStore3>) -> llvm::Type* { return builder.getInt64Ty(); });
+
+                std::uint8_t index = match(
+                    operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
+                    [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0>) { return 0; },
+                    [&](OneOf<AStore1, DStore1, FStore1, IStore1, LStore1>) { return 1; },
+                    [&](OneOf<AStore2, DStore2, FStore2, IStore2, LStore2>) { return 2; },
+                    [&](OneOf<AStore3, DStore3, FStore3, IStore3, LStore3>) { return 3; });
+
+                builder.CreateStore(operandStack.pop_back(type), locals[index]); },
             [&](AThrow)
             {
                 llvm::Type* reference = referenceType(builder.getContext());
@@ -876,20 +949,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: DConst0
             // TODO: DConst1
             // TODO: DDiv
-            // TODO: DLoad
-            // TODO: DLoad0
-            // TODO: DLoad1
-            // TODO: DLoad2
-            // TODO: DLoad3
             // TODO: DMul
             // TODO: DNeg
             // TODO: DRem
-            // TODO: DReturn
-            // TODO: DStore
-            // TODO: DStore0
-            // TODO: DStore1
-            // TODO: DStore2
-            // TODO: DStore3
             // TODO: DSub
             [&](Dup)
             {
@@ -962,11 +1024,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFDiv(lhs, rhs));
             },
-            [&](FLoad fLoad) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[fLoad.index])); },
-            [&](FLoad0) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[0])); },
-            [&](FLoad1) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[1])); },
-            [&](FLoad2) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[2])); },
-            [&](FLoad3) { operandStack.push_back(builder.CreateLoad(builder.getFloatTy(), locals[3])); },
             [&](FMul)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
@@ -984,13 +1041,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
                 operandStack.push_back(builder.CreateFRem(lhs, rhs));
             },
-            [&](FReturn) { builder.CreateRet(operandStack.pop_back(builder.getFloatTy())); },
-            [&](FStore fStore)
-            { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[fStore.index]); },
-            [&](FStore0) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[0]); },
-            [&](FStore1) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[1]); },
-            [&](FStore2) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[2]); },
-            [&](FStore3) { builder.CreateStore(operandStack.pop_back(builder.getFloatTy()), locals[3]); },
             [&](FSub)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
@@ -1179,11 +1229,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
                 builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
             },
-            [&](ILoad iLoad) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[iLoad.index])); },
-            [&](ILoad0) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[0])); },
-            [&](ILoad1) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[1])); },
-            [&](ILoad2) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[2])); },
-            [&](ILoad3) { operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), locals[3])); },
             [&](IMul)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1424,19 +1469,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateSRem(lhs, rhs));
             },
-            [&](IReturn)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                if (methodType.returnType == FieldType(BaseType::Boolean))
-                {
-                    value = builder.CreateAnd(value, builder.getInt32(1));
-                }
-                if (function->getReturnType() != value->getType())
-                {
-                    value = builder.CreateTrunc(value, function->getReturnType());
-                }
-                builder.CreateRet(value);
-            },
             [&](IShl)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1453,12 +1485,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
             },
-            [&](IStore iStore)
-            { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[iStore.index]); },
-            [&](IStore0) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[0]); },
-            [&](IStore1) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[1]); },
-            [&](IStore2) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[2]); },
-            [&](IStore3) { builder.CreateStore(operandStack.pop_back(builder.getInt32Ty()), locals[3]); },
             [&](ISub)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1538,24 +1564,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
             },
             // TODO: LDiv
-            // TODO: LLoad
-            // TODO: LLoad0
-            // TODO: LLoad1
-            // TODO: LLoad2
-            // TODO: LLoad3
             // TODO: LMul
             // TODO: LNeg
             // TODO: LookupSwitch
             // TODO: LOr
             // TODO: LRem
-            // TODO: LReturn
             // TODO: LShl
             // TODO: LShr
-            // TODO: LStore
-            // TODO: LStore0
-            // TODO: LStore1
-            // TODO: LStore2
-            // TODO: LStore3
             // TODO: LSub
             // TODO: LUShr
             // TODO: LXor
