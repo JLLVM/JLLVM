@@ -50,11 +50,7 @@ public:
         return m_index != 0;
     }
 
-    /// True if two pool indices refer to the same entry.
-    bool operator==(const PoolIndex& rhs) const
-    {
-        return m_index == rhs.m_index;
-    }
+    auto operator<=>(const PoolIndex& rhs) const = default;
 };
 
 struct Utf8Info;
