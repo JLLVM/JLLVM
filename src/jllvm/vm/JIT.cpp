@@ -78,7 +78,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
         {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException)}})));
 
-#ifdef LLVM_ADDRESS_SANITIZER_BUILD
+#if LLVM_ADDRESS_SANITIZER_BUILD
     m_main.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
         m_dataLayout.getGlobalPrefix(),
         /*Allow=*/[](const llvm::orc::SymbolStringPtr& symbolStringPtr)
@@ -160,7 +160,7 @@ void jllvm::JIT::optimize(llvm::Module& module)
 
     passBuilder.registerOptimizerLastEPCallback([&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
         {
-#ifdef LLVM_ADDRESS_SANITIZER_BUILD
+#if LLVM_ADDRESS_SANITIZER_BUILD
             llvm::AddressSanitizerOptions options;
             modulePassManager.addPass(llvm::AddressSanitizerPass(options));
             modulePassManager.addPass(llvm::RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>{});
