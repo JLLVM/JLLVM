@@ -801,8 +801,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* classObject = helper.getClassObject(
                     builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(classObject))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the
                 // elements) plus element count * element size.
@@ -1008,8 +1012,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(fieldOffset))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
@@ -1034,8 +1042,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(fieldPtr))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 FieldType descriptor = parseFieldType(fieldType);
                 llvm::Type* type = descriptorToType(descriptor, builder.getContext());
@@ -1252,8 +1264,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* idAndSlot =
                     helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(idAndSlot))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
                 llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
@@ -1328,8 +1344,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef methodType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(callee))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
@@ -1365,8 +1385,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef methodType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(slot))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
                 llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
                 llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
                 llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
@@ -1502,8 +1526,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                         {
                             classObject = helper.getClassObject(builder, "L" + text + ";");
                         }
-                        // Can throw class loader or linkage related errors.
-                        generateEHDispatch();
+                        // If the class was already loaded 'callee' is optimized to a constant and no exception may
+                        // occur.
+                        if (!llvm::isa<llvm::Constant>(classObject))
+                        {
+                            // Can throw class loader or linkage related errors.
+                            generateEHDispatch();
+                        }
                         operandStack.push_back(classObject);
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
@@ -1544,8 +1573,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
                 llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may
+                // occur.
+                if (!llvm::isa<llvm::Constant>(classObject))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 // Size is first 4 bytes in the class object and does not include the object header.
                 llvm::Value* fieldAreaPtr = builder.CreateGEP(
@@ -1568,8 +1602,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may
+                // occur.
+                if (!llvm::isa<llvm::Constant>(classObject))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the
                 // elements) plus element count * element size.
@@ -1610,8 +1649,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(fieldOffset))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 llvm::Value* fieldPtr =
                     builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
@@ -1638,8 +1681,12 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
                 llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
+                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+                if (!llvm::isa<llvm::Constant>(fieldPtr))
+                {
+                    // Can throw class loader or linkage related errors.
+                    generateEHDispatch();
+                }
 
                 if (value->getType() != llvmFieldType)
                 {
