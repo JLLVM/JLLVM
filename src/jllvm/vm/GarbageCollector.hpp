@@ -3,6 +3,8 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 
+#include <jllvm/object/Object.hpp>
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -32,6 +34,9 @@ struct StackMapEntry
                < std::tie(rhs.type, rhs.count, rhs.registerNumber, rhs.offset);
     }
 };
+
+template <class T>
+class GCRef;
 
 /// Garbage collector and heap implementation used to allocate and free ALL Java objects minus class objects.
 /// This is a simple semi-space collector with a bump pointer to do new allocations. It consist of both a 'from' and
@@ -77,6 +82,51 @@ public:
     /// Allocates a new static field of reference type within the GC. The GC additionally manages this heap to be able
     /// to both use it as root objects during marking and to properly replace references to relocated objects during
     /// sweeping.
-    void** allocateStatic();
+    GCRef<Object> allocateStatic();
+};
+
+template <class T>
+class GCRef
+{
+    T** m_object;
+
+public:
+    explicit GCRef(void** object) : m_object(reinterpret_cast<T**>(object)) {}
+
+    template <class U>
+    explicit operator GCRef<U>() const
+    {
+        return GCRef<U>(reinterpret_cast<void**>(m_object));
+    }
+
+    explicit operator bool() const
+    {
+        return get();
+    }
+
+    bool operator!() const
+    {
+        return !get();
+    }
+
+    T* get() const
+    {
+        return *m_object;
+    }
+
+    T* operator->() const
+    {
+        return get();
+    }
+
+    T& operator*() const
+    {
+        return *get();
+    }
+
+    T** ref() const
+    {
+        return m_object;
+    }
 };
 } // namespace jllvm

@@ -80,6 +80,12 @@ llvm::FunctionCallee allocationFunction(llvm::Module* module)
     return function;
 }
 
+llvm::GlobalVariable* activeException(llvm::Module* module)
+{
+    return llvm::cast<llvm::GlobalVariable>(
+        module->getOrInsertGlobal("activeException", referenceType(module->getContext())));
+}
+
 /// Truncates 'i32' args which is the type used internally on Javas operand stack for everything but 'long'
 /// to integer types of the bit-width of the callee (e.g. 'i8' for a 'byte' arg in Java).
 void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<llvm::Value*> args,
@@ -523,6 +529,49 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
     std::vector<std::pair<std::uint16_t, PoolIndex<ClassInfo>>> activeHandlers;
 
+    auto generateEHHandlerChain = [&](llvm::Value* exception, llvm::BasicBlock* newPred)
+    {
+        llvm::IRBuilder<>::InsertPointGuard guard{builder};
+
+        // TODO: Only create these basic blocks for each set of active exception handlers once (but add new entries to
+        //  the phi for each predecessor)
+
+        auto* ehHandler = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        builder.SetInsertPoint(ehHandler);
+
+        llvm::PHINode* phi = builder.CreatePHI(exception->getType(), 0);
+        phi->addIncoming(exception, newPred);
+
+        // TODO: chain of instance of dispatching to each handler here. Don't forget to set activeException to null
+        //  when doing so.
+
+        // Otherwise, propagate exception to parent frame:
+
+        llvm::Type* retType = builder.getCurrentFunctionReturnType();
+        if (retType->isVoidTy())
+        {
+            builder.CreateRetVoid();
+        }
+        else
+        {
+            builder.CreateRet(llvm::UndefValue::get(retType));
+        }
+
+        return ehHandler;
+    };
+
+    auto generateEHDispatch = [&]
+    {
+        llvm::PointerType* referenceTy = referenceType(builder.getContext());
+        llvm::Value* value = builder.CreateLoad(referenceTy, activeException(function->getParent()));
+        llvm::Value* cond = builder.CreateICmpEQ(value, llvm::ConstantPointerNull::get(referenceTy));
+
+        auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        builder.CreateCondBr(cond, continueBlock, generateEHHandlerChain(value, builder.GetInsertBlock()));
+
+        builder.SetInsertPoint(continueBlock);
+    };
+
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
     // Calculate BasicBlocks
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
@@ -679,6 +728,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* classObject = helper.getClassObject(
                     builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the
                 // elements) plus element count * element size.
@@ -686,8 +737,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 bytesNeeded =
                     builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(Object*))));
 
-                // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+                // Allocation can throw OutOfMemoryException.
+                generateEHDispatch();
+
+                // Type object.
                 builder.CreateStore(classObject, object);
                 // Array length.
                 auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), object,
@@ -722,8 +776,13 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             { builder.CreateStore(operandStack.pop_back(referenceType(builder.getContext())), locals[3]); },
             [&](AThrow)
             {
-                // TODO: Properly implement throwing exception. Pure stop gap solution for now.
-                operandStack.pop_back(referenceType(builder.getContext()));
+                llvm::Type* reference = referenceType(builder.getContext());
+
+                llvm::Value* exception = operandStack.pop_back(reference);
+
+                builder.CreateStore(exception, activeException(function->getParent()));
+
+                builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
             },
             [&](BIPush biPush)
             {
@@ -876,6 +935,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef fieldType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
@@ -900,6 +961,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+
                 FieldType descriptor = parseFieldType(fieldType);
                 llvm::Type* type = descriptorToType(descriptor, builder.getContext());
                 llvm::Value* field = builder.CreateLoad(type, fieldPtr);
@@ -1075,16 +1139,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 {
                     classObject = helper.getClassObject(builder, "L" + className + ";");
                 }
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
                     "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
-                llvm::Value* call = builder.CreateCall(callee, {object, classObject});
+                llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
                 builder.CreateBr(continueBlock);
 
                 builder.SetInsertPoint(continueBlock);
                 llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
                 phi->addIncoming(builder.getInt32(0), block);
-                phi->addIncoming(call, instanceOfBlock);
+                phi->addIncoming(call, call->getParent());
 
                 operandStack.push_back(phi);
             },
@@ -1113,6 +1179,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Value* idAndSlot =
                     helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
                 llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
@@ -1156,6 +1224,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 auto* call = builder.CreateCall(functionType, callee, args);
                 call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
 
+                generateEHDispatch();
+
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
                     operandStack.push_back(call);
@@ -1185,12 +1255,16 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef methodType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
                 prepareArgumentsForCall(builder, args, functionType);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
                 call->setAttributes(getABIAttributes(builder.getContext(), descriptor, isStatic));
+
+                generateEHDispatch();
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1218,6 +1292,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::StringRef methodType =
                     refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
                 llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
                 llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
                 llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
                 llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
@@ -1231,6 +1307,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 prepareArgumentsForCall(builder, args, functionType);
                 auto* call = builder.CreateCall(functionType, callee, args);
                 call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
+
+                generateEHDispatch();
 
                 if (descriptor.returnType != FieldType(BaseType::Void))
                 {
@@ -1351,6 +1429,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                         {
                             classObject = helper.getClassObject(builder, "L" + text + ";");
                         }
+                        // Can throw class loader or linkage related errors.
+                        generateEHDispatch();
                         operandStack.push_back(classObject);
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
@@ -1391,6 +1471,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
                 llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 // Size is first 4 bytes in the class object and does not include the object header.
                 llvm::Value* fieldAreaPtr = builder.CreateGEP(
@@ -1400,6 +1482,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 llvm::Module* module = function->getParent();
                 llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
+                // Allocation can throw OutOfMemoryException.
+                generateEHDispatch();
+
                 // Store object header (which in our case is just the class object) in the object.
                 builder.CreateStore(classObject, object);
                 operandStack.push_back(object);
@@ -1410,6 +1495,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
                 llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 // Size required is the size of the array prior to the elements (equal to the offset to the
                 // elements) plus element count * element size.
@@ -1418,6 +1505,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 // Type object.
                 llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+
+                // Allocation can throw OutOfMemoryException.
+                generateEHDispatch();
+
                 builder.CreateStore(classObject, object);
                 // Array length.
                 llvm::Value* gep =
@@ -1446,6 +1537,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
                 llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 llvm::Value* fieldPtr =
                     builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
@@ -1472,6 +1565,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
                 llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
                 llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
 
                 if (value->getType() != llvmFieldType)
                 {
