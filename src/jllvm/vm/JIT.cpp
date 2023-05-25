@@ -1,21 +1,25 @@
 #include "JIT.hpp"
 
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/GlobalsModRef.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/ExecutionEngine/JITLink/EHFrameSupport.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
 #include <llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderGDB.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/Transforms/Instrumentation/AddressSanitizer.h>
 #include <llvm/Transforms/Scalar/RewriteStatepointsForGC.h>
 
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 
 #include <utility>
 
+#include "MarkSanitizersGCLeafs.hpp"
 #include "StackMapRegistrationPlugin.hpp"
 
 #define DEBUG_TYPE "jvm"
@@ -73,6 +77,13 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
          {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)}})));
     llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
         {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException)}})));
+
+#ifdef LLVM_ADDRESS_SANITIZER_BUILD
+    m_main.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+        m_dataLayout.getGlobalPrefix(),
+        /*Allow=*/[](const llvm::orc::SymbolStringPtr& symbolStringPtr)
+        { return (*symbolStringPtr).starts_with("__asan"); })));
+#endif
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
@@ -148,7 +159,15 @@ void jllvm::JIT::optimize(llvm::Module& module)
     llvm::PassBuilder passBuilder(m_targetMachine.get(), options, std::nullopt);
 
     passBuilder.registerOptimizerLastEPCallback([&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
-                                                { modulePassManager.addPass(llvm::RewriteStatepointsForGC{}); });
+        {
+#ifdef LLVM_ADDRESS_SANITIZER_BUILD
+            llvm::AddressSanitizerOptions options;
+            modulePassManager.addPass(llvm::AddressSanitizerPass(options));
+            modulePassManager.addPass(llvm::RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>{});
+            modulePassManager.addPass(MarkSanitizersGCLeafsPass{});
+#endif
+            modulePassManager.addPass(llvm::RewriteStatepointsForGC{});
+        });
 
     fam.registerPass([&] { return passBuilder.buildDefaultAAPipeline(); });
     passBuilder.registerModuleAnalyses(mam);

@@ -1,7 +1,7 @@
 llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
 
 add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp GarbageCollector.cpp StackMapRegistrationPlugin.cpp
-        JNIImplementation.cpp NativeImplementation.cpp StringInterner.cpp)
+        JNIImplementation.cpp NativeImplementation.cpp StringInterner.cpp MarkSanitizersGCLeafs.cpp)
 target_link_libraries(JLLVMVirtualMachine
         PRIVATE ${llvm_native_libs}
         PUBLIC JLLVMClassParser JLLVMObject LLVMExecutionEngine LLVMOrcJIT LLVMJITLink JLLVMMaterialization
