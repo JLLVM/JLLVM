@@ -165,6 +165,11 @@ public:
         return m_topOfStack;
     }
 
+    llvm::AllocaInst* getBottomOfStack() const
+    {
+        return m_values.front();
+    }
+
     void setTopOfStack(llvm::AllocaInst** topOfStack)
     {
         m_topOfStack = topOfStack;
@@ -493,90 +498,100 @@ auto resolveNewArrayInfo(ArrayOp arrayOp, llvm::IRBuilder<>& builder)
     }
 }
 
-void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
-                 StringInterner& stringInterner, const MethodType& methodType)
+struct CodeGen
 {
-    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
-    OperandStack operandStack(code.getMaxStack(), builder);
-    std::vector<llvm::AllocaInst*> locals(code.getMaxLocals());
-    for (auto& alloca : locals)
-    {
-        // We need pointer size bytes, since that is the largest type we may store in a local.
-        alloca = builder.CreateAlloca(llvm::PointerType::get(function->getContext(), 0));
-    }
-
-    // Arguments are put into the locals. According to the specification, i64s and doubles are split into two locals.
-    // We don't actually do that, we just put them into the very first local, but we still have to skip over the
-    // following local as if we didn't.
-    auto nextLocal = locals.begin();
-    for (auto& arg : function->args())
-    {
-        builder.CreateStore(&arg, *nextLocal++);
-        if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
-        {
-            nextLocal++;
-        }
-    }
-
+    llvm::Function* function;
+    const ClassFile& classFile;
+    LazyClassLoaderHelper helper;
+    StringInterner& stringInterner;
+    const MethodType& functionMethodType;
+    llvm::IRBuilder<> builder;
+    OperandStack operandStack;
+    std::vector<llvm::AllocaInst*> locals;
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-    // Calculate BasicBlocks
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
-    {
-        auto addBasicBlock = [&](std::uint16_t target)
-        {
-            auto [result, inserted] = basicBlocks.insert({target, nullptr});
-
-            if (inserted)
-            {
-                result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            }
-        };
-        match(
-            operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
-            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
-                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
-                    cmpOp)
-            {
-                addBasicBlock(cmpOp.target + cmpOp.offset);
-                addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
-            },
-            [](...) {});
-    }
-
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
-    for (const auto& iter : code.getExceptionTable())
-    {
-        auto [result, inserted] = basicBlocks.insert({iter.handlerPc, nullptr});
-        if (!inserted)
-        {
-            continue;
-        }
-        // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
-        // required that we register that fact in 'basicBlockStackPointers' explicitly.
-        result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-        basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
-    }
-
-    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
-    for (const auto& iter : code.getExceptionTable())
-    {
-        startHandlers[iter.startPc].push_back(iter);
-    }
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
+
     // std::list because we want the iterator stability when deleting handlers (requires random access).
     std::list<HandlerInfo> activeHandlers;
-
-    // std::map simply because its the easiest to use with std::list as key.
+    // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> alreadyGeneratedEHHandlers;
 
-    llvm::AllocaInst* operandStackBottom = nullptr;
-    if (code.getMaxStack() > 0)
+    CodeGen(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
+            StringInterner& stringInterner, const MethodType& methodType)
+        : function(function),
+          classFile(classFile),
+          helper(std::move(helper)),
+          stringInterner(stringInterner),
+          functionMethodType(methodType),
+          builder(llvm::BasicBlock::Create(function->getContext(), "entry", function)),
+          operandStack(code.getMaxStack(), builder),
+          locals(code.getMaxLocals())
     {
-        operandStackBottom = *operandStack.getTopOfStack();
+        for (auto& alloca : locals)
+        {
+            // We need pointer size bytes, since that is the largest type we may store in a local.
+            alloca = builder.CreateAlloca(llvm::PointerType::get(function->getContext(), 0));
+        }
+
+        // Arguments are put into the locals. According to the specification, i64s and doubles are split into two
+        // locals. We don't actually do that, we just put them into the very first local, but we still have to skip over
+        // the following local as if we didn't.
+        auto nextLocal = locals.begin();
+        for (auto& arg : function->args())
+        {
+            builder.CreateStore(&arg, *nextLocal++);
+            if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
+            {
+                nextLocal++;
+            }
+        }
+
+        calculateBasicBlocks(code);
+        codeGenBody(code);
     }
 
-    auto generateEHHandlerChain = [&](llvm::Value* exception, llvm::BasicBlock* newPred)
+    void calculateBasicBlocks(const Code& code)
+    {
+        for (ByteCodeOp operation : byteCodeRange(code.getCode()))
+        {
+            auto addBasicBlock = [&](std::uint16_t target)
+            {
+                auto [result, inserted] = basicBlocks.insert({target, nullptr});
+
+                if (inserted)
+                {
+                    result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                }
+            };
+            match(
+                operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
+                [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe,
+                          IfLt, IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                        cmpOp)
+                {
+                    addBasicBlock(cmpOp.target + cmpOp.offset);
+                    addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
+                },
+                [](...) {});
+        }
+
+        for (const auto& iter : code.getExceptionTable())
+        {
+            auto [result, inserted] = basicBlocks.insert({iter.handlerPc, nullptr});
+            if (!inserted)
+            {
+                continue;
+            }
+            // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
+            // required that we register that fact in 'basicBlockStackPointers' explicitly.
+            result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
+        }
+    }
+
+    llvm::BasicBlock* generateEHHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred)
     {
         llvm::IRBuilder<>::InsertPointGuard guard{builder};
 
@@ -607,14 +622,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // Catch all used to implement 'finally'.
                 // Set exception object as only object on the stack and clear the active exception.
                 builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
-                builder.CreateStore(phi, operandStackBottom);
+                builder.CreateStore(phi, operandStack.getBottomOfStack());
                 builder.CreateBr(handlerBB);
                 return ehHandler;
             }
 
-            // Since an exception class must be loaded for any instance of the class to be created, we can be certain
-            // that the exception is not of the type if the class has not yet been loaded.
-            // And most importantly, don't need to eagerly load it.
+            // Since an exception class must be loaded for any instance of the class to be created, we can be
+            // certain that the exception is not of the type if the class has not yet been loaded. And most
+            // importantly, don't need to eagerly load it.
             llvm::FunctionCallee forNameLoaded =
                 function->getParent()->getOrInsertFunction("jllvm_for_name_loaded", ty, builder.getPtrTy());
             llvm::SmallString<64> buffer;
@@ -639,7 +654,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
             builder.SetInsertPoint(jumpToHandler);
             // Set exception object as only object on the stack and clear the active exception.
-            builder.CreateStore(phi, operandStackBottom);
+            builder.CreateStore(phi, operandStack.getBottomOfStack());
             builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
             builder.CreateBr(handlerBB);
 
@@ -659,9 +674,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         }
 
         return ehHandler;
-    };
+    }
 
-    auto generateEHDispatch = [&]
+    void generateEHDispatch()
     {
         llvm::PointerType* referenceTy = referenceType(builder.getContext());
         llvm::Value* value = builder.CreateLoad(referenceTy, activeException(function->getParent()));
@@ -671,7 +686,18 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         builder.CreateCondBr(cond, continueBlock, generateEHHandlerChain(value, builder.GetInsertBlock()));
 
         builder.SetInsertPoint(continueBlock);
-    };
+    }
+
+    void codeGenBody(const Code& code);
+};
+
+void CodeGen::codeGenBody(const Code& code)
+{
+    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
+    for (const auto& iter : code.getExceptionTable())
+    {
+        startHandlers[iter.startPc].push_back(iter);
+    }
 
     llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
@@ -699,8 +725,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
         if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
         {
-            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to set
-            // this manually to the new insert point. This essentially implements implicit fallthrough from JVM
+            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
+            // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
             // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
@@ -864,7 +890,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     operation, [](...) {},
                     [&](IReturn)
                     {
-                        if (methodType.returnType == FieldType(BaseType::Boolean))
+                        if (functionMethodType.returnType == FieldType(BaseType::Boolean))
                         {
                             value = builder.CreateAnd(value, builder.getInt32(1));
                         }
@@ -1781,10 +1807,10 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     auto code = methodInfo->getAttributes().find<Code>();
     assert(code);
-    codeGenBody(function, *code, *classFile,
-                LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager, m_callbackManager,
-                                      m_baseLayer, m_interner, m_dataLayout),
-                m_stringInterner, descriptor);
+    CodeGen codeGen(function, *code, *classFile,
+                    LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager,
+                                          m_callbackManager, m_baseLayer, m_interner, m_dataLayout),
+                    m_stringInterner, descriptor);
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
