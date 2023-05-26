@@ -165,6 +165,11 @@ public:
         return m_topOfStack;
     }
 
+    llvm::AllocaInst* getBottomOfStack() const
+    {
+        return m_values.front();
+    }
+
     void setTopOfStack(llvm::AllocaInst** topOfStack)
     {
         m_topOfStack = topOfStack;
@@ -493,90 +498,100 @@ auto resolveNewArrayInfo(ArrayOp arrayOp, llvm::IRBuilder<>& builder)
     }
 }
 
-void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
-                 StringInterner& stringInterner, const MethodType& methodType)
+struct CodeGen
 {
-    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(function->getContext(), "entry", function));
-    OperandStack operandStack(code.getMaxStack(), builder);
-    std::vector<llvm::AllocaInst*> locals(code.getMaxLocals());
-    for (auto& alloca : locals)
-    {
-        // We need pointer size bytes, since that is the largest type we may store in a local.
-        alloca = builder.CreateAlloca(llvm::PointerType::get(function->getContext(), 0));
-    }
-
-    // Arguments are put into the locals. According to the specification, i64s and doubles are split into two locals.
-    // We don't actually do that, we just put them into the very first local, but we still have to skip over the
-    // following local as if we didn't.
-    auto nextLocal = locals.begin();
-    for (auto& arg : function->args())
-    {
-        builder.CreateStore(&arg, *nextLocal++);
-        if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
-        {
-            nextLocal++;
-        }
-    }
-
+    llvm::Function* function;
+    const ClassFile& classFile;
+    LazyClassLoaderHelper helper;
+    StringInterner& stringInterner;
+    const MethodType& functionMethodType;
+    llvm::IRBuilder<> builder;
+    OperandStack operandStack;
+    std::vector<llvm::AllocaInst*> locals;
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-    // Calculate BasicBlocks
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
-    {
-        auto addBasicBlock = [&](std::uint16_t target)
-        {
-            auto [result, inserted] = basicBlocks.insert({target, nullptr});
-
-            if (inserted)
-            {
-                result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            }
-        };
-        match(
-            operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
-            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
-                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
-                    cmpOp)
-            {
-                addBasicBlock(cmpOp.target + cmpOp.offset);
-                addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
-            },
-            [](...) {});
-    }
-
     llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
-    for (const auto& iter : code.getExceptionTable())
-    {
-        auto [result, inserted] = basicBlocks.insert({iter.handlerPc, nullptr});
-        if (!inserted)
-        {
-            continue;
-        }
-        // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
-        // required that we register that fact in 'basicBlockStackPointers' explicitly.
-        result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-        basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
-    }
-
-    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
-    for (const auto& iter : code.getExceptionTable())
-    {
-        startHandlers[iter.startPc].push_back(iter);
-    }
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
+
     // std::list because we want the iterator stability when deleting handlers (requires random access).
     std::list<HandlerInfo> activeHandlers;
-
-    // std::map simply because its the easiest to use with std::list as key.
+    // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> alreadyGeneratedEHHandlers;
 
-    llvm::AllocaInst* operandStackBottom = nullptr;
-    if (code.getMaxStack() > 0)
+    CodeGen(llvm::Function* function, const Code& code, const ClassFile& classFile, LazyClassLoaderHelper helper,
+            StringInterner& stringInterner, const MethodType& methodType)
+        : function(function),
+          classFile(classFile),
+          helper(std::move(helper)),
+          stringInterner(stringInterner),
+          functionMethodType(methodType),
+          builder(llvm::BasicBlock::Create(function->getContext(), "entry", function)),
+          operandStack(code.getMaxStack(), builder),
+          locals(code.getMaxLocals())
     {
-        operandStackBottom = *operandStack.getTopOfStack();
+        for (auto& alloca : locals)
+        {
+            // We need pointer size bytes, since that is the largest type we may store in a local.
+            alloca = builder.CreateAlloca(llvm::PointerType::get(function->getContext(), 0));
+        }
+
+        // Arguments are put into the locals. According to the specification, i64s and doubles are split into two
+        // locals. We don't actually do that, we just put them into the very first local, but we still have to skip over
+        // the following local as if we didn't.
+        auto nextLocal = locals.begin();
+        for (auto& arg : function->args())
+        {
+            builder.CreateStore(&arg, *nextLocal++);
+            if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
+            {
+                nextLocal++;
+            }
+        }
+
+        calculateBasicBlocks(code);
+        codeGenBody(code);
     }
 
-    auto generateEHHandlerChain = [&](llvm::Value* exception, llvm::BasicBlock* newPred)
+    void calculateBasicBlocks(const Code& code)
+    {
+        for (ByteCodeOp operation : byteCodeRange(code.getCode()))
+        {
+            auto addBasicBlock = [&](std::uint16_t target)
+            {
+                auto [result, inserted] = basicBlocks.insert({target, nullptr});
+
+                if (inserted)
+                {
+                    result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                }
+            };
+            match(
+                operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
+                [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe,
+                          IfLt, IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                        cmpOp)
+                {
+                    addBasicBlock(cmpOp.target + cmpOp.offset);
+                    addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
+                },
+                [](...) {});
+        }
+
+        for (const auto& iter : code.getExceptionTable())
+        {
+            auto [result, inserted] = basicBlocks.insert({iter.handlerPc, nullptr});
+            if (!inserted)
+            {
+                continue;
+            }
+            // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
+            // required that we register that fact in 'basicBlockStackPointers' explicitly.
+            result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
+        }
+    }
+
+    llvm::BasicBlock* generateEHHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred)
     {
         llvm::IRBuilder<>::InsertPointGuard guard{builder};
 
@@ -607,14 +622,14 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 // Catch all used to implement 'finally'.
                 // Set exception object as only object on the stack and clear the active exception.
                 builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
-                builder.CreateStore(phi, operandStackBottom);
+                builder.CreateStore(phi, operandStack.getBottomOfStack());
                 builder.CreateBr(handlerBB);
                 return ehHandler;
             }
 
-            // Since an exception class must be loaded for any instance of the class to be created, we can be certain
-            // that the exception is not of the type if the class has not yet been loaded.
-            // And most importantly, don't need to eagerly load it.
+            // Since an exception class must be loaded for any instance of the class to be created, we can be
+            // certain that the exception is not of the type if the class has not yet been loaded. And most
+            // importantly, don't need to eagerly load it.
             llvm::FunctionCallee forNameLoaded =
                 function->getParent()->getOrInsertFunction("jllvm_for_name_loaded", ty, builder.getPtrTy());
             llvm::SmallString<64> buffer;
@@ -639,7 +654,7 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
             builder.SetInsertPoint(jumpToHandler);
             // Set exception object as only object on the stack and clear the active exception.
-            builder.CreateStore(phi, operandStackBottom);
+            builder.CreateStore(phi, operandStack.getBottomOfStack());
             builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
             builder.CreateBr(handlerBB);
 
@@ -659,9 +674,9 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         }
 
         return ehHandler;
-    };
+    }
 
-    auto generateEHDispatch = [&]
+    void generateEHDispatch()
     {
         llvm::PointerType* referenceTy = referenceType(builder.getContext());
         llvm::Value* value = builder.CreateLoad(referenceTy, activeException(function->getParent()));
@@ -671,7 +686,20 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
         builder.CreateCondBr(cond, continueBlock, generateEHHandlerChain(value, builder.GetInsertBlock()));
 
         builder.SetInsertPoint(continueBlock);
-    };
+    }
+
+    void codeGenBody(const Code& code);
+
+    void codeGenInstruction(ByteCodeOp operation);
+};
+
+void CodeGen::codeGenBody(const Code& code)
+{
+    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
+    for (const auto& iter : code.getExceptionTable())
+    {
+        startHandlers[iter.startPc].push_back(iter);
+    }
 
     llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
@@ -699,8 +727,8 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
         if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
         {
-            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to set
-            // this manually to the new insert point. This essentially implements implicit fallthrough from JVM
+            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
+            // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
             // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
@@ -714,1048 +742,1048 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 operandStack.setTopOfStack(resultStackPointer->second);
             }
         }
-        match(
-            operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
-            [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
+
+        codeGenInstruction(std::move(operation));
+    }
+}
+
+void CodeGen::codeGenInstruction(ByteCodeOp operation)
+{
+    match(
+        operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
+        [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
+                [&](AALoad) -> llvm::Type* { return referenceType(builder.getContext()); },
+                [&](BALoad) { return builder.getInt8Ty(); },
+                [&](OneOf<CALoad, SALoad>) { return builder.getInt16Ty(); },
+                [&](DALoad) { return builder.getDoubleTy(); }, [&](FALoad) { return builder.getFloatTy(); },
+                [&](IALoad) { return builder.getInt32Ty(); }, [&](LALoad) { return builder.getInt64Ty(); });
+
+            llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+            // TODO: throw NullPointerException if array is null
+            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+            // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+            llvm::Value* gep =
+                builder.CreateGEP(arrayStructType(type), array, {builder.getInt32(0), builder.getInt32(2), index});
+            llvm::Value* value = builder.CreateLoad(type, gep);
+
+            match(
+                operation, [](...) {},
+                [&](OneOf<BALoad, SALoad>) { value = builder.CreateSExt(value, builder.getInt32Ty()); },
+                [&](CALoad) { value = builder.CreateZExt(value, builder.getInt32Ty()); });
+
+            operandStack.push_back(value);
+        },
+        [&](OneOf<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
+        {
+            auto [popType, arrayType] = match(
+                operation,
+                [](...) -> std::pair<llvm::Type*, llvm::Type*> { llvm_unreachable("Invalid array load operation"); },
+                [&](AAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {referenceType(builder.getContext()), referenceType(builder.getContext())};
+                },
+                [&](BAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getInt32Ty(), builder.getInt8Ty()};
+                },
+                [&](OneOf<CAStore, SAStore>) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getInt32Ty(), builder.getInt16Ty()};
+                },
+                [&](DAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getDoubleTy(), builder.getDoubleTy()};
+                },
+                [&](FAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getFloatTy(), builder.getFloatTy()};
+                },
+                [&](IAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getInt32Ty(), builder.getInt32Ty()};
+                },
+                [&](LAStore) -> std::pair<llvm::Type*, llvm::Type*> {
+                    return {builder.getInt64Ty(), builder.getInt64Ty()};
+                });
+
+            llvm::Value* value = operandStack.pop_back(popType);
+            llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+            // TODO: throw NullPointerException if array is null
+            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+            // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+            llvm::Value* gep =
+                builder.CreateGEP(arrayStructType(arrayType), array, {builder.getInt32(0), builder.getInt32(2), index});
+            match(
+                operation, [](...) {},
+                [&, arrayType = arrayType](OneOf<BAStore, CAStore, SAStore>)
+                { value = builder.CreateTrunc(value, arrayType); });
+
+            builder.CreateStore(value, gep);
+        },
+        [&](AConstNull)
+        { operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext()))); },
+        [&](OneOf<ALoad, DLoad, FLoad, ILoad, LLoad> load)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                [&](ALoad) { return referenceType(builder.getContext()); },
+                [&](DLoad) { return builder.getDoubleTy(); }, [&](FLoad) { return builder.getFloatTy(); },
+                [&](ILoad) { return builder.getInt32Ty(); }, [&](LLoad) { return builder.getInt64Ty(); });
+
+            operandStack.push_back(builder.CreateLoad(type, locals[load.index]));
+        },
+        [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0, ALoad1, DLoad1, FLoad1, ILoad1, LLoad1, ALoad2, DLoad2,
+                  FLoad2, ILoad2, LLoad2, ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                [&](OneOf<ALoad0, ALoad1, ALoad2, ALoad3>) { return referenceType(builder.getContext()); },
+                [&](OneOf<DLoad0, DLoad1, DLoad2, DLoad3>) { return builder.getDoubleTy(); },
+                [&](OneOf<FLoad0, FLoad1, FLoad2, FLoad3>) { return builder.getFloatTy(); },
+                [&](OneOf<ILoad0, ILoad1, ILoad2, ILoad3>) { return builder.getInt32Ty(); },
+                [&](OneOf<LLoad0, LLoad1, LLoad2, LLoad3>) { return builder.getInt64Ty(); });
+
+            auto index = match(
+                operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid load operation"); },
+                [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0>) { return 0; },
+                [&](OneOf<ALoad1, DLoad1, FLoad1, ILoad1, LLoad1>) { return 1; },
+                [&](OneOf<ALoad2, DLoad2, FLoad2, ILoad2, LLoad2>) { return 2; },
+                [&](OneOf<ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>) { return 3; });
+
+            operandStack.push_back(builder.CreateLoad(type, locals[index]));
+        },
+        [&](ANewArray aNewArray)
+        {
+            auto index = PoolIndex<ClassInfo>{aNewArray.index};
+            llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+
+            llvm::Value* classObject = helper.getClassObject(
+                builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(classObject))
             {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
-                    [&](AALoad) -> llvm::Type* { return referenceType(builder.getContext()); },
-                    [&](BALoad) { return builder.getInt8Ty(); },
-                    [&](OneOf<CALoad, SALoad>) { return builder.getInt16Ty(); },
-                    [&](DALoad) { return builder.getDoubleTy(); }, [&](FALoad) { return builder.getFloatTy(); },
-                    [&](IALoad) { return builder.getInt32Ty(); }, [&](LALoad) { return builder.getInt64Ty(); });
-
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                llvm::Value* gep =
-                    builder.CreateGEP(arrayStructType(type), array, {builder.getInt32(0), builder.getInt32(2), index});
-                llvm::Value* value = builder.CreateLoad(type, gep);
-
-                match(
-                    operation, [](...) {},
-                    [&](OneOf<BALoad, SALoad>) { value = builder.CreateSExt(value, builder.getInt32Ty()); },
-                    [&](CALoad) { value = builder.CreateZExt(value, builder.getInt32Ty()); });
-
-                operandStack.push_back(value);
-            },
-            [&](OneOf<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
-            {
-                auto [popType, arrayType] = match(
-                    operation,
-                    [](...) -> std::pair<llvm::Type*, llvm::Type*>
-                    { llvm_unreachable("Invalid array load operation"); },
-                    [&](AAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {referenceType(builder.getContext()), referenceType(builder.getContext())};
-                    },
-                    [&](BAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getInt32Ty(), builder.getInt8Ty()};
-                    },
-                    [&](OneOf<CAStore, SAStore>) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getInt32Ty(), builder.getInt16Ty()};
-                    },
-                    [&](DAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getDoubleTy(), builder.getDoubleTy()};
-                    },
-                    [&](FAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getFloatTy(), builder.getFloatTy()};
-                    },
-                    [&](IAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getInt32Ty(), builder.getInt32Ty()};
-                    },
-                    [&](LAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                        return {builder.getInt64Ty(), builder.getInt64Ty()};
-                    });
-
-                llvm::Value* value = operandStack.pop_back(popType);
-                llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
-                // TODO: throw NullPointerException if array is null
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
-                llvm::Value* gep = builder.CreateGEP(arrayStructType(arrayType), array,
-                                                     {builder.getInt32(0), builder.getInt32(2), index});
-                match(
-                    operation, [](...) {},
-                    [&, arrayType = arrayType](OneOf<BAStore, CAStore, SAStore>)
-                    { value = builder.CreateTrunc(value, arrayType); });
-
-                builder.CreateStore(value, gep);
-            },
-            [&](AConstNull)
-            { operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext()))); },
-            [&](OneOf<ALoad, DLoad, FLoad, ILoad, LLoad> load)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                    [&](ALoad) { return referenceType(builder.getContext()); },
-                    [&](DLoad) { return builder.getDoubleTy(); }, [&](FLoad) { return builder.getFloatTy(); },
-                    [&](ILoad) { return builder.getInt32Ty(); }, [&](LLoad) { return builder.getInt64Ty(); });
-
-                operandStack.push_back(builder.CreateLoad(type, locals[load.index]));
-            },
-            [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0, ALoad1, DLoad1, FLoad1, ILoad1, LLoad1, ALoad2, DLoad2,
-                      FLoad2, ILoad2, LLoad2, ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                    [&](OneOf<ALoad0, ALoad1, ALoad2, ALoad3>) { return referenceType(builder.getContext()); },
-                    [&](OneOf<DLoad0, DLoad1, DLoad2, DLoad3>) { return builder.getDoubleTy(); },
-                    [&](OneOf<FLoad0, FLoad1, FLoad2, FLoad3>) { return builder.getFloatTy(); },
-                    [&](OneOf<ILoad0, ILoad1, ILoad2, ILoad3>) { return builder.getInt32Ty(); },
-                    [&](OneOf<LLoad0, LLoad1, LLoad2, LLoad3>) { return builder.getInt64Ty(); });
-
-                auto index = match(
-                    operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid load operation"); },
-                    [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0>) { return 0; },
-                    [&](OneOf<ALoad1, DLoad1, FLoad1, ILoad1, LLoad1>) { return 1; },
-                    [&](OneOf<ALoad2, DLoad2, FLoad2, ILoad2, LLoad2>) { return 2; },
-                    [&](OneOf<ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>) { return 3; });
-
-                operandStack.push_back(builder.CreateLoad(type, locals[index]));
-            },
-            [&](ANewArray aNewArray)
-            {
-                auto index = PoolIndex<ClassInfo>{aNewArray.index};
-                llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
-
-                llvm::Value* classObject = helper.getClassObject(
-                    builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(classObject))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                // Size required is the size of the array prior to the elements (equal to the offset to the
-                // elements) plus element count * element size.
-                llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
-                bytesNeeded =
-                    builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(Object*))));
-
-                llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
-                // Allocation can throw OutOfMemoryException.
-                generateEHDispatch();
-
-                // Type object.
-                builder.CreateStore(classObject, object);
-                // Array length.
-                auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), object,
-                                              {builder.getInt32(0), builder.getInt32(1)});
-                builder.CreateStore(count, gep);
-
-                operandStack.push_back(object);
-            },
-            [&](OneOf<AReturn, DReturn, FReturn, IReturn, LReturn>)
-            {
-                llvm::Type* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                    [&](AReturn) { return referenceType(builder.getContext()); },
-                    [&](DReturn) { return builder.getDoubleTy(); }, [&](FReturn) { return builder.getFloatTy(); },
-                    [&](IReturn) { return builder.getInt32Ty(); }, [&](LReturn) { return builder.getInt64Ty(); });
-
-                llvm::Value* value = operandStack.pop_back(type);
-
-                match(
-                    operation, [](...) {},
-                    [&](IReturn)
-                    {
-                        if (methodType.returnType == FieldType(BaseType::Boolean))
-                        {
-                            value = builder.CreateAnd(value, builder.getInt32(1));
-                        }
-                        if (function->getReturnType() != value->getType())
-                        {
-                            value = builder.CreateTrunc(value, function->getReturnType());
-                        }
-                    });
-
-                builder.CreateRet(value);
-            },
-            [&](ArrayLength)
-            {
-                llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
-
-                // The element type of the array type here is actually irrelevant.
-                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
-                                                     {builder.getInt32(0), builder.getInt32(1)});
-                operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
-            },
-            [&](OneOf<AStore, DStore, FStore, IStore, LStore> store)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
-                    [&](AStore) { return referenceType(builder.getContext()); },
-                    [&](DStore) { return builder.getDoubleTy(); }, [&](FStore) { return builder.getFloatTy(); },
-                    [&](IStore) { return builder.getInt32Ty(); }, [&](LStore) { return builder.getInt64Ty(); });
-
-                builder.CreateStore(operandStack.pop_back(type), locals[store.index]);
-            },
-            [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
-                      DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
-                    [&](OneOf<AStore0, AStore1, AStore2, AStore3>) { return referenceType(builder.getContext()); },
-                    [&](OneOf<DStore0, DStore1, DStore2, DStore3>) { return builder.getDoubleTy(); },
-                    [&](OneOf<FStore0, FStore1, FStore2, FStore3>) { return builder.getFloatTy(); },
-                    [&](OneOf<IStore0, IStore1, IStore2, IStore3>) { return builder.getInt32Ty(); },
-                    [&](OneOf<LStore0, LStore1, LStore2, LStore3>) { return builder.getInt64Ty(); });
-
-                auto index = match(
-                    operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
-                    [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0>) { return 0; },
-                    [&](OneOf<AStore1, DStore1, FStore1, IStore1, LStore1>) { return 1; },
-                    [&](OneOf<AStore2, DStore2, FStore2, IStore2, LStore2>) { return 2; },
-                    [&](OneOf<AStore3, DStore3, FStore3, IStore3, LStore3>) { return 3; });
-
-                builder.CreateStore(operandStack.pop_back(type), locals[index]);
-            },
-            [&](AThrow)
-            {
-                llvm::Type* reference = referenceType(builder.getContext());
-
-                llvm::Value* exception = operandStack.pop_back(reference);
-
-                builder.CreateStore(exception, activeException(function->getParent()));
-
-                builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
-            },
-            [&](BIPush biPush)
-            {
-                llvm::Value* res = builder.getInt32(biPush.value);
-                operandStack.push_back(res);
-            },
-            // TODO: CheckCast
-            [&](D2F)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
-                operandStack.push_back(builder.CreateFPTrunc(value, builder.getFloatTy()));
-            },
-            [&](OneOf<D2I, D2L, F2I, F2L>)
-            {
-                auto [fromType, toType] = match(
-                    operation,
-                    [](...) -> std::tuple<llvm::Type*, llvm::Type*>
-                    { llvm_unreachable("Invalid conversion operation"); },
-                    [&](D2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getDoubleTy(), builder.getInt32Ty()};
-                    },
-                    [&](D2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getDoubleTy(), builder.getInt64Ty()};
-                    },
-                    [&](F2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getFloatTy(), builder.getInt32Ty()};
-                    },
-                    [&](F2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getFloatTy(), builder.getInt64Ty()};
-                    });
-
-                llvm::Value* value = operandStack.pop_back(fromType);
-
-                operandStack.push_back(builder.CreateIntrinsic(toType, llvm::Intrinsic::fptosi_sat, {value}));
-            },
-            [&](OneOf<DAdd, FAdd, IAdd, LAdd>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid add operation"); },
-                    [&](DAdd) { return builder.getDoubleTy(); }, [&](FAdd) { return builder.getFloatTy(); },
-                    [&](IAdd) { return builder.getInt32Ty(); }, [&](LAdd) { return builder.getInt64Ty(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                auto* sum = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid add operation"); },
-                    [&](OneOf<DAdd, FAdd>) { return builder.CreateFAdd(lhs, rhs); },
-                    [&](OneOf<IAdd, LAdd>) { return builder.CreateAdd(lhs, rhs); });
-
-                operandStack.push_back(sum);
-            },
-            [&](OneOf<DCmpG, DCmpL, FCmpG, FCmpL>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid comparison operation"); },
-                    [&](OneOf<DCmpG, DCmpL>) { return builder.getDoubleTy(); },
-                    [&](OneOf<FCmpG, FCmpL>) { return builder.getFloatTy(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                // using unordered compare to allow for NaNs
-                // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
-                llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
-                llvm::Value* otherCmp;
-                llvm::Value* otherCase;
-
-                if (holds_alternative<FCmpG>(operation) || holds_alternative<DCmpG>(operation))
-                {
-                    // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
-                    notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
-                    // using ordered less than to check lhs < rhs
-                    otherCmp = builder.CreateFCmpOLT(lhs, rhs);
-                    // return -1 if lhs < rhs
-                    otherCase = builder.getInt32(-1);
-                }
-                else
-                {
-                    // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
-                    notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
-                    // using ordered greater than to check lhs > rhs
-                    otherCmp = builder.CreateFCmpOGT(lhs, rhs);
-                    // return -1 if lhs > rhs
-                    otherCase = builder.getInt32(1);
-                }
-
-                // select the non-default or the 0-or-default value based on the result of otherCmp
-                operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
-            },
-            [&](OneOf<DConst0, DConst1, FConst0, FConst1, FConst2, IConstM1, IConst0, IConst1, IConst2, IConst3,
-                      IConst4, IConst5, LConst0, LConst1>)
-            {
-                auto* value = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid const operation"); },
-                    [&](DConst0) { return llvm::ConstantFP::get(builder.getDoubleTy(), 0.0); },
-                    [&](DConst1) { return llvm::ConstantFP::get(builder.getDoubleTy(), 1.0); },
-                    [&](FConst0) { return llvm::ConstantFP::get(builder.getFloatTy(), 0.0); },
-                    [&](FConst1) { return llvm::ConstantFP::get(builder.getFloatTy(), 1.0); },
-                    [&](FConst2) { return llvm::ConstantFP::get(builder.getFloatTy(), 2.0); },
-                    [&](IConstM1) { return builder.getInt32(-1); }, [&](IConst0) { return builder.getInt32(0); },
-                    [&](IConst1) { return builder.getInt32(1); }, [&](IConst2) { return builder.getInt32(2); },
-                    [&](IConst3) { return builder.getInt32(3); }, [&](IConst4) { return builder.getInt32(4); },
-                    [&](IConst5) { return builder.getInt32(5); }, [&](LConst0) { return builder.getInt64(0); },
-                    [&](LConst1) { return builder.getInt64(1); });
-
-                operandStack.push_back(value);
-            },
-            [&](OneOf<DDiv, FDiv, IDiv, LDiv>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid div operation"); },
-                    [&](DDiv) { return builder.getDoubleTy(); }, [&](FDiv) { return builder.getFloatTy(); },
-                    [&](IDiv) { return builder.getInt32Ty(); }, [&](LDiv) { return builder.getInt64Ty(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                auto* quotient = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid div operation"); },
-                    [&](OneOf<DDiv, FDiv>) { return builder.CreateFDiv(lhs, rhs); },
-                    [&](OneOf<IDiv, LDiv>) { return builder.CreateSDiv(lhs, rhs); });
-
-                operandStack.push_back(quotient);
-            },
-            [&](OneOf<DMul, FMul, IMul, LMul>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid mul operation"); },
-                    [&](DMul) { return builder.getDoubleTy(); }, [&](FMul) { return builder.getFloatTy(); },
-                    [&](IMul) { return builder.getInt32Ty(); }, [&](LMul) { return builder.getInt64Ty(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                auto* product = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid mul operation"); },
-                    [&](OneOf<DMul, FMul>) { return builder.CreateFMul(lhs, rhs); },
-                    [&](OneOf<IMul, LMul>) { return builder.CreateMul(lhs, rhs); });
-
-                operandStack.push_back(product);
-            },
-            [&](OneOf<DNeg, FNeg, INeg, LNeg>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid neg operation"); },
-                    [&](DNeg) { return builder.getDoubleTy(); }, [&](FNeg) { return builder.getFloatTy(); },
-                    [&](INeg) { return builder.getInt32Ty(); }, [&](LNeg) { return builder.getInt64Ty(); });
-
-                llvm::Value* value = operandStack.pop_back(type);
-
-                auto* result = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid neg operation"); },
-                    [&](OneOf<DNeg, FNeg>) { return builder.CreateFNeg(value); },
-                    [&](OneOf<INeg, LNeg>) { return builder.CreateNeg(value); });
-
-                operandStack.push_back(result);
-            },
-            [&](OneOf<DRem, FRem, IRem, LRem>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid rem operation"); },
-                    [&](DRem) { return builder.getDoubleTy(); }, [&](FRem) { return builder.getFloatTy(); },
-                    [&](IRem) { return builder.getInt32Ty(); }, [&](LRem) { return builder.getInt64Ty(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                auto* remainder = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid rem operation"); },
-                    [&](OneOf<DRem, FRem>) { return builder.CreateFRem(lhs, rhs); },
-                    [&](OneOf<IRem, LRem>) { return builder.CreateSRem(lhs, rhs); });
-
-                operandStack.push_back(remainder);
-            },
-            [&](OneOf<DSub, FSub, ISub, LSub>)
-            {
-                auto* type = match(
-                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid sub operation"); },
-                    [&](DSub) { return builder.getDoubleTy(); }, [&](FSub) { return builder.getFloatTy(); },
-                    [&](ISub) { return builder.getInt32Ty(); }, [&](LSub) { return builder.getInt64Ty(); });
-
-                llvm::Value* rhs = operandStack.pop_back(type);
-                llvm::Value* lhs = operandStack.pop_back(type);
-
-                auto* difference = match(
-                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid sub operation"); },
-                    [&](OneOf<DSub, FSub>) { return builder.CreateFSub(lhs, rhs); },
-                    [&](OneOf<ISub, LSub>) { return builder.CreateSub(lhs, rhs); });
-
-                operandStack.push_back(difference);
-            },
-            [&](Dup)
-            {
-                llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
-                operandStack.push_back(val);
-                operandStack.push_back(val);
-            },
-            // TODO: DupX1
-            // TODO: DupX2
-            // TODO: Dup2
-            // TODO: Dup2X1
-            // TODO: Dup2X2
-            [&](F2D)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFPExt(value, builder.getDoubleTy()));
-            },
-            [&](GetField getField)
-            {
-                const auto* refInfo = PoolIndex<FieldRefInfo>{getField.index}.resolve(classFile);
-                const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(classFile);
-                FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
-                llvm::Type* type = descriptorToType(descriptor, builder.getContext());
-
-                llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
-
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(fieldOffset))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
-                llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (const auto* baseType = get_if<BaseType>(&descriptor);
-                    baseType && baseType->getValue() < BaseType::Int)
-                {
-                    // Extend to the operands stack i32 type.
-                    field = builder.CreateIntCast(field, builder.getInt32Ty(),
-                                                  /*isSigned=*/!baseType->isUnsigned());
-                }
-
-                operandStack.push_back(field);
-            },
-            [&](GetStatic getStatic)
-            {
-                const auto* refInfo = PoolIndex<FieldRefInfo>{getStatic.index}.resolve(classFile);
-
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-
-                llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(fieldPtr))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                FieldType descriptor = parseFieldType(fieldType);
-                llvm::Type* type = descriptorToType(descriptor, builder.getContext());
-                llvm::Value* field = builder.CreateLoad(type, fieldPtr);
-                if (const auto* baseType = get_if<BaseType>(&descriptor);
-                    baseType && baseType->getValue() < BaseType::Int)
-                {
-                    // Extend to the operands stack i32 type.
-                    field = builder.CreateIntCast(field, builder.getInt32Ty(),
-                                                  /*isSigned=*/!baseType->isUnsigned());
-                }
-                operandStack.push_back(field);
-            },
-            [&](Goto gotoOp)
-            {
-                auto index = gotoOp.target + gotoOp.offset;
-                basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStack()});
-                builder.CreateBr(basicBlocks[index]);
-            },
-            // TODO: GotoW
-            [&](I2B)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
-                operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
-            },
-            [&](I2C)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
-                operandStack.push_back(builder.CreateZExt(truncated, builder.getInt32Ty()));
-            },
-            [&](I2D)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
-            },
-            [&](I2F)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
-            },
-            [&](I2L)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
-            },
-            [&](I2S)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
-                operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
-            },
-            [&](IAnd)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateAnd(lhs, rhs));
-            },
-            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
-                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
-                    cmpOp)
-            {
-                llvm::BasicBlock* basicBlock = basicBlocks[cmpOp.target + cmpOp.offset];
-                llvm::BasicBlock* next = basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t)];
-
-                llvm::Value* rhs;
-                llvm::Value* lhs;
-                llvm::CmpInst::Predicate predicate;
-
-                match(
-                    operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
-                    [&](OneOf<IfACmpEq, IfACmpNe>)
-                    {
-                        rhs = operandStack.pop_back(referenceType(builder.getContext()));
-                        lhs = operandStack.pop_back(referenceType(builder.getContext()));
-                    },
-                    [&](OneOf<IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
-                    {
-                        rhs = operandStack.pop_back(builder.getInt32Ty());
-                        lhs = operandStack.pop_back(builder.getInt32Ty());
-                    },
-                    [&](OneOf<IfEq, IfNe, IfLt, IfGe, IfGt, IfLe>)
-                    {
-                        rhs = builder.getInt32(0);
-                        lhs = operandStack.pop_back(builder.getInt32Ty());
-                    },
-                    [&](OneOf<IfNonNull, IfNull>)
-                    {
-                        lhs = operandStack.pop_back(referenceType(builder.getContext()));
-                        rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
-                    });
-
-                match(
-                    operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
-                    [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
-                    [&](OneOf<IfACmpNe, IfICmpNe, IfNe, IfNonNull>) { predicate = llvm::CmpInst::ICMP_NE; },
-                    [&](OneOf<IfICmpLt, IfLt>) { predicate = llvm::CmpInst::ICMP_SLT; },
-                    [&](OneOf<IfICmpLe, IfLe>) { predicate = llvm::CmpInst::ICMP_SLE; },
-                    [&](OneOf<IfICmpGt, IfGt>) { predicate = llvm::CmpInst::ICMP_SGT; },
-                    [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
-
-                llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
-                basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-                basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
-                builder.CreateCondBr(cond, basicBlock, next);
-            },
-            [&](IInc iInc)
-            {
-                llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
-                builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
-            },
-            [&](InstanceOf instanceOf)
-            {
-                llvm::StringRef className =
-                    PoolIndex<ClassInfo>{instanceOf.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
-
-                llvm::PointerType* ty = referenceType(builder.getContext());
-                llvm::Value* object = operandStack.pop_back(ty);
-                llvm::Value* null = llvm::ConstantPointerNull::get(ty);
-
-                // null references always return 0.
-                llvm::Value* isNull = builder.CreateICmpEQ(object, null);
-                auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                llvm::BasicBlock* block = builder.GetInsertBlock();
-                builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
-
-                builder.SetInsertPoint(instanceOfBlock);
-
-                llvm::Value* classObject;
-                if (className.front() == '[')
-                {
-                    // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
-                    // just the name of the class. Hence, these two cases.
-                    classObject = helper.getClassObject(builder, className);
-                }
-                else
-                {
-                    classObject = helper.getClassObject(builder, "L" + className + ";");
-                }
                 // Can throw class loader or linkage related errors.
                 generateEHDispatch();
+            }
 
-                llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
-                    "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
-                llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
-                builder.CreateBr(continueBlock);
+            // Size required is the size of the array prior to the elements (equal to the offset to the
+            // elements) plus element count * element size.
+            llvm::Value* bytesNeeded = builder.getInt32(Array<>::arrayElementsOffset());
+            bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(sizeof(Object*))));
 
-                builder.SetInsertPoint(continueBlock);
-                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                phi->addIncoming(builder.getInt32(0), block);
-                phi->addIncoming(call, call->getParent());
+            llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+            // Allocation can throw OutOfMemoryException.
+            generateEHDispatch();
 
-                operandStack.push_back(phi);
-            },
-            // TODO: InvokeDynamic
-            [&](InvokeInterface invokeInterface)
-            {
-                const RefInfo* refInfo = PoolIndex<RefInfo>{invokeInterface.index}.resolve(classFile);
+            // Type object.
+            builder.CreateStore(classObject, object);
+            // Array length.
+            auto* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), object,
+                                          {builder.getInt32(0), builder.getInt32(1)});
+            builder.CreateStore(count, gep);
 
-                MethodType descriptor = parseMethodType(
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+            operandStack.push_back(object);
+        },
+        [&](OneOf<AReturn, DReturn, FReturn, IReturn, LReturn>)
+        {
+            llvm::Type* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
+                [&](AReturn) { return referenceType(builder.getContext()); },
+                [&](DReturn) { return builder.getDoubleTy(); }, [&](FReturn) { return builder.getFloatTy(); },
+                [&](IReturn) { return builder.getInt32Ty(); }, [&](LReturn) { return builder.getInt64Ty(); });
 
-                int i = descriptor.parameters.size() - 1;
-                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
-                for (auto& iter : llvm::reverse(args))
+            llvm::Value* value = operandStack.pop_back(type);
+
+            match(
+                operation, [](...) {},
+                [&](IReturn)
                 {
-                    iter = operandStack.pop_back(
-                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                 referenceType(builder.getContext()));
-                }
-
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-
-                llvm::Value* idAndSlot =
-                    helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(idAndSlot))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
-                llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
-                llvm::Value* id = builder.CreateLShr(idAndSlot, builder.getIntN(sizeTBits, 8));
-
-                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-                llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,
-                                                            {builder.getInt32(ClassObject::getITablesOffset())});
-                llvm::Value* iTables = builder.CreateLoad(
-                    builder.getPtrTy(), builder.CreateGEP(arrayRefType(builder.getContext()), iTablesPtr,
-                                                          {builder.getInt32(0), builder.getInt32(0)}));
-
-                // Linear search over all iTables of 'classObject' until the iTable with the interface id equal to
-                // 'id' is found.
-                auto* loopBody = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                llvm::BasicBlock* pred = builder.GetInsertBlock();
-                builder.CreateBr(loopBody);
-
-                builder.SetInsertPoint(loopBody);
-                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                phi->addIncoming(builder.getInt32(0), pred);
-
-                llvm::Value* iTable =
-                    builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(builder.getPtrTy(), iTables, {phi}));
-                llvm::Value* iTableId = builder.CreateLoad(idAndSlot->getType(), iTable);
-                llvm::Value* cond = builder.CreateICmpEQ(iTableId, id);
-                llvm::Value* increment = builder.CreateAdd(phi, builder.getInt32(1));
-                phi->addIncoming(increment, loopBody);
-
-                auto* loopContinue = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                builder.CreateCondBr(cond, loopContinue, loopBody);
-
-                builder.SetInsertPoint(loopContinue);
-
-                llvm::Value* iTableSlot = builder.CreateGEP(iTableType(builder.getContext()), iTable,
-                                                            {builder.getInt32(0), builder.getInt32(1), slot});
-                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
-
-                llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
-                prepareArgumentsForCall(builder, args, functionType);
-                auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
-
-                generateEHDispatch();
-
-                if (descriptor.returnType != FieldType(BaseType::Void))
-                {
-                    operandStack.push_back(call);
-                }
-            },
-            [&](OneOf<InvokeSpecial, InvokeStatic> invoke)
-            {
-                const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
-
-                bool isStatic = holds_alternative<InvokeStatic>(operation);
-
-                MethodType descriptor = parseMethodType(
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
-
-                int i = descriptor.parameters.size() - 1;
-                std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
-                for (auto& iter : llvm::reverse(args))
-                {
-                    iter = operandStack.pop_back(
-                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                 referenceType(builder.getContext()));
-                }
-
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(callee))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
-                prepareArgumentsForCall(builder, args, functionType);
-
-                auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, isStatic));
-
-                generateEHDispatch();
-
-                if (descriptor.returnType != FieldType(BaseType::Void))
-                {
-                    operandStack.push_back(call);
-                }
-            },
-            [&](InvokeVirtual invokeVirtual)
-            {
-                const RefInfo* refInfo = PoolIndex<RefInfo>{invokeVirtual.index}.resolve(classFile);
-
-                MethodType descriptor = parseMethodType(
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
-
-                int i = descriptor.parameters.size() - 1;
-                std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
-                for (auto& iter : llvm::reverse(args))
-                {
-                    iter = operandStack.pop_back(
-                        i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                 referenceType(builder.getContext()));
-                }
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef methodType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(slot))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-                llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
-                llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
-                llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-                llvm::Value* vtblPositionInClassObject = builder.getInt16(ClassObject::getVTableOffset());
-
-                llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
-                llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
-                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
-
-                llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
-                prepareArgumentsForCall(builder, args, functionType);
-                auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
-
-                generateEHDispatch();
-
-                if (descriptor.returnType != FieldType(BaseType::Void))
-                {
-                    operandStack.push_back(call);
-                }
-            },
-            [&](IOr)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateOr(lhs, rhs));
-            },
-            [&](IShl)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(
-                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
-            },
-            [&](IShr)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(
-                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
-            },
-            [&](IUShr)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* maskedRhs = builder.CreateAnd(
-                    rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
-            },
-            [&](IXor)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateXor(lhs, rhs));
-            },
-            // TODO: JSR
-            // TODO: JSRw
-            // TODO: L2D
-            // TODO: L2F
-            // TODO: L2I
-            // TODO: LAnd
-            // TODO: LCmp
-            [&](OneOf<LDC, LDCW, LDC2W> ldc)
-            {
-                PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
-                          InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
-                    pool{ldc.index};
-
-                match(
-                    pool.resolve(classFile),
-                    [&](const IntegerInfo* integerInfo)
-                    { operandStack.push_back(builder.getInt32(integerInfo->value)); },
-                    [&](const FloatInfo* floatInfo)
-                    { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), floatInfo->value)); },
-                    [&](const LongInfo* longInfo) { operandStack.push_back(builder.getInt64(longInfo->value)); },
-                    [&](const DoubleInfo* doubleInfo)
-                    { operandStack.push_back(llvm::ConstantFP::get(builder.getDoubleTy(), doubleInfo->value)); },
-                    [&](const StringInfo* stringInfo)
+                    if (functionMethodType.returnType == FieldType(BaseType::Boolean))
                     {
-                        llvm::StringRef text = stringInfo->stringValue.resolve(classFile)->text;
-
-                        String* string = stringInterner.intern(text);
-
-                        operandStack.push_back(
-                            builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
-                                                   referenceType(builder.getContext())));
-                    },
-                    [&](const ClassInfo* classInfo)
+                        value = builder.CreateAnd(value, builder.getInt32(1));
+                    }
+                    if (function->getReturnType() != value->getType())
                     {
-                        llvm::StringRef text = classInfo->nameIndex.resolve(classFile)->text;
-                        llvm::Value* classObject;
-                        if (text.front() == '[')
-                        {
-                            classObject = helper.getClassObject(builder, text);
-                        }
-                        else
-                        {
-                            classObject = helper.getClassObject(builder, "L" + text + ";");
-                        }
-                        // If the class was already loaded 'callee' is optimized to a constant and no exception may
-                        // occur.
-                        if (!llvm::isa<llvm::Constant>(classObject))
-                        {
-                            // Can throw class loader or linkage related errors.
-                            generateEHDispatch();
-                        }
-                        operandStack.push_back(classObject);
-                    },
-                    [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
-            },
-            // TODO: LookupSwitch
-            // TODO: LOr
-            // TODO: LShl
-            // TODO: LShr
-            // TODO: LUShr
-            // TODO: LXor
-            [&](OneOf<MonitorEnter, MonitorExit>)
+                        value = builder.CreateTrunc(value, function->getReturnType());
+                    }
+                });
+
+            builder.CreateRet(value);
+        },
+        [&](ArrayLength)
+        {
+            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+
+            // The element type of the array type here is actually irrelevant.
+            llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
+                                                 {builder.getInt32(0), builder.getInt32(1)});
+            operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
+        },
+        [&](OneOf<AStore, DStore, FStore, IStore, LStore> store)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
+                [&](AStore) { return referenceType(builder.getContext()); },
+                [&](DStore) { return builder.getDoubleTy(); }, [&](FStore) { return builder.getFloatTy(); },
+                [&](IStore) { return builder.getInt32Ty(); }, [&](LStore) { return builder.getInt64Ty(); });
+
+            builder.CreateStore(operandStack.pop_back(type), locals[store.index]);
+        },
+        [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
+                  DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
+                [&](OneOf<AStore0, AStore1, AStore2, AStore3>) { return referenceType(builder.getContext()); },
+                [&](OneOf<DStore0, DStore1, DStore2, DStore3>) { return builder.getDoubleTy(); },
+                [&](OneOf<FStore0, FStore1, FStore2, FStore3>) { return builder.getFloatTy(); },
+                [&](OneOf<IStore0, IStore1, IStore2, IStore3>) { return builder.getInt32Ty(); },
+                [&](OneOf<LStore0, LStore1, LStore2, LStore3>) { return builder.getInt64Ty(); });
+
+            auto index = match(
+                operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
+                [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0>) { return 0; },
+                [&](OneOf<AStore1, DStore1, FStore1, IStore1, LStore1>) { return 1; },
+                [&](OneOf<AStore2, DStore2, FStore2, IStore2, LStore2>) { return 2; },
+                [&](OneOf<AStore3, DStore3, FStore3, IStore3, LStore3>) { return 3; });
+
+            builder.CreateStore(operandStack.pop_back(type), locals[index]);
+        },
+        [&](AThrow)
+        {
+            llvm::Type* reference = referenceType(builder.getContext());
+
+            llvm::Value* exception = operandStack.pop_back(reference);
+
+            builder.CreateStore(exception, activeException(function->getParent()));
+
+            builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
+        },
+        [&](BIPush biPush)
+        {
+            llvm::Value* res = builder.getInt32(biPush.value);
+            operandStack.push_back(res);
+        },
+        // TODO: CheckCast
+        [&](D2F)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
+            operandStack.push_back(builder.CreateFPTrunc(value, builder.getFloatTy()));
+        },
+        [&](OneOf<D2I, D2L, F2I, F2L>)
+        {
+            auto [fromType, toType] = match(
+                operation,
+                [](...) -> std::tuple<llvm::Type*, llvm::Type*> { llvm_unreachable("Invalid conversion operation"); },
+                [&](D2I) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getDoubleTy(), builder.getInt32Ty()};
+                },
+                [&](D2L) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getDoubleTy(), builder.getInt64Ty()};
+                },
+                [&](F2I) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getFloatTy(), builder.getInt32Ty()};
+                },
+                [&](F2L) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getFloatTy(), builder.getInt64Ty()};
+                });
+
+            llvm::Value* value = operandStack.pop_back(fromType);
+
+            operandStack.push_back(builder.CreateIntrinsic(toType, llvm::Intrinsic::fptosi_sat, {value}));
+        },
+        [&](OneOf<DAdd, FAdd, IAdd, LAdd>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid add operation"); },
+                [&](DAdd) { return builder.getDoubleTy(); }, [&](FAdd) { return builder.getFloatTy(); },
+                [&](IAdd) { return builder.getInt32Ty(); }, [&](LAdd) { return builder.getInt64Ty(); });
+
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            auto* sum = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid add operation"); },
+                [&](OneOf<DAdd, FAdd>) { return builder.CreateFAdd(lhs, rhs); },
+                [&](OneOf<IAdd, LAdd>) { return builder.CreateAdd(lhs, rhs); });
+
+            operandStack.push_back(sum);
+        },
+        [&](OneOf<DCmpG, DCmpL, FCmpG, FCmpL>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid comparison operation"); },
+                [&](OneOf<DCmpG, DCmpL>) { return builder.getDoubleTy(); },
+                [&](OneOf<FCmpG, FCmpL>) { return builder.getFloatTy(); });
+
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            // using unordered compare to allow for NaNs
+            // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
+            llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
+            llvm::Value* otherCmp;
+            llvm::Value* otherCase;
+
+            if (holds_alternative<FCmpG>(operation) || holds_alternative<DCmpG>(operation))
             {
-                // Pop object as is required by the instruction.
-                // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
-                //  (un)locking it.
-                operandStack.pop_back(referenceType(builder.getContext()));
-            },
-            // TODO: MultiANewArray
-            [&](New newOp)
+                // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
+                notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
+                // using ordered less than to check lhs < rhs
+                otherCmp = builder.CreateFCmpOLT(lhs, rhs);
+                // return -1 if lhs < rhs
+                otherCase = builder.getInt32(-1);
+            }
+            else
             {
-                llvm::StringRef className =
-                    PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
+                notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
+                // using ordered greater than to check lhs > rhs
+                otherCmp = builder.CreateFCmpOGT(lhs, rhs);
+                // return -1 if lhs > rhs
+                otherCase = builder.getInt32(1);
+            }
 
-                llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may
-                // occur.
-                if (!llvm::isa<llvm::Constant>(classObject))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
+            // select the non-default or the 0-or-default value based on the result of otherCmp
+            operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
+        },
+        [&](OneOf<DConst0, DConst1, FConst0, FConst1, FConst2, IConstM1, IConst0, IConst1, IConst2, IConst3, IConst4,
+                  IConst5, LConst0, LConst1>)
+        {
+            auto* value = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid const operation"); },
+                [&](DConst0) { return llvm::ConstantFP::get(builder.getDoubleTy(), 0.0); },
+                [&](DConst1) { return llvm::ConstantFP::get(builder.getDoubleTy(), 1.0); },
+                [&](FConst0) { return llvm::ConstantFP::get(builder.getFloatTy(), 0.0); },
+                [&](FConst1) { return llvm::ConstantFP::get(builder.getFloatTy(), 1.0); },
+                [&](FConst2) { return llvm::ConstantFP::get(builder.getFloatTy(), 2.0); },
+                [&](IConstM1) { return builder.getInt32(-1); }, [&](IConst0) { return builder.getInt32(0); },
+                [&](IConst1) { return builder.getInt32(1); }, [&](IConst2) { return builder.getInt32(2); },
+                [&](IConst3) { return builder.getInt32(3); }, [&](IConst4) { return builder.getInt32(4); },
+                [&](IConst5) { return builder.getInt32(5); }, [&](LConst0) { return builder.getInt64(0); },
+                [&](LConst1) { return builder.getInt64(1); });
 
-                // Size is first 4 bytes in the class object and does not include the object header.
-                llvm::Value* fieldAreaPtr = builder.CreateGEP(
-                    builder.getInt8Ty(), classObject, {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
-                llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), fieldAreaPtr);
-                size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
+            operandStack.push_back(value);
+        },
+        [&](OneOf<DDiv, FDiv, IDiv, LDiv>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid div operation"); },
+                [&](DDiv) { return builder.getDoubleTy(); }, [&](FDiv) { return builder.getFloatTy(); },
+                [&](IDiv) { return builder.getInt32Ty(); }, [&](LDiv) { return builder.getInt64Ty(); });
 
-                llvm::Module* module = function->getParent();
-                llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
-                // Allocation can throw OutOfMemoryException.
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            auto* quotient = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid div operation"); },
+                [&](OneOf<DDiv, FDiv>) { return builder.CreateFDiv(lhs, rhs); },
+                [&](OneOf<IDiv, LDiv>) { return builder.CreateSDiv(lhs, rhs); });
+
+            operandStack.push_back(quotient);
+        },
+        [&](OneOf<DMul, FMul, IMul, LMul>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid mul operation"); },
+                [&](DMul) { return builder.getDoubleTy(); }, [&](FMul) { return builder.getFloatTy(); },
+                [&](IMul) { return builder.getInt32Ty(); }, [&](LMul) { return builder.getInt64Ty(); });
+
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            auto* product = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid mul operation"); },
+                [&](OneOf<DMul, FMul>) { return builder.CreateFMul(lhs, rhs); },
+                [&](OneOf<IMul, LMul>) { return builder.CreateMul(lhs, rhs); });
+
+            operandStack.push_back(product);
+        },
+        [&](OneOf<DNeg, FNeg, INeg, LNeg>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid neg operation"); },
+                [&](DNeg) { return builder.getDoubleTy(); }, [&](FNeg) { return builder.getFloatTy(); },
+                [&](INeg) { return builder.getInt32Ty(); }, [&](LNeg) { return builder.getInt64Ty(); });
+
+            llvm::Value* value = operandStack.pop_back(type);
+
+            auto* result = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid neg operation"); },
+                [&](OneOf<DNeg, FNeg>) { return builder.CreateFNeg(value); },
+                [&](OneOf<INeg, LNeg>) { return builder.CreateNeg(value); });
+
+            operandStack.push_back(result);
+        },
+        [&](OneOf<DRem, FRem, IRem, LRem>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid rem operation"); },
+                [&](DRem) { return builder.getDoubleTy(); }, [&](FRem) { return builder.getFloatTy(); },
+                [&](IRem) { return builder.getInt32Ty(); }, [&](LRem) { return builder.getInt64Ty(); });
+
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            auto* remainder = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid rem operation"); },
+                [&](OneOf<DRem, FRem>) { return builder.CreateFRem(lhs, rhs); },
+                [&](OneOf<IRem, LRem>) { return builder.CreateSRem(lhs, rhs); });
+
+            operandStack.push_back(remainder);
+        },
+        [&](OneOf<DSub, FSub, ISub, LSub>)
+        {
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid sub operation"); },
+                [&](DSub) { return builder.getDoubleTy(); }, [&](FSub) { return builder.getFloatTy(); },
+                [&](ISub) { return builder.getInt32Ty(); }, [&](LSub) { return builder.getInt64Ty(); });
+
+            llvm::Value* rhs = operandStack.pop_back(type);
+            llvm::Value* lhs = operandStack.pop_back(type);
+
+            auto* difference = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid sub operation"); },
+                [&](OneOf<DSub, FSub>) { return builder.CreateFSub(lhs, rhs); },
+                [&](OneOf<ISub, LSub>) { return builder.CreateSub(lhs, rhs); });
+
+            operandStack.push_back(difference);
+        },
+        [&](Dup)
+        {
+            llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
+            operandStack.push_back(val);
+            operandStack.push_back(val);
+        },
+        // TODO: DupX1
+        // TODO: DupX2
+        // TODO: Dup2
+        // TODO: Dup2X1
+        // TODO: Dup2X2
+        [&](F2D)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+            operandStack.push_back(builder.CreateFPExt(value, builder.getDoubleTy()));
+        },
+        [&](GetField getField)
+        {
+            const auto* refInfo = PoolIndex<FieldRefInfo>{getField.index}.resolve(classFile);
+            const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(classFile);
+            FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
+            llvm::Type* type = descriptorToType(descriptor, builder.getContext());
+
+            llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
+
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+            llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(fieldOffset))
+            {
+                // Can throw class loader or linkage related errors.
                 generateEHDispatch();
+            }
 
-                // Store object header (which in our case is just the class object) in the object.
-                builder.CreateStore(classObject, object);
-                operandStack.push_back(object);
-            },
-            [&](NewArray newArray)
+            llvm::Value* fieldPtr = builder.CreateGEP(builder.getInt8Ty(), objectRef, {fieldOffset});
+            llvm::Value* field = builder.CreateLoad(type, fieldPtr);
+            if (const auto* baseType = get_if<BaseType>(&descriptor); baseType && baseType->getValue() < BaseType::Int)
             {
-                auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray, builder);
-                llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+                // Extend to the operands stack i32 type.
+                field = builder.CreateIntCast(field, builder.getInt32Ty(),
+                                              /*isSigned=*/!baseType->isUnsigned());
+            }
 
-                llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may
-                // occur.
-                if (!llvm::isa<llvm::Constant>(classObject))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
+            operandStack.push_back(field);
+        },
+        [&](GetStatic getStatic)
+        {
+            const auto* refInfo = PoolIndex<FieldRefInfo>{getStatic.index}.resolve(classFile);
 
-                // Size required is the size of the array prior to the elements (equal to the offset to the
-                // elements) plus element count * element size.
-                llvm::Value* bytesNeeded = builder.getInt32(elementOffset);
-                bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(size)));
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
-                // Type object.
-                llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
-
-                // Allocation can throw OutOfMemoryException.
+            llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(fieldPtr))
+            {
+                // Can throw class loader or linkage related errors.
                 generateEHDispatch();
+            }
 
-                builder.CreateStore(classObject, object);
-                // Array length.
-                llvm::Value* gep =
-                    builder.CreateGEP(arrayStructType(type), object, {builder.getInt32(0), builder.getInt32(1)});
-                builder.CreateStore(count, gep);
-
-                operandStack.push_back(object);
-            },
-            // TODO: Nop
-            [&](Pop)
+            FieldType descriptor = parseFieldType(fieldType);
+            llvm::Type* type = descriptorToType(descriptor, builder.getContext());
+            llvm::Value* field = builder.CreateLoad(type, fieldPtr);
+            if (const auto* baseType = get_if<BaseType>(&descriptor); baseType && baseType->getValue() < BaseType::Int)
             {
-                // Type does not matter as we do not use the result
-                operandStack.pop_back(referenceType(builder.getContext()));
-            },
-            // TODO: Pop2
-            [&](PutField putField)
+                // Extend to the operands stack i32 type.
+                field = builder.CreateIntCast(field, builder.getInt32Ty(),
+                                              /*isSigned=*/!baseType->isUnsigned());
+            }
+            operandStack.push_back(field);
+        },
+        [&](Goto gotoOp)
+        {
+            auto index = gotoOp.target + gotoOp.offset;
+            basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStack()});
+            builder.CreateBr(basicBlocks[index]);
+        },
+        // TODO: GotoW
+        [&](I2B)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
+            operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
+        },
+        [&](I2C)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+            operandStack.push_back(builder.CreateZExt(truncated, builder.getInt32Ty()));
+        },
+        [&](I2D)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
+        },
+        [&](I2F)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
+        },
+        [&](I2L)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
+        },
+        [&](I2S)
+        {
+            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
+            operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
+        },
+        [&](IAnd)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateAnd(lhs, rhs));
+        },
+        [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
+                  IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                cmpOp)
+        {
+            llvm::BasicBlock* basicBlock = basicBlocks[cmpOp.target + cmpOp.offset];
+            llvm::BasicBlock* next = basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t)];
+
+            llvm::Value* rhs;
+            llvm::Value* lhs;
+            llvm::CmpInst::Predicate predicate;
+
+            match(
+                operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
+                [&](OneOf<IfACmpEq, IfACmpNe>)
+                {
+                    rhs = operandStack.pop_back(referenceType(builder.getContext()));
+                    lhs = operandStack.pop_back(referenceType(builder.getContext()));
+                },
+                [&](OneOf<IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
+                {
+                    rhs = operandStack.pop_back(builder.getInt32Ty());
+                    lhs = operandStack.pop_back(builder.getInt32Ty());
+                },
+                [&](OneOf<IfEq, IfNe, IfLt, IfGe, IfGt, IfLe>)
+                {
+                    rhs = builder.getInt32(0);
+                    lhs = operandStack.pop_back(builder.getInt32Ty());
+                },
+                [&](OneOf<IfNonNull, IfNull>)
+                {
+                    lhs = operandStack.pop_back(referenceType(builder.getContext()));
+                    rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
+                });
+
+            match(
+                operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
+                [&](OneOf<IfACmpEq, IfICmpEq, IfEq, IfNull>) { predicate = llvm::CmpInst::ICMP_EQ; },
+                [&](OneOf<IfACmpNe, IfICmpNe, IfNe, IfNonNull>) { predicate = llvm::CmpInst::ICMP_NE; },
+                [&](OneOf<IfICmpLt, IfLt>) { predicate = llvm::CmpInst::ICMP_SLT; },
+                [&](OneOf<IfICmpLe, IfLe>) { predicate = llvm::CmpInst::ICMP_SLE; },
+                [&](OneOf<IfICmpGt, IfGt>) { predicate = llvm::CmpInst::ICMP_SGT; },
+                [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
+
+            llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
+            basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
+            basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
+            builder.CreateCondBr(cond, basicBlock, next);
+        },
+        [&](IInc iInc)
+        {
+            llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
+            builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
+        },
+        [&](InstanceOf instanceOf)
+        {
+            llvm::StringRef className =
+                PoolIndex<ClassInfo>{instanceOf.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
+
+            llvm::PointerType* ty = referenceType(builder.getContext());
+            llvm::Value* object = operandStack.pop_back(ty);
+            llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+
+            // null references always return 0.
+            llvm::Value* isNull = builder.CreateICmpEQ(object, null);
+            auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            llvm::BasicBlock* block = builder.GetInsertBlock();
+            builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
+
+            builder.SetInsertPoint(instanceOfBlock);
+
+            llvm::Value* classObject;
+            if (className.front() == '[')
             {
-                const auto* refInfo = PoolIndex<FieldRefInfo>{putField.index}.resolve(classFile);
-
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-                llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
-                llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
-                llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(fieldOffset))
-                {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
-
-                llvm::Value* fieldPtr =
-                    builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
-
-                if (value->getType() != llvmFieldType)
-                {
-                    // Truncated from the operands stack i32 type.
-                    assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
-                           && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
-                    value = builder.CreateTrunc(value, llvmFieldType);
-                }
-
-                builder.CreateStore(value, fieldPtr);
-            },
-            [&](PutStatic putStatic)
+                // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
+                // just the name of the class. Hence, these two cases.
+                classObject = helper.getClassObject(builder, className);
+            }
+            else
             {
-                const auto* refInfo = PoolIndex<FieldRefInfo>{putStatic.index}.resolve(classFile);
+                classObject = helper.getClassObject(builder, "L" + className + ";");
+            }
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
-                llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldName =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-                llvm::StringRef fieldType =
-                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-                llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-                llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
-                llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
-                // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-                if (!llvm::isa<llvm::Constant>(fieldPtr))
+            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
+            llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
+            builder.CreateBr(continueBlock);
+
+            builder.SetInsertPoint(continueBlock);
+            llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+            phi->addIncoming(builder.getInt32(0), block);
+            phi->addIncoming(call, call->getParent());
+
+            operandStack.push_back(phi);
+        },
+        // TODO: InvokeDynamic
+        [&](InvokeInterface invokeInterface)
+        {
+            const RefInfo* refInfo = PoolIndex<RefInfo>{invokeInterface.index}.resolve(classFile);
+
+            MethodType descriptor =
+                parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+            int i = descriptor.parameters.size() - 1;
+            std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+            for (auto& iter : llvm::reverse(args))
+            {
+                iter =
+                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                                   referenceType(builder.getContext()));
+            }
+
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+
+            llvm::Value* idAndSlot =
+                helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(idAndSlot))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
+            llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
+            llvm::Value* id = builder.CreateLShr(idAndSlot, builder.getIntN(sizeTBits, 8));
+
+            llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+            llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,
+                                                        {builder.getInt32(ClassObject::getITablesOffset())});
+            llvm::Value* iTables =
+                builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(arrayRefType(builder.getContext()), iTablesPtr,
+                                                                         {builder.getInt32(0), builder.getInt32(0)}));
+
+            // Linear search over all iTables of 'classObject' until the iTable with the interface id equal to
+            // 'id' is found.
+            auto* loopBody = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            llvm::BasicBlock* pred = builder.GetInsertBlock();
+            builder.CreateBr(loopBody);
+
+            builder.SetInsertPoint(loopBody);
+            llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+            phi->addIncoming(builder.getInt32(0), pred);
+
+            llvm::Value* iTable =
+                builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(builder.getPtrTy(), iTables, {phi}));
+            llvm::Value* iTableId = builder.CreateLoad(idAndSlot->getType(), iTable);
+            llvm::Value* cond = builder.CreateICmpEQ(iTableId, id);
+            llvm::Value* increment = builder.CreateAdd(phi, builder.getInt32(1));
+            phi->addIncoming(increment, loopBody);
+
+            auto* loopContinue = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            builder.CreateCondBr(cond, loopContinue, loopBody);
+
+            builder.SetInsertPoint(loopContinue);
+
+            llvm::Value* iTableSlot = builder.CreateGEP(iTableType(builder.getContext()), iTable,
+                                                        {builder.getInt32(0), builder.getInt32(1), slot});
+            llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
+
+            llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
+            prepareArgumentsForCall(builder, args, functionType);
+            auto* call = builder.CreateCall(functionType, callee, args);
+            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
+
+            generateEHDispatch();
+
+            if (descriptor.returnType != FieldType(BaseType::Void))
+            {
+                operandStack.push_back(call);
+            }
+        },
+        [&](OneOf<InvokeSpecial, InvokeStatic> invoke)
+        {
+            const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
+
+            bool isStatic = holds_alternative<InvokeStatic>(operation);
+
+            MethodType descriptor =
+                parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+            int i = descriptor.parameters.size() - 1;
+            std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
+            for (auto& iter : llvm::reverse(args))
+            {
+                iter =
+                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                                   referenceType(builder.getContext()));
+            }
+
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+            llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(callee))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
+            prepareArgumentsForCall(builder, args, functionType);
+
+            auto* call = builder.CreateCall(functionType, callee, args);
+            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, isStatic));
+
+            generateEHDispatch();
+
+            if (descriptor.returnType != FieldType(BaseType::Void))
+            {
+                operandStack.push_back(call);
+            }
+        },
+        [&](InvokeVirtual invokeVirtual)
+        {
+            const RefInfo* refInfo = PoolIndex<RefInfo>{invokeVirtual.index}.resolve(classFile);
+
+            MethodType descriptor =
+                parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+            int i = descriptor.parameters.size() - 1;
+            std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+            for (auto& iter : llvm::reverse(args))
+            {
+                iter =
+                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
+                                                   referenceType(builder.getContext()));
+            }
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef methodType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+            llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(slot))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+            llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
+            llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
+            llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+            llvm::Value* vtblPositionInClassObject = builder.getInt16(ClassObject::getVTableOffset());
+
+            llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
+            llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
+            llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
+
+            llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
+            prepareArgumentsForCall(builder, args, functionType);
+            auto* call = builder.CreateCall(functionType, callee, args);
+            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
+
+            generateEHDispatch();
+
+            if (descriptor.returnType != FieldType(BaseType::Void))
+            {
+                operandStack.push_back(call);
+            }
+        },
+        [&](IOr)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateOr(lhs, rhs));
+        },
+        [&](IShl)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* maskedRhs = builder.CreateAnd(
+                rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
+        },
+        [&](IShr)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* maskedRhs = builder.CreateAnd(
+                rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
+        },
+        [&](IUShr)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* maskedRhs = builder.CreateAnd(
+                rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
+        },
+        [&](IXor)
+        {
+            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            operandStack.push_back(builder.CreateXor(lhs, rhs));
+        },
+        // TODO: JSR
+        // TODO: JSRw
+        // TODO: L2D
+        // TODO: L2F
+        // TODO: L2I
+        // TODO: LAnd
+        // TODO: LCmp
+        [&](OneOf<LDC, LDCW, LDC2W> ldc)
+        {
+            PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
+                      InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
+                pool{ldc.index};
+
+            match(
+                pool.resolve(classFile),
+                [&](const IntegerInfo* integerInfo) { operandStack.push_back(builder.getInt32(integerInfo->value)); },
+                [&](const FloatInfo* floatInfo)
+                { operandStack.push_back(llvm::ConstantFP::get(builder.getFloatTy(), floatInfo->value)); },
+                [&](const LongInfo* longInfo) { operandStack.push_back(builder.getInt64(longInfo->value)); },
+                [&](const DoubleInfo* doubleInfo)
+                { operandStack.push_back(llvm::ConstantFP::get(builder.getDoubleTy(), doubleInfo->value)); },
+                [&](const StringInfo* stringInfo)
                 {
-                    // Can throw class loader or linkage related errors.
-                    generateEHDispatch();
-                }
+                    llvm::StringRef text = stringInfo->stringValue.resolve(classFile)->text;
 
-                if (value->getType() != llvmFieldType)
+                    String* string = stringInterner.intern(text);
+
+                    operandStack.push_back(
+                        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
+                                               referenceType(builder.getContext())));
+                },
+                [&](const ClassInfo* classInfo)
                 {
-                    // Truncated from the operands stack i32 type.
-                    assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
-                           && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
-                    value = builder.CreateTrunc(value, llvmFieldType);
-                }
+                    llvm::StringRef text = classInfo->nameIndex.resolve(classFile)->text;
+                    llvm::Value* classObject;
+                    if (text.front() == '[')
+                    {
+                        classObject = helper.getClassObject(builder, text);
+                    }
+                    else
+                    {
+                        classObject = helper.getClassObject(builder, "L" + text + ";");
+                    }
+                    // If the class was already loaded 'callee' is optimized to a constant and no exception may
+                    // occur.
+                    if (!llvm::isa<llvm::Constant>(classObject))
+                    {
+                        // Can throw class loader or linkage related errors.
+                        generateEHDispatch();
+                    }
+                    operandStack.push_back(classObject);
+                },
+                [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
+        },
+        // TODO: LookupSwitch
+        // TODO: LOr
+        // TODO: LShl
+        // TODO: LShr
+        // TODO: LUShr
+        // TODO: LXor
+        [&](OneOf<MonitorEnter, MonitorExit>)
+        {
+            // Pop object as is required by the instruction.
+            // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
+            //  (un)locking it.
+            operandStack.pop_back(referenceType(builder.getContext()));
+        },
+        // TODO: MultiANewArray
+        [&](New newOp)
+        {
+            llvm::StringRef className =
+                PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
-                builder.CreateStore(value, fieldPtr);
-            },
-            // TODO: Ret
-            [&](Return) { builder.CreateRetVoid(); },
-            [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
-            // TODO: Swap
-            // TODO: TableSwitch
-            // TODO: Wide
-        );
-    }
+            llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may
+            // occur.
+            if (!llvm::isa<llvm::Constant>(classObject))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            // Size is first 4 bytes in the class object and does not include the object header.
+            llvm::Value* fieldAreaPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,
+                                                          {builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
+            llvm::Value* size = builder.CreateLoad(builder.getInt32Ty(), fieldAreaPtr);
+            size = builder.CreateAdd(size, builder.getInt32(sizeof(ObjectHeader)));
+
+            llvm::Module* module = function->getParent();
+            llvm::Value* object = builder.CreateCall(allocationFunction(module), size);
+            // Allocation can throw OutOfMemoryException.
+            generateEHDispatch();
+
+            // Store object header (which in our case is just the class object) in the object.
+            builder.CreateStore(classObject, object);
+            operandStack.push_back(object);
+        },
+        [&](NewArray newArray)
+        {
+            auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray, builder);
+            llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+
+            llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may
+            // occur.
+            if (!llvm::isa<llvm::Constant>(classObject))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            // Size required is the size of the array prior to the elements (equal to the offset to the
+            // elements) plus element count * element size.
+            llvm::Value* bytesNeeded = builder.getInt32(elementOffset);
+            bytesNeeded = builder.CreateAdd(bytesNeeded, builder.CreateMul(count, builder.getInt32(size)));
+
+            // Type object.
+            llvm::Value* object = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+
+            // Allocation can throw OutOfMemoryException.
+            generateEHDispatch();
+
+            builder.CreateStore(classObject, object);
+            // Array length.
+            llvm::Value* gep =
+                builder.CreateGEP(arrayStructType(type), object, {builder.getInt32(0), builder.getInt32(1)});
+            builder.CreateStore(count, gep);
+
+            operandStack.push_back(object);
+        },
+        // TODO: Nop
+        [&](Pop)
+        {
+            // Type does not matter as we do not use the result
+            operandStack.pop_back(referenceType(builder.getContext()));
+        },
+        // TODO: Pop2
+        [&](PutField putField)
+        {
+            const auto* refInfo = PoolIndex<FieldRefInfo>{putField.index}.resolve(classFile);
+
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+            llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+            llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
+            llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(fieldOffset))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            llvm::Value* fieldPtr =
+                builder.CreateGEP(llvm::Type::getInt8Ty(builder.getContext()), objectRef, {fieldOffset});
+
+            if (value->getType() != llvmFieldType)
+            {
+                // Truncated from the operands stack i32 type.
+                assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
+                       && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
+                value = builder.CreateTrunc(value, llvmFieldType);
+            }
+
+            builder.CreateStore(value, fieldPtr);
+        },
+        [&](PutStatic putStatic)
+        {
+            const auto* refInfo = PoolIndex<FieldRefInfo>{putStatic.index}.resolve(classFile);
+
+            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldName =
+                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            llvm::StringRef fieldType =
+                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
+            llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
+            llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
+            llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(fieldPtr))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
+
+            if (value->getType() != llvmFieldType)
+            {
+                // Truncated from the operands stack i32 type.
+                assert(value->getType()->isIntegerTy() && llvmFieldType->isIntegerTy()
+                       && value->getType()->getIntegerBitWidth() > llvmFieldType->getIntegerBitWidth());
+                value = builder.CreateTrunc(value, llvmFieldType);
+            }
+
+            builder.CreateStore(value, fieldPtr);
+        },
+        // TODO: Ret
+        [&](Return) { builder.CreateRetVoid(); },
+        [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
+        // TODO: Swap
+        // TODO: TableSwitch
+        // TODO: Wide
+    );
 }
 
 } // namespace
@@ -1781,10 +1809,10 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     auto code = methodInfo->getAttributes().find<Code>();
     assert(code);
-    codeGenBody(function, *code, *classFile,
-                LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager, m_callbackManager,
-                                      m_baseLayer, m_interner, m_dataLayout),
-                m_stringInterner, descriptor);
+    CodeGen codeGen(function, *code, *classFile,
+                    LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager,
+                                          m_callbackManager, m_baseLayer, m_interner, m_dataLayout),
+                    m_stringInterner, descriptor);
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
