@@ -951,8 +951,44 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 operandStack.push_back(sum);
             },
-            // TODO: DCmpG
-            // TODO: DCmpL
+            [&](OneOf<DCmpG, DCmpL, FCmpG, FCmpL>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid comparison operation"); },
+                    [&](OneOf<DCmpG, DCmpL>) { return builder.getDoubleTy(); },
+                    [&](OneOf<FCmpG, FCmpL>) { return builder.getFloatTy(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                // using unordered compare to allow for NaNs
+                // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
+                llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
+                llvm::Value* otherCmp;
+                llvm::Value* otherCase;
+
+                if (holds_alternative<FCmpG>(operation) || holds_alternative<DCmpG>(operation))
+                {
+                    // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
+                    notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
+                    // using ordered less than to check lhs < rhs
+                    otherCmp = builder.CreateFCmpOLT(lhs, rhs);
+                    // return -1 if lhs < rhs
+                    otherCase = builder.getInt32(-1);
+                }
+                else
+                {
+                    // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
+                    notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
+                    // using ordered greater than to check lhs > rhs
+                    otherCmp = builder.CreateFCmpOGT(lhs, rhs);
+                    // return -1 if lhs > rhs
+                    otherCase = builder.getInt32(1);
+                }
+
+                // select the non-default or the 0-or-default value based on the result of otherCmp
+                operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
+            },
             [&](OneOf<DConst0, DConst1, FConst0, FConst1, FConst2, IConstM1, IConst0, IConst1, IConst2, IConst3,
                       IConst4, IConst5, LConst0, LConst1>)
             {
@@ -1077,39 +1113,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Type* type = holds_alternative<F2I>(operation) ? builder.getInt32Ty() : builder.getInt64Ty();
 
                 operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
-            },
-            [&](OneOf<FCmpG, FCmpL>)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-
-                // using unordered compare to allow for NaNs
-                // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
-                llvm::Value* notEqual = builder.CreateFCmpUNE(lhs, rhs);
-                llvm::Value* otherCmp;
-                llvm::Value* otherCase;
-
-                if (holds_alternative<FCmpG>(operation))
-                {
-                    // is 0 if lhs == rhs, otherwise 1 for lhs > rhs or either operand being NaN
-                    notEqual = builder.CreateZExt(notEqual, builder.getInt32Ty());
-                    // using ordered less than to check lhs < rhs
-                    otherCmp = builder.CreateFCmpOLT(lhs, rhs);
-                    // return -1 if lhs < rhs
-                    otherCase = builder.getInt32(-1);
-                }
-                else
-                {
-                    // is 0 if lhs == rhs, otherwise -1 for lhs < rhs or either operand being NaN
-                    notEqual = builder.CreateSExt(notEqual, builder.getInt32Ty());
-                    // using ordered greater than to check lhs > rhs
-                    otherCmp = builder.CreateFCmpOGT(lhs, rhs);
-                    // return -1 if lhs > rhs
-                    otherCase = builder.getInt32(1);
-                }
-
-                // select the non-default or the 0-or-default value based on the result of otherCmp
-                operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
             },
             [&](GetField getField)
             {
