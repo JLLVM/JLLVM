@@ -966,32 +966,31 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         // TODO: CheckCast
         [&](D2F)
         {
-                llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
-                operandStack.push_back(builder.CreateFPTrunc(value, builder.getFloatTy()));
-            },
-            [&](OneOf<D2I, D2L, F2I, F2L>)
-            {
-                auto [fromType, toType] = match(
-                    operation,
-                    [](...) -> std::tuple<llvm::Type*, llvm::Type*>
-                    { llvm_unreachable("Invalid conversion operation"); },
-                    [&](D2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-        return {builder.getDoubleTy(), builder.getInt32Ty()};
-                    },
-                    [&](D2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getDoubleTy(), builder.getInt64Ty()};
-                    },
-                    [&](F2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getFloatTy(), builder.getInt32Ty()};
-                    },
-                    [&](F2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                        return {builder.getFloatTy(), builder.getInt64Ty()};
-                    });
+            llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
+            operandStack.push_back(builder.CreateFPTrunc(value, builder.getFloatTy()));
+        },
+        [&](OneOf<D2I, D2L, F2I, F2L>)
+        {
+            auto [fromType, toType] = match(
+                operation,
+                [](...) -> std::tuple<llvm::Type*, llvm::Type*> { llvm_unreachable("Invalid conversion operation"); },
+                [&](D2I) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getDoubleTy(), builder.getInt32Ty()};
+                },
+                [&](D2L) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getDoubleTy(), builder.getInt64Ty()};
+                },
+                [&](F2I) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getFloatTy(), builder.getInt32Ty()};
+                },
+                [&](F2L) -> std::tuple<llvm::Type*, llvm::Type*> {
+                    return {builder.getFloatTy(), builder.getInt64Ty()};
+                });
 
-                llvm::Value* value = operandStack.pop_back(fromType);
+            llvm::Value* value = operandStack.pop_back(fromType);
 
-                operandStack.push_back(builder.CreateIntrinsic(toType, llvm::Intrinsic::fptosi_sat, {value}));
-            },
+            operandStack.push_back(builder.CreateIntrinsic(toType, llvm::Intrinsic::fptosi_sat, {value}));
+        },
         [&](OneOf<DAdd, FAdd, IAdd, LAdd>)
         {
             auto* type = match(
