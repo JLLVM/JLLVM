@@ -95,6 +95,16 @@ requires(std::is_same_v<OpCode, SIPush>) ByteCodeOp parseSIPush(const char* byte
 }
 
 template <class OpCode>
+requires(std::is_same_v<OpCode, MultiANewArray>) ByteCodeOp parseMultiANewArray(const char* bytes, std::size_t offset)
+{
+    consume<OpCodes>(bytes);
+    auto index = consume<std::uint16_t>(bytes);
+    auto dimensions = consume<std::uint8_t>(bytes);
+    assert(dimensions >= 1);
+    return MultiANewArray{offset, index, dimensions};
+}
+
+template <class OpCode>
 ByteCodeOp parseNotImplemented(const char*, std::size_t)
 {
     llvm::report_fatal_error("NOT YET IMPLEMENTED");

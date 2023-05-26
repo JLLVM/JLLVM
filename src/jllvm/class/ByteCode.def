@@ -225,7 +225,7 @@ GENERATE_SELECTOR(
     },
     parseIInc, 3, 0x84)
 GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, lookupSwitchSize(m_current), 0xab)
-GENERATE_SELECTOR(MultiANewArray, PoolIndexedOp, { std::uint8_t dimensions; }, parseNotImplemented, 4, 0xc5)
+GENERATE_SELECTOR(MultiANewArray, PoolIndexedOp, { std::uint8_t dimensions; }, parseMultiANewArray, 4, 0xc5)
 GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray, 2, 0xbc)
 GENERATE_SELECTOR(
     SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush, 3, 0x11)

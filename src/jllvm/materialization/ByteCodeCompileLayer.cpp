@@ -1645,7 +1645,16 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             //  (un)locking it.
             operandStack.pop_back(referenceType(builder.getContext()));
         },
-        // TODO: MultiANewArray
+        [&](MultiANewArray multiANewArray)
+        {
+            llvm::StringRef className =
+                PoolIndex<ClassInfo>{multiANewArray.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
+            assert(className.size() - className.drop_while([](char c) { return c == '['; }).size()
+                   == multiANewArray.dimensions);
+
+            llvm::Value* classObject = helper.getClassObject(builder, className);
+            exit(1);
+        },
         [&](New newOp)
         {
             llvm::StringRef className =
@@ -1813,6 +1822,11 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
                     LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager,
                                           m_callbackManager, m_baseLayer, m_interner, m_dataLayout),
                     m_stringInterner, descriptor);
+
+    if (function->getName().starts_with("Test"))
+    {
+        function->dump();
+    }
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
