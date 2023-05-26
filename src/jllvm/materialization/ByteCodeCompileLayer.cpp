@@ -934,7 +934,23 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: D2F
             // TODO: D2I
             // TODO: D2L
-            // TODO: DAdd
+            [&](OneOf<DAdd, FAdd, IAdd, LAdd>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid add operation"); },
+                    [&](DAdd) { return builder.getDoubleTy(); }, [&](FAdd) { return builder.getFloatTy(); },
+                    [&](IAdd) { return builder.getInt32Ty(); }, [&](LAdd) { return builder.getInt64Ty(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                auto* sum = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid add operation"); },
+                    [&](OneOf<DAdd, FAdd>) { return builder.CreateFAdd(lhs, rhs); },
+                    [&](OneOf<IAdd, LAdd>) { return builder.CreateAdd(lhs, rhs); });
+
+                operandStack.push_back(sum);
+            },
             // TODO: DCmpG
             // TODO: DCmpL
             [&](OneOf<DConst0, DConst1, FConst0, FConst1, FConst2, IConstM1, IConst0, IConst1, IConst2, IConst3,
@@ -955,11 +971,90 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 operandStack.push_back(value);
             },
-            // TODO: DDiv
-            // TODO: DMul
-            // TODO: DNeg
-            // TODO: DRem
-            // TODO: DSub
+            [&](OneOf<DDiv, FDiv, IDiv, LDiv>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid div operation"); },
+                    [&](DDiv) { return builder.getDoubleTy(); }, [&](FDiv) { return builder.getFloatTy(); },
+                    [&](IDiv) { return builder.getInt32Ty(); }, [&](LDiv) { return builder.getInt64Ty(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                auto* quotient = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid div operation"); },
+                    [&](OneOf<DDiv, FDiv>) { return builder.CreateFDiv(lhs, rhs); },
+                    [&](OneOf<IDiv, LDiv>) { return builder.CreateSDiv(lhs, rhs); });
+
+                operandStack.push_back(quotient);
+            },
+            [&](OneOf<DMul, FMul, IMul, LMul>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid mul operation"); },
+                    [&](DMul) { return builder.getDoubleTy(); }, [&](FMul) { return builder.getFloatTy(); },
+                    [&](IMul) { return builder.getInt32Ty(); }, [&](LMul) { return builder.getInt64Ty(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                auto* product = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid mul operation"); },
+                    [&](OneOf<DMul, FMul>) { return builder.CreateFMul(lhs, rhs); },
+                    [&](OneOf<IMul, LMul>) { return builder.CreateMul(lhs, rhs); });
+
+                operandStack.push_back(product);
+            },
+            [&](OneOf<DNeg, FNeg, INeg, LNeg>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid neg operation"); },
+                    [&](DNeg) { return builder.getDoubleTy(); }, [&](FNeg) { return builder.getFloatTy(); },
+                    [&](INeg) { return builder.getInt32Ty(); }, [&](LNeg) { return builder.getInt64Ty(); });
+
+                llvm::Value* value = operandStack.pop_back(type);
+
+                auto* result = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid neg operation"); },
+                    [&](OneOf<DNeg, FNeg>) { return builder.CreateFNeg(value); },
+                    [&](OneOf<INeg, LNeg>) { return builder.CreateNeg(value); });
+
+                operandStack.push_back(result);
+            },
+            [&](OneOf<DRem, FRem, IRem, LRem>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid rem operation"); },
+                    [&](DRem) { return builder.getDoubleTy(); }, [&](FRem) { return builder.getFloatTy(); },
+                    [&](IRem) { return builder.getInt32Ty(); }, [&](LRem) { return builder.getInt64Ty(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                auto* remainder = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid rem operation"); },
+                    [&](OneOf<DRem, FRem>) { return builder.CreateFRem(lhs, rhs); },
+                    [&](OneOf<IRem, LRem>) { return builder.CreateSRem(lhs, rhs); });
+
+                operandStack.push_back(remainder);
+            },
+            [&](OneOf<DSub, FSub, ISub, LSub>)
+            {
+                auto* type = match(
+                    operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid sub operation"); },
+                    [&](DSub) { return builder.getDoubleTy(); }, [&](FSub) { return builder.getFloatTy(); },
+                    [&](ISub) { return builder.getInt32Ty(); }, [&](LSub) { return builder.getInt64Ty(); });
+
+                llvm::Value* rhs = operandStack.pop_back(type);
+                llvm::Value* lhs = operandStack.pop_back(type);
+
+                auto* difference = match(
+                    operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid sub operation"); },
+                    [&](OneOf<DSub, FSub>) { return builder.CreateFSub(lhs, rhs); },
+                    [&](OneOf<ISub, LSub>) { return builder.CreateSub(lhs, rhs); });
+
+                operandStack.push_back(difference);
+            },
             [&](Dup)
             {
                 llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
@@ -982,12 +1077,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Type* type = holds_alternative<F2I>(operation) ? builder.getInt32Ty() : builder.getInt64Ty();
 
                 operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
-            },
-            [&](FAdd)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFAdd(lhs, rhs));
             },
             [&](OneOf<FCmpG, FCmpL>)
             {
@@ -1021,35 +1110,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
 
                 // select the non-default or the 0-or-default value based on the result of otherCmp
                 operandStack.push_back(builder.CreateSelect(otherCmp, otherCase, notEqual));
-            },
-            [&](FDiv)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFDiv(lhs, rhs));
-            },
-            [&](FMul)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFMul(lhs, rhs));
-            },
-            [&](FNeg)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFNeg(value));
-            },
-            [&](FRem)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFRem(lhs, rhs));
-            },
-            [&](FSub)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getFloatTy());
-                llvm::Value* lhs = operandStack.pop_back(builder.getFloatTy());
-                operandStack.push_back(builder.CreateFSub(lhs, rhs));
             },
             [&](GetField getField)
             {
@@ -1155,23 +1215,11 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
                 operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
             },
-            [&](IAdd)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateAdd(lhs, rhs));
-            },
             [&](IAnd)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAnd(lhs, rhs));
-            },
-            [&](IDiv)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSDiv(lhs, rhs));
             },
             [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
                       IfGe, IfGt, IfLe, IfNonNull, IfNull>
@@ -1225,17 +1273,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             {
                 llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
                 builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
-            },
-            [&](IMul)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateMul(lhs, rhs));
-            },
-            [&](INeg)
-            {
-                llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateNeg(value));
             },
             [&](InstanceOf instanceOf)
             {
@@ -1460,12 +1497,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateOr(lhs, rhs));
             },
-            [&](IRem)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSRem(lhs, rhs));
-            },
             [&](IShl)
             {
                 llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
@@ -1481,12 +1512,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
                 llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
                 operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
-            },
-            [&](ISub)
-            {
-                llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-                llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
-                operandStack.push_back(builder.CreateSub(lhs, rhs));
             },
             [&](IUShr)
             {
@@ -1507,7 +1532,6 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
             // TODO: L2D
             // TODO: L2F
             // TODO: L2I
-            // TODO: LAdd
             // TODO: LAnd
             // TODO: LCmp
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
@@ -1558,15 +1582,10 @@ void codeGenBody(llvm::Function* function, const Code& code, const ClassFile& cl
                     },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
             },
-            // TODO: LDiv
-            // TODO: LMul
-            // TODO: LNeg
             // TODO: LookupSwitch
             // TODO: LOr
-            // TODO: LRem
             // TODO: LShl
             // TODO: LShr
-            // TODO: LSub
             // TODO: LUShr
             // TODO: LXor
             [&](OneOf<MonitorEnter, MonitorExit>)
