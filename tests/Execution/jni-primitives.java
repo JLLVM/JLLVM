@@ -3,39 +3,41 @@
 
 class Test
 {
-    public static native void print(byte i);
-    public static native void print(char i);
-    public static native void print(double i);
-    public static native void print(float i);
+    public static native void print(byte b);
+    public static native void print(char c);
+    public static native void print(double d);
+    public static native void print(float f);
     public static native void print(int i);
-    public static native void print(long i);
-    public static native void print(short i);
-    public static native void print(boolean i);
+    public static native void print(long l);
+    public static native void print(short s);
+    public static native void print(boolean b);
 
     public static void main(String[] args)
     {
         byte b = -1;
+        char c = 0; // Java char does not support assignment from negative values
+        double d = 1.0;
+        float f = 2.0f;
+        int i = 3;
+        long l = 4;
+        short s = 5;
+        boolean z = false;
+
+        // CHECK: -1
         print(b);
-        short s = -1;
-        print(s);
-        int i = -1;
+        // CHECK: 0
+        print(c);
+        // CHECK: 1
+        print(d);
+        // CHECK: 2
+        print(f);
+        // CHECK: 3
         print(i);
-
-        // TODO: Needs 'ldc2_w' https://github.com/JLLVM/JLLVM/issues/17
-        // long l = -1;
-        // print(l);
-
-        // Java char does not support assignment from negative values
-        char c = 5;
-        print(5);
-
-        print(true);
-
-        print(0.0f);
+        // CHECK: 4
+        print(l);
+        // CHECK: 5
+        print(s);
+        // CHECK: 0
+        print(z);
     }
 }
-
-// CHECK-COUNT-3: -1
-// CHECK: 5
-// CHECK: 1
-// CHECK: 0
