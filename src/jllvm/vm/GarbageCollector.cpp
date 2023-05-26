@@ -2,6 +2,7 @@
 
 #include <llvm/ADT/PointerIntPair.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/Compiler.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 
@@ -24,6 +25,7 @@ jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
       m_bumpPtr(m_fromSpace)
 {
     std::memset(m_bumpPtr, 0, m_heapSize);
+    __asan_poison_memory_region(m_toSpace, m_heapSize);
 }
 
 namespace
@@ -301,6 +303,8 @@ void jllvm::GarbageCollector::garbageCollect()
     [[maybe_unused]] std::size_t collectedObjects = 0;
     [[maybe_unused]] std::size_t relocatedObjects = 0;
 
+    __asan_unpoison_memory_region(m_toSpace, m_heapSize);
+
     auto* oldBumpPtr = m_bumpPtr;
     m_bumpPtr = m_toSpace;
     std::memset(m_bumpPtr, 0, m_heapSize);
@@ -329,6 +333,8 @@ void jllvm::GarbageCollector::garbageCollect()
     });
 
     std::swap(m_fromSpace, m_toSpace);
+
+    __asan_poison_memory_region(m_toSpace, m_heapSize);
 
     if (mapping.empty())
     {
