@@ -9,6 +9,8 @@ else()
     option(JLLVM_ENABLE_ASSERTIONS "Enable assertions" ON)
 endif()
 
+include(cmake/CPM.cmake)
+
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads)
 find_package(LLVM REQUIRED CONFIG)
@@ -93,3 +95,4 @@ add_subdirectory(tools)
 include(CTest)
 enable_testing()
 add_subdirectory(tests)
+add_subdirectory(unittests)
