@@ -1658,6 +1658,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::vector<llvm::BasicBlock*> loopMids{dimensions};
             std::vector<llvm::BasicBlock*> loopEnds{dimensions};
 
+            std::vector<llvm::Value*> loopCounts{dimensions};
+
             auto* previous = builder.GetInsertBlock();
 
             std::ranges::generate(loopStarts,
@@ -1669,6 +1671,9 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::ranges::generate(loopEnds | std::views::reverse,
                                   [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
 
+            std::ranges::generate(loopCounts | std::views::reverse,
+                                  [&] { return operandStack.pop_back(builder.getInt32Ty()); });
+
             auto* print =
                 llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), {builder.getInt32Ty()}, false),
                                        llvm::GlobalValue::ExternalLinkage, "Test.foo:(I)V", function->getParent());
@@ -1677,21 +1682,23 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             {
                 llvm::BasicBlock* start = loopStarts[i];
                 llvm::BasicBlock* mid = loopMids[i];
+                llvm::BasicBlock* pred = builder.GetInsertBlock();
                 llvm::BasicBlock* end = loopEnds[i];
+                llvm::BasicBlock* lastLoop = i < dimensions - 1 ? loopEnds[i + 1] : mid;
 
-                auto* count = operandStack.pop_back(builder.getInt32Ty());
+                auto* count = loopCounts[i];
                 auto* cmp = builder.CreateICmpSGT(count, builder.getInt32(0));
 
                 builder.CreateCondBr(cmp, start, end);
                 builder.SetInsertPoint(start);
 
                 auto* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                phi->addIncoming(builder.getInt32(0), previous);
+                phi->addIncoming(builder.getInt32(0), pred);
 
                 builder.CreateCall(print, {phi});
 
                 auto* counter = builder.CreateAdd(phi, builder.getInt32(1));
-                phi->addIncoming(counter, mid); // TODO next end / or mid
+                phi->addIncoming(counter, lastLoop);
                 cmp = builder.CreateICmpEQ(counter, count);
                 builder.CreateCondBr(cmp, end, mid);
 
