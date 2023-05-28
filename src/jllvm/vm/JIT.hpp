@@ -3,9 +3,9 @@
 #include <llvm/ExecutionEngine/Orc/CompileOnDemandLayer.h>
 #include <llvm/ExecutionEngine/Orc/Core.h>
 #include <llvm/ExecutionEngine/Orc/EPCIndirectionUtils.h>
-#include <llvm/ExecutionEngine/Orc/IndirectionUtils.h>
 #include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
 #include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
+#include <llvm/ExecutionEngine/Orc/IndirectionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
 #include <llvm/ExecutionEngine/Orc/Mangling.h>
 #include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
@@ -13,6 +13,7 @@
 #include <llvm/Support/ThreadPool.h>
 
 #include <jllvm/class/ClassFile.hpp>
+#include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
 #include <jllvm/materialization/ByteCodeOnDemandLayer.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
@@ -21,7 +22,6 @@
 
 #include <memory>
 
-#include "GarbageCollector.hpp"
 #include "StringInterner.hpp"
 
 namespace jllvm
@@ -52,11 +52,11 @@ class JIT
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, Throwable** activeException);
+        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, GCRootRef<Throwable> activeException);
 
 public:
     static JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                      void* jniFunctions, Throwable** activeException);
+                      void* jniFunctions, GCRootRef<Throwable> activeException);
 
     ~JIT();
 

@@ -16,13 +16,17 @@
 
 static llvm::cl::opt<bool> gcEveryAlloc("jllvm-gc-every-alloc", llvm::cl::Hidden, llvm::cl::init(false));
 
+static constexpr auto SLAB_SIZE = 4096 / sizeof(void*);
+
 jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
     : m_heapSize(heapSize),
       m_spaceOne(std::make_unique<char[]>(heapSize)),
       m_spaceTwo(std::make_unique<char[]>(heapSize)),
       m_fromSpace(m_spaceOne.get()),
       m_toSpace(m_spaceTwo.get()),
-      m_bumpPtr(m_fromSpace)
+      m_bumpPtr(m_fromSpace),
+      m_staticRoots(SLAB_SIZE),
+      m_localRoots(SLAB_SIZE)
 {
     std::memset(m_bumpPtr, 0, m_heapSize);
     __asan_poison_memory_region(m_toSpace, m_heapSize);
@@ -65,7 +69,7 @@ std::size_t ObjectRepr::getSize() const
     std::size_t instanceSize = getClass()->getInstanceSize();
     if (const jllvm::ClassObject* component = getClass()->getComponentType())
     {
-        std::size_t length = reinterpret_cast<const jllvm::Array<>&>(*this).getLength();
+        std::size_t length = reinterpret_cast<const jllvm::Array<>&>(*this).size();
         if (component->isPrimitive())
         {
             instanceSize += component->getInstanceSize() * length;
@@ -248,20 +252,11 @@ void mark(std::vector<ObjectRepr*>& workList, ObjectRepr* from, ObjectRepr* to)
     }
 }
 
-constexpr auto SLAB_SIZE = 4096 / sizeof(void*);
-
 } // namespace
 
-jllvm::GCRef<jllvm::Object> jllvm::GarbageCollector::allocateStatic()
+jllvm::GCRootRef<jllvm::Object> jllvm::GarbageCollector::allocateStatic()
 {
-    if (m_staticRefsSlabs.empty() || m_staticRefsSlabs.back().get() + SLAB_SIZE == m_staticRefsBumpPtr)
-    {
-        m_staticRefsBumpPtr = m_staticRefsSlabs.emplace_back(std::make_unique<void*[]>(SLAB_SIZE)).get();
-    }
-
-    void** storage = m_staticRefsBumpPtr;
-    m_staticRefsBumpPtr++;
-    return GCRef<Object>(storage);
+    return GCRootRef<Object>(m_staticRoots.allocate());
 }
 
 void jllvm::GarbageCollector::garbageCollect()
@@ -271,24 +266,18 @@ void jllvm::GarbageCollector::garbageCollect()
 
     std::vector<ObjectRepr*> roots;
     collectStackRoots(m_entries, roots, from, to);
-    for (auto& iter : m_staticRefsSlabs)
+
+    auto addToWorkListLambda = [&roots, from, to](void* ptr)
     {
-        std::size_t size = SLAB_SIZE;
-        if (iter == m_staticRefsSlabs.back())
+        auto* object = reinterpret_cast<ObjectRepr*>(ptr);
+        if (shouldBeAddedToWorkList(object, from, to))
         {
-            size = m_staticRefsBumpPtr - m_staticRefsSlabs.back().get();
+            object->markSeen();
+            roots.push_back(object);
         }
-        std::for_each(iter.get(), iter.get() + size,
-                      [&](void* ptr)
-                      {
-                          auto* object = reinterpret_cast<ObjectRepr*>(ptr);
-                          if (shouldBeAddedToWorkList(object, from, to))
-                          {
-                              object->markSeen();
-                              roots.push_back(object);
-                          }
-                      });
-    }
+    };
+    llvm::for_each(llvm::make_pointee_range(m_staticRoots), addToWorkListLambda);
+    llvm::for_each(llvm::make_pointee_range(m_localRoots), addToWorkListLambda);
 
     mark(roots, from, to);
 
@@ -343,19 +332,18 @@ void jllvm::GarbageCollector::garbageCollect()
 
     replaceStackRoots(m_entries, mapping);
 
-    for (auto& iter : m_staticRefsSlabs)
+    for (void** root : m_staticRoots)
     {
-        std::size_t size = SLAB_SIZE;
-        if (iter == m_staticRefsSlabs.back())
+        if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
         {
-            size = m_staticRefsBumpPtr - m_staticRefsSlabs.back().get();
+            *root = replacement;
         }
-        for (void** curr = iter.get(); curr != iter.get() + size; curr++)
+    }
+    for (void** root : m_localRoots)
+    {
+        if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
         {
-            if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*curr)))
-            {
-                *curr = replacement;
-            }
+            *root = replacement;
         }
     }
 

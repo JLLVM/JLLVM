@@ -1,4 +1,5 @@
 add_subdirectory(class)
+add_subdirectory(gc)
 add_subdirectory(main)
 add_subdirectory(materialization)
 add_subdirectory(object)

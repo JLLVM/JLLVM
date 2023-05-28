@@ -69,9 +69,11 @@ class Array : public ObjectInterface
     // without introducing any padding inbetween.
     T m_trailing[];
 
+public:
     Array(const ClassObject* classObject, std::uint32_t length) : m_header{classObject}, m_length{length} {}
 
-public:
+    using value_type = T;
+
     /// Function to create a new array object. The array object is allocated within 'allocator'
     /// with 'classObject' as the corresponding array class object.
     /// 'length' is the amount entries in the resulting array.
@@ -88,7 +90,7 @@ public:
     }
 
     /// Returns the length of the array.
-    std::uint32_t getLength() const
+    std::uint32_t size() const
     {
         return m_length;
     }
@@ -146,6 +148,9 @@ static_assert(std::is_standard_layout_v<Array<>>);
 class Object : public ObjectInterface
 {
     ObjectHeader m_header;
+
+public:
+    explicit Object(const ClassObject* classObject) : m_header(classObject) {}
 };
 
 static_assert(std::is_standard_layout_v<Object>);
@@ -172,7 +177,7 @@ public:
 
     std::string toUTF8() const
     {
-        return fromJavaCompactEncoding({{m_value->data(), m_value->getLength()}, CompactEncoding{m_coder}});
+        return fromJavaCompactEncoding({{m_value->data(), m_value->size()}, CompactEncoding{m_coder}});
     }
 };
 

@@ -4,12 +4,12 @@
 #include <llvm/Support/MemoryBuffer.h>
 
 #include <jllvm/class/ClassFile.hpp>
+#include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/object/ClassObject.hpp>
 
 #include <memory>
 #include <random>
 
-#include "GarbageCollector.hpp"
 #include "JIT.hpp"
 #include "StringInterner.hpp"
 
@@ -25,8 +25,8 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     StringInterner m_stringInterner;
-    GCRef<Throwable> m_activeException = static_cast<GCRef<Throwable>>(m_gc.allocateStatic());
-    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get(), m_activeException.ref());
+    GCRootRef<Throwable> m_activeException = static_cast<GCRootRef<Throwable>>(m_gc.allocateStatic());
+    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get(), m_activeException);
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
 
