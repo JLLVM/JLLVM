@@ -1,4 +1,3 @@
-
 #include "MarkSanitizersGCLeafs.hpp"
 
 llvm::PreservedAnalyses jllvm::MarkSanitizersGCLeafsPass::run(llvm::Module& M, llvm::ModuleAnalysisManager&)

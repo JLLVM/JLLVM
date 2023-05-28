@@ -8,6 +8,7 @@
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/object/Object.hpp>
 
+#include <ranges>
 #include <utility>
 
 #include "ByteCodeCompileUtils.hpp"
@@ -743,7 +744,7 @@ void CodeGen::codeGenBody(const Code& code)
             }
         }
 
-        codeGenInstruction(std::move(operation));
+        codeGenInstruction(operation);
     }
 }
 
@@ -1651,9 +1652,68 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 PoolIndex<ClassInfo>{multiANewArray.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
             assert(className.size() - className.drop_while([](char c) { return c == '['; }).size()
                    == multiANewArray.dimensions);
+            std::uint8_t dimensions = multiANewArray.dimensions;
 
-            llvm::Value* classObject = helper.getClassObject(builder, className);
-            exit(1);
+            std::vector<llvm::BasicBlock*> loopStarts{dimensions};
+            std::vector<llvm::BasicBlock*> loopMids{dimensions};
+            std::vector<llvm::BasicBlock*> loopEnds{dimensions};
+
+            auto* previous = builder.GetInsertBlock();
+
+            std::ranges::generate(loopStarts,
+                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "start", function); });
+
+            std::ranges::generate(loopMids,
+                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "mid", function); });
+
+            std::ranges::generate(loopEnds | std::views::reverse,
+                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
+
+            auto* print =
+                llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), {builder.getInt32Ty()}, false),
+                                       llvm::GlobalValue::ExternalLinkage, "Test.foo:(I)V", function->getParent());
+
+            for (int i = 0; i < dimensions; i++)
+            {
+                llvm::BasicBlock* start = loopStarts[i];
+                llvm::BasicBlock* mid = loopMids[i];
+                llvm::BasicBlock* end = loopEnds[i];
+
+                auto* count = operandStack.pop_back(builder.getInt32Ty());
+                auto* cmp = builder.CreateICmpSGT(count, builder.getInt32(0));
+
+                builder.CreateCondBr(cmp, start, end);
+                builder.SetInsertPoint(start);
+
+                auto* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), previous);
+
+                builder.CreateCall(print, {phi});
+
+                auto* counter = builder.CreateAdd(phi, builder.getInt32(1));
+                phi->addIncoming(counter, mid); // TODO next end / or mid
+                cmp = builder.CreateICmpEQ(counter, count);
+                builder.CreateCondBr(cmp, end, mid);
+
+                builder.SetInsertPoint(mid);
+                previous = start;
+            }
+
+            builder.CreateBr(*--loopStarts.end());
+
+            for (int i = dimensions - 1; i >= 0; i--)
+            {
+                llvm::BasicBlock* end = loopEnds[i];
+                builder.SetInsertPoint(end);
+
+                if (i > 0)
+                {
+                    llvm::BasicBlock* start = loopStarts[i - 1];
+                    builder.CreateBr(start);
+                }
+            }
+
+            operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext())));
         },
         [&](New newOp)
         {
@@ -1823,7 +1883,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
                                           m_callbackManager, m_baseLayer, m_interner, m_dataLayout),
                     m_stringInterner, descriptor);
 
-    if (function->getName().starts_with("Test"))
+    if (function->getName().starts_with("Test.main"))
     {
         function->dump();
     }
