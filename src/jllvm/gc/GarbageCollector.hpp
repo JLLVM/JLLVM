@@ -90,7 +90,7 @@ public:
     /// The object is left in an invalid state as described in the move constructor description.
     GCRootRef<T> release()
     {
-        GCRootRef copy = *this;
+        GCRootRef<T> copy = *this;
         m_gc = nullptr;
         this->m_object = nullptr;
         return copy;

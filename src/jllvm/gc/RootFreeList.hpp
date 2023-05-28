@@ -73,7 +73,7 @@ public:
     template <class U>
     friend bool operator==(GCRootRef<T> lhs, GCRootRef<U> rhs)
     {
-        return lhs.get() == rhs.get();
+        return lhs.get() == &*rhs;
     }
 
     /// Returns true if 'lhs' and 'rhs' refer to the same object.
