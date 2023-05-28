@@ -67,7 +67,7 @@ jobs:
         run: |
           $sanitizer_arg = ''
           if ('${{matrix.sanitizer}}') {
-            $sanitizer_arg = '-DCMAKE_CXX_FLAGS="-g1 -fsanitize=${{matrix.sanitizer}}"'
+            $sanitizer_arg = '-DCMAKE_CXX_FLAGS="-g1 -fsanitize=${{matrix.sanitizer}} -fno-sanitize-recover=all"'
           }
           
           $use_lld = ''

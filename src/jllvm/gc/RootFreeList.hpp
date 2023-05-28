@@ -73,7 +73,8 @@ public:
     template <class U>
     friend bool operator==(GCRootRef<T> lhs, GCRootRef<U> rhs)
     {
-        return lhs.get() == &*rhs;
+        // operator-> because GCC 10 doesn't allow access to 'get()' due to bugs.
+        return lhs.get() == rhs.operator->();
     }
 
     /// Returns true if 'lhs' and 'rhs' refer to the same object.
