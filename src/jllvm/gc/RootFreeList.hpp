@@ -189,7 +189,7 @@ public:
     }
 
     /// Allocates a new root and returns it as 'GCRootRef'.
-    /// The lifetime of the root remains invalid until 'free' is called on the 'GCRootRef' of this method.
+    /// The lifetime of the root remains valid until 'free' is called on the 'GCRootRef' of this method.
     GCRootRef<ObjectInterface> allocate();
 
     /// Frees a root created by this 'RootFreeList's 'allocate' method. This allows the root to be reused by any
