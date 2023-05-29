@@ -167,7 +167,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             }
         },
         [this](const ClassFile* classFile) { m_jit.add(classFile); },
-        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().ref()); }),
+        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_stringInterner(m_classLoader),
       m_gc(/*small random value for now*/ 4096),
       // Seed from the C++ implementations entropy source.

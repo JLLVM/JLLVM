@@ -27,8 +27,7 @@
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
                 llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
-                StringInterner& stringInterner, void* jniFunctions,
-                Throwable** activeException)
+                StringInterner& stringInterner, void* jniFunctions, GCRootRef<Throwable> activeException)
     : m_session(std::move(session)),
       m_main(llvm::cantFail(m_session->createJITDylib("<main>"))),
       m_epciu(std::move(epciu)),
@@ -76,7 +75,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                                                { return object->instanceOf(classObject); })},
          {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)}})));
     llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
-        {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException)}})));
+        {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException.data())}})));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
     m_main.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
@@ -87,7 +86,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                              void* jniFunctions, Throwable** activeException)
+                              void* jniFunctions, GCRootRef<Throwable> activeException)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();

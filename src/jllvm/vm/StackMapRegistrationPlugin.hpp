@@ -2,7 +2,7 @@
 
 #include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
 
-#include "GarbageCollector.hpp"
+#include <jllvm/gc/GarbageCollector.hpp>
 
 namespace jllvm
 {
