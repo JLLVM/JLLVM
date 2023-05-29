@@ -1655,18 +1655,12 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::uint8_t dimensions = multiANewArray.dimensions;
 
             std::vector<llvm::BasicBlock*> loopStarts{dimensions};
-            std::vector<llvm::BasicBlock*> loopMids{dimensions};
             std::vector<llvm::BasicBlock*> loopEnds{dimensions};
 
             std::vector<llvm::Value*> loopCounts{dimensions};
 
-            auto* previous = builder.GetInsertBlock();
-
             std::ranges::generate(loopStarts,
                                   [&] { return llvm::BasicBlock::Create(builder.getContext(), "start", function); });
-
-            std::ranges::generate(loopMids,
-                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "mid", function); });
 
             std::ranges::generate(loopEnds | std::views::reverse,
                                   [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
@@ -1674,52 +1668,51 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::ranges::generate(loopCounts | std::views::reverse,
                                   [&] { return operandStack.pop_back(builder.getInt32Ty()); });
 
+            llvm::BasicBlock* done = llvm::BasicBlock::Create(builder.getContext(), "done", function);
+
+            // TODO: allocate array and set fields
             auto* print =
                 llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), {builder.getInt32Ty()}, false),
                                        llvm::GlobalValue::ExternalLinkage, "Test.foo:(I)V", function->getParent());
 
+            llvm::BasicBlock* nextEnd = done;
+
+            // in C++23: std::ranges::zip_transform_view
             for (int i = 0; i < dimensions; i++)
             {
                 llvm::BasicBlock* start = loopStarts[i];
-                llvm::BasicBlock* mid = loopMids[i];
-                llvm::BasicBlock* pred = builder.GetInsertBlock();
                 llvm::BasicBlock* end = loopEnds[i];
-                llvm::BasicBlock* lastLoop = i < dimensions - 1 ? loopEnds[i + 1] : mid;
+                llvm::BasicBlock* last = builder.GetInsertBlock();
 
-                auto* count = loopCounts[i];
-                auto* cmp = builder.CreateICmpSGT(count, builder.getInt32(0));
+                llvm::Value* count = loopCounts[i];
 
-                builder.CreateCondBr(cmp, start, end);
+                llvm::Value* cmp = builder.CreateICmpSGT(count, builder.getInt32(0));
+                builder.CreateCondBr(cmp, start, nextEnd);
+
                 builder.SetInsertPoint(start);
 
-                auto* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                phi->addIncoming(builder.getInt32(0), pred);
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), last);
 
-                builder.CreateCall(print, {phi});
+                // TODO: allocate array and set fields and assign to index
+                builder.CreateCall(print, phi);
 
-                auto* counter = builder.CreateAdd(phi, builder.getInt32(1));
-                phi->addIncoming(counter, lastLoop);
-                cmp = builder.CreateICmpEQ(counter, count);
-                builder.CreateCondBr(cmp, end, mid);
-
-                builder.SetInsertPoint(mid);
-                previous = start;
-            }
-
-            builder.CreateBr(*--loopStarts.end());
-
-            for (int i = dimensions - 1; i >= 0; i--)
-            {
-                llvm::BasicBlock* end = loopEnds[i];
                 builder.SetInsertPoint(end);
 
-                if (i > 0)
-                {
-                    llvm::BasicBlock* start = loopStarts[i - 1];
-                    builder.CreateBr(start);
-                }
+                llvm::Value* counter = builder.CreateAdd(phi, builder.getInt32(1));
+                phi->addIncoming(counter, end);
+
+                cmp = builder.CreateICmpEQ(counter, count);
+                builder.CreateCondBr(cmp, nextEnd, start);
+
+                builder.SetInsertPoint(start);
+                nextEnd = end;
             }
 
+            builder.CreateBr(loopEnds.back());
+            builder.SetInsertPoint(done);
+
+            // TODO: return array
             operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext())));
         },
         [&](New newOp)
