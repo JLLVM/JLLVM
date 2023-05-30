@@ -95,7 +95,14 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
     F m_f;
     llvm::DataLayout m_dataLayout;
 
+    // GCC is stricter when it comes to determining trivially copyable of lambdas.
+    // Admittedly, GCC is allowed to do that since it is apparently implementation defined whether lambdas are
+    // trivially copyable.
+    // Practically speaking this should always work for now and in the future it is possible to drop the trivially
+    // copyable requirements (which only exists because we effectively memcpy the lambda) if ever required.
+#ifdef __clang__
     static_assert(std::is_trivially_copyable_v<F>);
+#endif
 
     template <std::size_t... is>
     std::array<llvm::Type*, sizeof...(is)> parameterTypes(std::index_sequence<is...>, llvm::LLVMContext* context)
