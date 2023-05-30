@@ -17,14 +17,14 @@ class StringInterner
     ClassLoader& m_classLoader;
     const ClassObject* m_stringClass{nullptr};
 
-    const ClassObject* getStringClassObject();
-
     void checkStructure();
 
     String* createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding);
 
 public:
     StringInterner(ClassLoader& classLoader) : m_classLoader(classLoader) {}
+
+    void loadStringClass();
 
     String* intern(llvm::StringRef utf8String);
 
