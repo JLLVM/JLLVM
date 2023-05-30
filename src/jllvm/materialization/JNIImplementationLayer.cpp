@@ -103,8 +103,6 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                            builder.getPtrTy()),
                     environment);
 
-                // TODO: Pre-setup code here
-
                 llvm::SmallVector<llvm::Value*> args{environment};
                 if (methodInfo->isStatic())
                 {
@@ -114,6 +112,16 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 for (llvm::Argument& arg : function->args())
                 {
                     args.push_back(&arg);
+                }
+
+                for (llvm::Value*& arg : args)
+                {
+                    if (arg->getType() != referenceType(*context))
+                    {
+                        continue;
+                    }
+                    arg = builder.CreateCall(
+                        module->getOrInsertFunction("jllvm_new_local_root", arg->getType(), arg->getType()), arg);
                 }
 
                 llvm::Type* returnType = descriptorToType(methodType.returnType, *context);
@@ -145,7 +153,23 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                          baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
                 }
 
-                // TODO: Post-setup code here
+                if (result->getType() == referenceType(*context))
+                {
+                    // JNI methods can only ever return a root as well. Delete and unpack it.
+                    result = builder.CreateCall(
+                        module->getOrInsertFunction("jllvm_delete_local_root", result->getType(), result->getType()),
+                        result);
+                }
+
+                for (llvm::Value* arg : args)
+                {
+                    if (arg->getType() != referenceType(*context))
+                    {
+                        continue;
+                    }
+                    args.push_back(builder.CreateCall(
+                        module->getOrInsertFunction("jllvm_delete_local_root", arg->getType(), arg->getType()), arg));
+                }
 
                 if (returnType->isVoidTy())
                 {

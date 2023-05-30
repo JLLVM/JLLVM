@@ -48,16 +48,17 @@ constexpr auto addMember()
 ///
 /// The model subclass may then simply implement member functions with the EXACT same name as the 'native' method in
 /// Java. Function parameters from Java can easily be translated to C++ types: For integer types simply use signed
-/// integer types with the same width as the corresponding Java type. For Java Objects, use 'Object*' or any other
-/// subclass of 'ObjectInterface' (such as e.g. 'Array<int>*') that corresponds to, or is at least a super class, of
-/// the object used in the Java API.
+/// integer types with the same width as the corresponding Java type. For Java Objects, use 'GCRootRef<Object>' or any
+/// other subclass of 'ObjectInterface' (such as e.g. 'GCRootRef<Array<int>>') that corresponds to, or is at least a
+/// super class, of the object used in the Java API.
+/// For convenience, the return type may be either 'GCRootRef<T>' or 'T*' when returning Java objects.
 ///
 /// Non-static method members do NOT need an explicit 'this' pointer parameter. You can use 'javaThis' from within
-/// member functions to get the 'this' pointer from Java.
+/// member functions to get the 'this' reference from Java.
 ///
-/// Static methods must always have 'VirtualMachine&' and 'ClassObject*' as their first two parameters. The parameters
-/// from the static method from Java follow right afterwards. The 'ClassObject*' is the class object of the class the
-/// static method is defined in.
+/// Static methods must always have 'VirtualMachine&' and 'GCRootRef<ClassObject>' as their first two parameters. The
+/// parameters from the static method from Java follow right afterwards. The 'GCRootRef<ClassObject>' is the class
+/// object of the class the static method is defined in.
 ///
 /// As a final step, 'ModelBase' subclasses must add the following 'constexpr static' fields:
 /// * 'llvm::StringLiteral className' which should contain the fully qualified name (i.e. with slashes) of the class
@@ -73,7 +74,7 @@ class ModelBase
 
 protected:
     /// 'this' object from Java to be used in member functions.
-    JavaObject& javaThis;
+    GCRootRef<JavaObject> javaThis;
     /// Instance of the virtual machine this model is registered in.
     VirtualMachine& virtualMachine;
 
@@ -82,7 +83,8 @@ protected:
 public:
     /// Constructor required to be implemented by any subclasses. Simply adding 'using Base::Base' to subclasses will
     /// make them inherit this constructor.
-    ModelBase(JavaObject& javaThis, VirtualMachine& virtualMachine) : javaThis(javaThis), virtualMachine(virtualMachine)
+    ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine)
+        : javaThis(javaThis), virtualMachine(virtualMachine)
     {
     }
 
@@ -98,12 +100,12 @@ public:
 
     const ClassObject* getClass()
     {
-        return javaThis.getClass();
+        return javaThis->getClass();
     }
 
     std::int32_t hashCode()
     {
-        std::int32_t& hashCode = javaThis.getObjectHeader().hashCode;
+        std::int32_t& hashCode = javaThis->getObjectHeader().hashCode;
         if (!hashCode)
         {
             hashCode = virtualMachine.createNewHashCode();
@@ -122,17 +124,17 @@ class ClassModel : public ModelBase<ClassObject>
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, ClassObject*)
+    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
     {
         // Noop until (if?) we need some C++ initialization code.
     }
 
     bool isArray()
     {
-        return javaThis.isArray();
+        return javaThis->isArray();
     }
 
-    static bool desiredAssertionStatus0(VirtualMachine&, ClassObject*)
+    static bool desiredAssertionStatus0(VirtualMachine&, GCRootRef<ClassObject>)
     {
 #ifndef NDEBUG
         return true;
@@ -153,11 +155,11 @@ class ThrowableModel : public ModelBase<Throwable>
 public:
     using Base::Base;
 
-    Throwable* fillInStackTrace(int)
+    GCRootRef<Throwable> fillInStackTrace(int)
     {
         // TODO: Set backtrace and depth of 'javaThis'. See
         // https://github.com/openjdk/jdk/blob/4f096eb7c9066e5127d9ab8c1c893e991a23d316/src/hotspot/share/classfile/javaClasses.cpp#L2491
-        return &javaThis;
+        return javaThis;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Throwable";
@@ -171,18 +173,57 @@ namespace detail
 {
 jllvm::VirtualMachine& virtualMachineFromJNIEnv(JNIEnv* env);
 
-template <class, class Ret, class... Args>
-auto createMethodBridge(Ret (*ptr)(jllvm::VirtualMachine&, jllvm::ClassObject*, Args...))
+auto coerceReturnType(std::derived_from<ObjectInterface> auto* object, VirtualMachine& virtualMachine)
 {
-    return [ptr](JNIEnv* env, jllvm::ClassObject* classObject, Args... args)
-    { return ptr(virtualMachineFromJNIEnv(env), classObject, args...); };
+    // JNI only accepts roots as parameters and return type. Coerce any pointer to objects returned to roots.
+    // The JNI bridge will delete the root and pass the object back to the Java stack.
+    return virtualMachine.getGC().root(object).release();
+}
+
+template <class T>
+auto coerceReturnType(T object, VirtualMachine&) requires(std::is_arithmetic_v<T>)
+{
+    return object;
+}
+
+template <class T>
+auto coerceReturnType(GCRootRef<T> ref, VirtualMachine&)
+{
+    return ref;
+}
+
+template <class, class Ret, class... Args>
+auto createMethodBridge(Ret (*ptr)(VirtualMachine&, GCRootRef<ClassObject>, Args...))
+{
+    return [ptr](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    {
+        VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+        if constexpr (!std::is_void_v<Ret>)
+        {
+            return coerceReturnType(ptr(virtualMachine, classObject, args...), virtualMachine);
+        }
+        else
+        {
+            return ptr(virtualMachine, classObject, args...);
+        }
+    };
 }
 
 template <class Model, class Ret, class... Args>
 auto createMethodBridge(Ret (Model::*ptr)(Args...))
 {
-    return [ptr](JNIEnv* env, typename Model::ThisType* javaThis, Args... args)
-    { return (Model(*javaThis, virtualMachineFromJNIEnv(env)).*ptr)(args...); };
+    return [ptr](JNIEnv* env, GCRootRef<typename Model::ThisType> javaThis, Args... args)
+    {
+        VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+        if constexpr (!std::is_void_v<Ret>)
+        {
+            return coerceReturnType((Model(javaThis, virtualMachine).*ptr)(args...), virtualMachine);
+        }
+        else
+        {
+            return (Model(javaThis, virtualMachine).*ptr)(args...);
+        }
+    };
 }
 
 template <class Model>
