@@ -9,6 +9,7 @@ namespace jllvm
 {
 class StringInterner
 {
+    static constexpr auto stringDescriptor = "Ljava/lang/String;";
     static constexpr auto byteArrayDescriptor = "[B";
 
     llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_contentToStringMap;
@@ -23,10 +24,7 @@ class StringInterner
 public:
     StringInterner(ClassLoader& classLoader) : m_classLoader(classLoader) {}
 
-    void setStringClass(const ClassObject* stringClass)
-    {
-        m_stringClass = stringClass;
-    }
+    void loadStringClass();
 
     String* intern(llvm::StringRef utf8String);
 

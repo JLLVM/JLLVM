@@ -195,7 +195,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
 
     m_classLoader.loadBootstrapClasses();
 
-    m_stringInterner.setStringClass(&m_classLoader.forName("[Ljava/lang/String;"));
+    m_stringInterner.loadStringClass();
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)

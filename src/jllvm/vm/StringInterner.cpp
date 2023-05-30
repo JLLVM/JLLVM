@@ -1,5 +1,11 @@
 #include "StringInterner.hpp"
 
+void jllvm::StringInterner::loadStringClass()
+{
+    m_stringClass = &m_classLoader.forName(stringDescriptor);
+    checkStructure();
+}
+
 void jllvm::StringInterner::checkStructure()
 {
 #ifdef NDEBUG
