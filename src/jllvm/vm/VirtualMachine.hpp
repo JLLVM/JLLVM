@@ -47,7 +47,18 @@ public:
         return m_jit;
     }
 
+    /// Returns the garbage collector instance of the virtual machine.
+    GarbageCollector& getGC()
+    {
+        return m_gc;
+    }
+
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);
+};
+
+template <class T>
+struct CppToLLVMType<jllvm::GCRootRef<T>> : CppToLLVMType<void*>
+{
 };
 
 } // namespace jllvm

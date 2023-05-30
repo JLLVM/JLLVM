@@ -56,7 +56,7 @@ public:
     /// Allows assignment from a valid pointer to an object.
     GCUniqueRoot& operator=(T* object)
     {
-        *this->m_object = object;
+        GCRootRef<T>::operator=(object);
         return *this;
     }
 

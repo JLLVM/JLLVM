@@ -182,7 +182,14 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
         std::pair{"jllvm_instance_of",
                   [](const Object* object, const ClassObject* classObject) -> std::int32_t
                   { return object->instanceOf(classObject); }},
-        std::pair{"activeException", m_activeException.data()});
+        std::pair{"activeException", m_activeException.data()},
+        std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
+        std::pair{"jllvm_delete_local_root", [&](GCRootRef<Object> root)
+                  {
+                      auto* object = static_cast<Object*>(root);
+                      m_gc.deleteRoot(root);
+                      return object;
+                  }});
 
     registerJavaClasses(*this);
 

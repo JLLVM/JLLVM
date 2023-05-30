@@ -62,10 +62,17 @@ public:
         return GCRootRef<U>(m_object);
     }
 
+    /// Explicit cast to 'T*'. This operation should generally be avoided in favour of just using the 'GCRootRef' as
+    /// intended.
+    explicit operator T*() const
+    {
+        return get();
+    }
+
     /// Allows assignment from a valid pointer to an object.
     GCRootRef& operator=(T* object)
     {
-        *m_object = object;
+        *m_object = const_cast<std::remove_const_t<T>*>(object);
         return *this;
     }
 
@@ -73,8 +80,7 @@ public:
     template <class U>
     friend bool operator==(GCRootRef<T> lhs, GCRootRef<U> rhs)
     {
-        // operator-> because GCC 10 doesn't allow access to 'get()' due to bugs.
-        return lhs.get() == rhs.operator->();
+        return lhs.get() == static_cast<U*>(rhs);
     }
 
     /// Returns true if 'lhs' and 'rhs' refer to the same object.

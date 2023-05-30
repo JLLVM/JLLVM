@@ -34,7 +34,7 @@ requires(std::is_floating_point_v<T>) struct TrivialPrinter<T>
 template <>
 struct TrivialPrinter<jllvm::String>
 {
-    auto operator()(void*, void*, jllvm::String* string)
+    auto operator()(void*, void*, jllvm::GCRootRef<jllvm::String> string)
     {
         llvm::outs() << string->toUTF8() << '\n';
     }
