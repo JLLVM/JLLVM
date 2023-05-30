@@ -33,7 +33,8 @@ public:
     JNIImplementationLayer(llvm::orc::ExecutionSession& session,
                            std::unique_ptr<llvm::orc::IndirectStubsManager> stubsManager,
                            llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::MangleAndInterner& mangler,
-                           llvm::orc::IRLayer& irLayer, const llvm::DataLayout& dataLayout, void* jniNativeFunctions)
+                           llvm::orc::IRLayer& irLayer, const llvm::DataLayout& dataLayout, void* jniNativeFunctions,
+                           llvm::orc::JITDylib& implementationDylib)
         : ByteCodeLayer(mangler),
           m_jniImpls(session.createBareJITDylib("<jni>")),
           m_jniBridges(session.createBareJITDylib("<jniBridge>")),
@@ -43,6 +44,7 @@ public:
           m_dataLayout(dataLayout),
           m_jniNativeFunctions(jniNativeFunctions)
     {
+        m_jniBridges.addToLinkOrder(implementationDylib);
     }
 
     /// Adds a new materialization unit to the JNI dylib which will be used to lookup any symbols when 'native' methods

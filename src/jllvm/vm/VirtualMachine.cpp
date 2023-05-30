@@ -175,6 +175,15 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
       m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max())
 {
+    m_jit.addImplementationSymbols(
+        std::pair{"fmodf", &fmodf},
+        std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return m_gc.allocate(size); }},
+        std::pair{"jllvm_for_name_loaded", [&](const char* name) { return m_classLoader.forNameLoaded(name); }},
+        std::pair{"jllvm_instance_of",
+                  [](const Object* object, const ClassObject* classObject) -> std::int32_t
+                  { return object->instanceOf(classObject); }},
+        std::pair{"activeException", m_activeException.data()});
+
     registerJavaClasses(*this);
 
     m_classLoader.loadBootstrapClasses();

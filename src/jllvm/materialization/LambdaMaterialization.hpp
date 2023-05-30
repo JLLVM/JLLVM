@@ -95,7 +95,15 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
     F m_f;
     llvm::DataLayout m_dataLayout;
 
-    static_assert(std::is_trivially_copyable_v<F>);
+    // Technically speaking, the property we require is trivially copyable.
+    // However,GCC is stricter when it comes to determining trivially copyable of lambdas, making asserts fail when
+    // an equivalent struct with operator() wouldn't.
+    // Admittedly, GCC is allowed to do that since it is apparently implementation defined whether lambdas are
+    // trivially copyable.
+    // We therefore instead use trivially destructible as a check instead to still catch issues such as a lambda having
+    // non-trivial types within. Given the prevalence of the Rule of 5 this should be just as effective at catching
+    // these errors.
+    static_assert(std::is_trivially_destructible_v<F>);
 
     template <std::size_t... is>
     std::array<llvm::Type*, sizeof...(is)> parameterTypes(std::index_sequence<is...>, llvm::LLVMContext* context)

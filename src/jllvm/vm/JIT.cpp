@@ -27,17 +27,16 @@
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
                 llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
-                StringInterner& stringInterner, void* jniFunctions, GCRootRef<Throwable> activeException)
+                StringInterner& stringInterner, void* jniFunctions)
     : m_session(std::move(session)),
       m_main(llvm::cantFail(m_session->createJITDylib("<main>"))),
+      m_implementation(llvm::cantFail(m_session->createJITDylib("<implementation>"))),
       m_epciu(std::move(epciu)),
       m_targetMachine(llvm::cantFail(builder.createTargetMachine())),
       m_callbackManager(llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
           llvm::Triple(LLVM_HOST_TRIPLE), *m_session,
           llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
       m_dataLayout(layout),
-      m_classLoader(classLoader),
-      m_stringInterner(stringInterner),
       m_interner(*m_session, m_dataLayout),
       m_objectLayer(*m_session),
       m_compilerLayer(*m_session, m_objectLayer, std::make_unique<llvm::orc::ConcurrentIRCompiler>(builder)),
@@ -47,38 +46,25 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                           tsm.withModuleDo([&](llvm::Module& module) { optimize(module); });
                           return std::move(tsm);
                       }),
-      m_byteCodeCompileLayer(m_classLoader, m_stringInterner, m_main, m_epciu->createIndirectStubsManager(),
+      m_byteCodeCompileLayer(classLoader, stringInterner, m_main, m_epciu->createIndirectStubsManager(),
                              *m_callbackManager, m_optimizeLayer, m_interner, m_dataLayout),
       m_byteCodeOnDemandLayer(m_byteCodeCompileLayer, *m_session, m_interner,
                               llvm::orc::createLocalIndirectStubsManagerBuilder(llvm::Triple(LLVM_HOST_TRIPLE)),
                               m_epciu->getLazyCallThroughManager()),
       m_jniLayer(*m_session, m_epciu->createIndirectStubsManager(), *m_callbackManager, m_interner, m_optimizeLayer,
-                 m_dataLayout, jniFunctions),
-      m_gc(gc)
+                 m_dataLayout, jniFunctions, m_implementation)
 {
+    m_main.addToLinkOrder(m_implementation);
+
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
                         *m_session, llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderGDBWrapper))));
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
         *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
-    m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(m_gc));
-
-    llvm::cantFail(m_main.define(createLambdaMaterializationUnit(
-        "jllvm_gc_alloc", m_optimizeLayer, [&](std::uint32_t size) { return m_gc.allocate(size); }, m_dataLayout,
-        m_interner)));
-    llvm::cantFail(m_main.define(createLambdaMaterializationUnit(
-        "jllvm_for_name_loaded", m_optimizeLayer, [&](const char* name) { return m_classLoader.forNameLoaded(name); },
-        m_dataLayout, m_interner)));
-    llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
-        {{m_interner("jllvm_instance_of"), llvm::JITEvaluatedSymbol::fromPointer(
-                                               +[](const Object* object, const ClassObject* classObject) -> std::int32_t
-                                               { return object->instanceOf(classObject); })},
-         {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)}})));
-    llvm::cantFail(m_main.define(llvm::orc::absoluteSymbols(
-        {{m_interner("activeException"), llvm::JITEvaluatedSymbol::fromPointer(activeException.data())}})));
+    m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
-    m_main.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+    m_implementation.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
         m_dataLayout.getGlobalPrefix(),
         /*Allow=*/[](const llvm::orc::SymbolStringPtr& symbolStringPtr)
         { return (*symbolStringPtr).starts_with("__asan"); })));
@@ -86,7 +72,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
 }
 
 jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                              void* jniFunctions, GCRootRef<Throwable> activeException)
+                              void* jniFunctions)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -111,8 +97,7 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, St
     jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
     auto dl = llvm::cantFail(jtmb.getDefaultDataLayoutForTarget());
     return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, stringInterner,
-               jniFunctions,
-               activeException);
+               jniFunctions);
 }
 
 jllvm::JIT::~JIT()

@@ -30,13 +30,12 @@ class JIT
 {
     std::unique_ptr<llvm::orc::ExecutionSession> m_session;
     llvm::orc::JITDylib& m_main;
+    llvm::orc::JITDylib& m_implementation;
     std::unique_ptr<llvm::orc::EPCIndirectionUtils> m_epciu;
     std::unique_ptr<llvm::TargetMachine> m_targetMachine;
     std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
 
     llvm::DataLayout m_dataLayout;
-    ClassLoader& m_classLoader;
-    StringInterner& m_stringInterner;
 
     llvm::orc::MangleAndInterner m_interner;
     llvm::orc::ObjectLinkingLayer m_objectLayer;
@@ -46,17 +45,15 @@ class JIT
     ByteCodeOnDemandLayer m_byteCodeOnDemandLayer;
     JNIImplementationLayer m_jniLayer;
 
-    GarbageCollector& m_gc;
-
     void optimize(llvm::Module& module);
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, GCRootRef<Throwable> activeException);
+        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions);
 
 public:
-    static JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                      void* jniFunctions, GCRootRef<Throwable> activeException);
+    static jllvm::JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
+                             void* jniFunctions);
 
     ~JIT();
 
@@ -80,6 +77,41 @@ public:
     {
         m_jniLayer.define(
             createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner));
+    }
+
+    /// Add all symbol-implementation pairs to the implementation library.
+    /// The implementation library contains implementation of functions used by the materialization
+    /// (bytecode compiler, JNI bridge, etc.).
+    template <class Ss, class... Fs>
+    void addImplementationSymbols(std::pair<Ss, Fs>&&... args)
+    {
+        (addImplementationSymbol(std::move(args.first), std::move(args.second)), ...);
+    }
+
+    /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
+    template <class F>
+    void addImplementationSymbol(std::string symbol, const F& f)
+        requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
+    {
+        llvm::cantFail(m_implementation.define(
+            createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner)));
+    }
+
+    /// Add function pointer 'f' as implementation for symbol 'symbol' to the implementation library.
+    template <class Ret, class... Args>
+    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
+    {
+        llvm::cantFail(m_implementation.define(llvm::orc::absoluteSymbols(
+            {{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(f, llvm::JITSymbolFlags::Exported
+                                                                               | llvm::JITSymbolFlags::Callable)}})));
+    }
+
+    /// Add 'ptr' as implementation of global 'symbol' to the implementation library.
+    template <class T>
+    void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
+    {
+        llvm::cantFail(m_implementation.define(
+            llvm::orc::absoluteSymbols({{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
     /// Adds and registers a class file in the JIT. This has to be done prior to being able to lookup and execute
