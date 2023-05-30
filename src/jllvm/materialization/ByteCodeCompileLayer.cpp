@@ -461,7 +461,7 @@ llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
                                                                                         builder.getInt32Ty();
 }
 
-auto resolveNewArrayInfo(ArrayOp arrayOp, llvm::IRBuilder<>& builder)
+auto resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& builder)
 {
     struct ArrayInfo
     {
@@ -471,7 +471,7 @@ auto resolveNewArrayInfo(ArrayOp arrayOp, llvm::IRBuilder<>& builder)
         std::size_t elementOffset{};
     };
 
-    switch (arrayOp.atype)
+    switch (arrayType)
     {
         case ArrayOp::ArrayType::TBoolean:
             return ArrayInfo{"Z", builder.getInt8Ty(), sizeof(std::uint8_t),
@@ -689,6 +689,40 @@ struct CodeGen
         builder.SetInsertPoint(continueBlock);
     }
 
+    llvm::Value* generateAllocArray(llvm::StringRef descriptor, llvm::Value* size)
+    {
+        auto [elementType, elementSize, elementOffset] = match(
+            parseFieldType(descriptor.drop_front()),
+            [&](BaseType baseType) -> std::tuple<llvm::Type*, std::size_t, std::size_t>
+            {
+                auto [_, eType, eSize, eOffset] =
+                    resolveNewArrayInfo(static_cast<ArrayOp::ArrayType>(baseType.getValue()), builder);
+                return {eType, eSize, eOffset};
+            },
+            [&](auto) -> std::tuple<llvm::Type*, std::size_t, std::size_t> {
+                return {referenceType(builder.getContext()), sizeof(Object*), Array<>::arrayElementsOffset()};
+            });
+
+        // TODO: Can throw class loader or linkage related errors.
+        llvm::Value* classObject = helper.getClassObject(builder, descriptor);
+
+        // Size required is the size of the array prior to the elements (equal to the offset to the
+        // elements) plus element count * element size.
+        llvm::Value* bytesNeeded =
+            builder.CreateAdd(builder.getInt32(elementOffset), builder.CreateMul(size, builder.getInt32(elementSize)));
+
+        // TODO: Allocation can throw OutOfMemoryException, create EH-dispatch
+        llvm::Value* array = builder.CreateCall(allocationFunction(function->getParent()), bytesNeeded);
+
+        builder.CreateStore(classObject, array);
+
+        llvm::Value* gep =
+            builder.CreateGEP(arrayStructType(elementType), array, {builder.getInt32(0), builder.getInt32(1)});
+        builder.CreateStore(size, gep);
+
+        return array;
+    }
+
     void codeGenBody(const Code& code);
 
     void codeGenInstruction(ByteCodeOp operation);
@@ -855,6 +889,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](ANewArray aNewArray)
         {
             auto index = PoolIndex<ClassInfo>{aNewArray.index};
+            // TODO: throw NegativeArraySizeException
             llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
             llvm::Value* classObject = helper.getClassObject(
@@ -1648,14 +1683,15 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](MultiANewArray multiANewArray)
         {
-            llvm::StringRef className =
+            llvm::StringRef descriptor =
                 PoolIndex<ClassInfo>{multiANewArray.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
-            assert(className.size() - className.drop_while([](char c) { return c == '['; }).size()
+            assert(descriptor.size() - descriptor.drop_while([](char c) { return c == '['; }).size()
                    == multiANewArray.dimensions);
             std::uint8_t dimensions = multiANewArray.dimensions;
+            std::uint8_t iterations = dimensions - 1;
 
-            std::vector<llvm::BasicBlock*> loopStarts{dimensions};
-            std::vector<llvm::BasicBlock*> loopEnds{dimensions};
+            std::vector<llvm::BasicBlock*> loopStarts{iterations};
+            std::vector<llvm::BasicBlock*> loopEnds{iterations};
 
             std::vector<llvm::Value*> loopCounts{dimensions};
 
@@ -1666,27 +1702,27 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                                   [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
 
             std::ranges::generate(loopCounts | std::views::reverse,
+                                  // TODO: throw NegativeArraySizeException
                                   [&] { return operandStack.pop_back(builder.getInt32Ty()); });
 
             llvm::BasicBlock* done = llvm::BasicBlock::Create(builder.getContext(), "done", function);
 
-            // TODO: allocate array and set fields
-            auto* print =
-                llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), {builder.getInt32Ty()}, false),
-                                       llvm::GlobalValue::ExternalLinkage, "Test.foo:(I)V", function->getParent());
-
+            llvm::StringRef className = descriptor;
+            llvm::Value* size = loopCounts[0];
+            llvm::Value* array = generateAllocArray(className, size);
+            llvm::Value* outerArray = array;
             llvm::BasicBlock* nextEnd = done;
 
             // in C++23: std::ranges::zip_transform_view
-            for (int i = 0; i < dimensions; i++)
+            for (int i = 0; i < iterations; i++)
             {
                 llvm::BasicBlock* start = loopStarts[i];
                 llvm::BasicBlock* end = loopEnds[i];
                 llvm::BasicBlock* last = builder.GetInsertBlock();
 
-                llvm::Value* count = loopCounts[i];
+                llvm::Value* innerSize = loopCounts[i + 1];
 
-                llvm::Value* cmp = builder.CreateICmpSGT(count, builder.getInt32(0));
+                llvm::Value* cmp = builder.CreateICmpSGT(size, builder.getInt32(0));
                 builder.CreateCondBr(cmp, start, nextEnd);
 
                 builder.SetInsertPoint(start);
@@ -1694,26 +1730,32 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
                 phi->addIncoming(builder.getInt32(0), last);
 
-                // TODO: allocate array and set fields and assign to index
-                builder.CreateCall(print, phi);
+                llvm::Value* innerArray = generateAllocArray(className.drop_front(), innerSize);
+
+                llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), outerArray,
+                                                     {builder.getInt32(0), builder.getInt32(2), phi});
+                builder.CreateStore(innerArray, gep);
+
+                outerArray = innerArray;
 
                 builder.SetInsertPoint(end);
 
                 llvm::Value* counter = builder.CreateAdd(phi, builder.getInt32(1));
                 phi->addIncoming(counter, end);
 
-                cmp = builder.CreateICmpEQ(counter, count);
+                cmp = builder.CreateICmpEQ(counter, size);
                 builder.CreateCondBr(cmp, nextEnd, start);
 
                 builder.SetInsertPoint(start);
+                className = className.drop_front();
+                size = innerSize;
                 nextEnd = end;
             }
 
             builder.CreateBr(loopEnds.back());
             builder.SetInsertPoint(done);
 
-            // TODO: return array
-            operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(builder.getContext())));
+            operandStack.push_back(array);
         },
         [&](New newOp)
         {
@@ -1746,7 +1788,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](NewArray newArray)
         {
-            auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray, builder);
+            auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray.atype, builder);
+            // TODO: throw NegativeArraySizeException
             llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
             llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
@@ -1882,11 +1925,6 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
                     LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager,
                                           m_callbackManager, m_baseLayer, m_interner, m_dataLayout),
                     m_stringInterner, descriptor);
-
-    if (function->getName().starts_with("Test.main"))
-    {
-        function->dump();
-    }
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
