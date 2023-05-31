@@ -142,7 +142,8 @@ void jllvm::JIT::optimize(llvm::Module& module)
     options.MergeFunctions = true;
     llvm::PassBuilder passBuilder(m_targetMachine.get(), options, std::nullopt);
 
-    passBuilder.registerOptimizerLastEPCallback([&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
+    passBuilder.registerOptimizerLastEPCallback(
+        [&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
         {
 #if LLVM_ADDRESS_SANITIZER_BUILD
             llvm::AddressSanitizerOptions options;

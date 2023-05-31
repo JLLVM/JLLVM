@@ -66,35 +66,45 @@ ByteCodeOp parseBranchOffset(const char* bytes, std::size_t offset)
     }
 }
 
-template <class OpCode>
-requires(std::is_same_v<OpCode, BIPush>) ByteCodeOp parseBIPush(const char* bytes, std::size_t offset)
+template <std::same_as<BIPush> OpCode>
+ByteCodeOp parseBIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return BIPush{offset, consume<std::int8_t>(bytes)};
 }
 
-template <class OpCode>
-requires(std::is_same_v<OpCode, NewArray>) ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
+template <std::same_as<NewArray> OpCode>
+ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return NewArray{offset, consume<ArrayOp::ArrayType>(bytes)};
 }
 
-template <class OpCode>
-requires(std::is_same_v<OpCode, IInc>) ByteCodeOp parseIInc(const char* bytes, std::size_t offset)
+template <std::same_as<IInc> OpCode>
+ByteCodeOp parseIInc(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return IInc{offset, consume<std::uint8_t>(bytes), consume<std::int8_t>(bytes)};
 }
 
-template <class OpCode>
-requires(std::is_same_v<OpCode, SIPush>) ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
+template <std::same_as<SIPush> OpCode>
+ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return SIPush{offset, consume<std::int16_t>(bytes)};
 }
 
-template <class OpCode>
+template <std::same_as<MultiANewArray> OpCode>
+ByteCodeOp parseMultiANewArray(const char* bytes, std::size_t offset)
+{
+    consume<OpCodes>(bytes);
+    auto index = consume<std::uint16_t>(bytes);
+    auto dimensions = consume<std::uint8_t>(bytes);
+    assert(dimensions >= 1);
+    return MultiANewArray{offset, index, dimensions};
+}
+
+template <class>
 ByteCodeOp parseNotImplemented(const char*, std::size_t)
 {
     llvm::report_fatal_error("NOT YET IMPLEMENTED");

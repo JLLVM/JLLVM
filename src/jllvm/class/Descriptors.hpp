@@ -15,17 +15,17 @@ namespace jllvm
 class BaseType
 {
 public:
-    enum Values
+    enum Values : std::uint8_t
     {
-        Boolean, /// 'Z'
-        Byte,    /// 'B'
-        Char,    /// 'C'
-        Short,   /// 'S'
-        Int,     /// 'I'
-        Float,   /// 'F'
-        Double,  /// 'D'
-        Long,    /// 'J'
-        Void     /// 'V'
+        Boolean = 4, /// 'Z'
+        Char = 5,    /// 'C'
+        Float = 6,   /// 'F'
+        Double = 7,  /// 'D'
+        Byte = 8,    /// 'B'
+        Short = 9,   /// 'S'
+        Int = 10,    /// 'I'
+        Long = 11,   /// 'J'
+        Void         /// 'V'
     };
 
 private:
