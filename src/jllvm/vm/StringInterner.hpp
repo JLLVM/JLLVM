@@ -15,7 +15,7 @@ class StringInterner
     llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_contentToStringMap;
     llvm::BumpPtrAllocator m_allocator;
     ClassLoader& m_classLoader;
-    const ClassObject* m_stringClass{nullptr};
+    ClassObject* m_stringClass{nullptr};
 
     void checkStructure();
 
@@ -25,6 +25,11 @@ public:
     StringInterner(ClassLoader& classLoader) : m_classLoader(classLoader) {}
 
     void loadStringClass();
+
+    ClassObject& getStringClass() const
+    {
+        return *m_stringClass;
+    }
 
     String* intern(llvm::StringRef utf8String);
 

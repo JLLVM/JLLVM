@@ -249,17 +249,18 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::ArrayRef<Field> m_fields;
     // Contains all the bases of this class object. For classes, this contains the superclass (except for 'Object')
     // followed by all direct superinterfaces. For interfaces, this is simply their direct superinterfaces.
-    llvm::ArrayRef<const ClassObject*> m_bases;
+    llvm::ArrayRef<ClassObject*> m_bases;
     llvm::ArrayRef<ITable*> m_iTables;
     llvm::StringRef m_className;
     bool m_isPrimitive = false;
+    bool m_initialized = false;
 
     ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
+                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
                 llvm::StringRef className);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces, llvm::StringRef className);
+                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className);
 
     class SuperclassIterator
         : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
@@ -300,7 +301,7 @@ public:
     /// 'className' is the name of the user class in the JVM internal format.
     static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass, std::size_t vTableSlots,
                                std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                               llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> bases,
+                               llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
                                llvm::StringRef className);
 
     /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
@@ -309,7 +310,7 @@ public:
     /// 'className' is the name of the user class in the JVM internal format.
     static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                         std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                                        llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                                        llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces,
                                         llvm::StringRef className);
 
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
@@ -365,7 +366,7 @@ public:
     const Field* getField(llvm::StringRef fieldName, llvm::StringRef fieldType, bool isStatic) const;
 
     /// Returns all direct superclasses and superinterfaces of the class object.
-    llvm::ArrayRef<const ClassObject*> getBases() const
+    llvm::ArrayRef<ClassObject*> getBases() const
     {
         return m_bases;
     }
@@ -453,6 +454,22 @@ public:
     /// Returns true if an instance of this class object would also be an instance of 'other'.
     /// Not valid for class objects representing interfaces.
     bool wouldBeInstanceOf(const ClassObject* other) const;
+
+    /// Byte offset from the start of the class object to the start of the VTable.
+    constexpr static std::size_t getInitializedOffset()
+    {
+        return offsetof(ClassObject, m_initialized);
+    }
+
+    bool isInitialized() const
+    {
+        return m_initialized;
+    }
+
+    void setInitialized(bool isInitialized)
+    {
+        m_initialized = isInitialized;
+    }
 
     /// Byte offset from the start of the class object to the start of the VTable.
     constexpr static std::size_t getVTableOffset()

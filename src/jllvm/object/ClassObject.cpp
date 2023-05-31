@@ -16,7 +16,7 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                                std::size_t vTableSlots, std::uint32_t fieldAreaSize,
                                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                               llvm::ArrayRef<const ClassObject*> bases, llvm::StringRef className)
+                                               llvm::ArrayRef<ClassObject*> bases, llvm::StringRef className)
 {
     llvm::SmallVector<ITable*> iTables;
     llvm::df_iterator_default_set<const jllvm::ClassObject*> seen;
@@ -46,7 +46,7 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize,
                                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                llvm::ArrayRef<const ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
+                                llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
                                 llvm::StringRef className)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(fieldAreaSize),
@@ -72,16 +72,22 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         arrayFieldAreaSize = llvm::alignTo(arrayFieldAreaSize, sizeof(void*));
     }
 
+    llvm::StringRef className = componentType->getClassName();
     auto* result = create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
-                          stringSaver.save("[L" + componentType->getClassName() + ";"));
+               stringSaver.save(componentType->isClass() || componentType->isInterface() ? "[L" + className + ";" :
+                                                                                           "[" + className));
     result->m_componentTypeOrInterfaceId = componentType;
+    result->m_initialized = true;
     return result;
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
     : ClassObject(nullptr, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name)
 {
-    m_isPrimitive = true; // NOLINT(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
+    // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
+    m_isPrimitive = true;
+    m_initialized = true;
+    // NOLINTEND(*-prefer-member-initializer)
 }
 
 const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm::StringRef fieldType,
@@ -101,7 +107,7 @@ const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm
 }
 
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<const ClassObject*> interfaces,
+                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces,
                                 llvm::StringRef className)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(0),
@@ -116,7 +122,7 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interf
 jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                                         std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                                                         llvm::ArrayRef<Field> fields,
-                                                        llvm::ArrayRef<const ClassObject*> interfaces,
+                                                        llvm::ArrayRef<ClassObject*> interfaces,
                                                         llvm::StringRef className)
 {
     return new (allocator.Allocate<ClassObject>())

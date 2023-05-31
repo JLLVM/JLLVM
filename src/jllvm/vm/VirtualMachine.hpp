@@ -30,6 +30,8 @@ class VirtualMachine
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
 
+    void initialize(ClassObject& classObject);
+
 public:
     VirtualMachine(std::vector<std::string>&& classPath);
 
