@@ -243,7 +243,7 @@ class LazyClassLoaderHelper
                 llvm::cantFail(m_callbackManager.getCompileCallback(
                     [=, *this, fieldDescriptor = fieldDescriptor.str()]
                     {
-                        ClassObject& classObject = m_classLoader.forName(fieldDescriptor);
+                        const ClassObject& classObject = m_classLoader.forName(fieldDescriptor);
 
                         auto context = std::make_unique<llvm::LLVMContext>();
                         auto module = std::make_unique<llvm::Module>(stubSymbol, *context);
@@ -341,7 +341,7 @@ public:
                 llvm::cantFail(m_callbackManager.getCompileCallback(
                     [=, *this, desc = std::make_shared<MethodType>(std::move(desc))]
                     {
-                        ClassObject& classObject = m_classLoader.forName("L" + className + ";");
+                        const ClassObject& classObject = m_classLoader.forName("L" + className + ";");
                         if (classObject.isInitialized())
                         {
                             auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib},
@@ -532,7 +532,8 @@ public:
     }
 
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
-    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, bool mustInitializeClassObject)
+    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
+                                bool mustInitializeClassObject = false)
     {
         return returnConstantForClassObject(
             builder, fieldDescriptor, "", [=](const ClassObject* classObject) { return classObject; },
@@ -975,8 +976,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
             llvm::Value* classObject = helper.getClassObject(
-                builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";",
-                /*mustInitializeClassObject=*/false);
+                builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(classObject))
             {
@@ -1467,12 +1467,11 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             {
                 // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
                 // just the name of the class. Hence, these two cases.
-                classObject = helper.getClassObject(builder, className, /*mustInitializeClassObject=*/false);
+                classObject = helper.getClassObject(builder, className);
             }
             else
             {
-                classObject =
-                    helper.getClassObject(builder, "L" + className + ";", /*mustInitializeClassObject=*/false);
+                classObject = helper.getClassObject(builder, "L" + className + ";");
             }
             // Can throw class loader or linkage related errors.
             generateEHDispatch();
@@ -1735,12 +1734,11 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                     llvm::Value* classObject;
                     if (text.front() == '[')
                     {
-                        classObject = helper.getClassObject(builder, text, /*mustInitializeClassObject=*/false);
+                        classObject = helper.getClassObject(builder, text);
                     }
                     else
                     {
-                        classObject =
-                            helper.getClassObject(builder, "L" + text + ";", /*mustInitializeClassObject=*/false);
+                        classObject = helper.getClassObject(builder, "L" + text + ";");
                     }
                     // If the class was already loaded 'callee' is optimized to a constant and no exception may
                     // occur.
@@ -1797,8 +1795,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::generate(arrayClassObjects.begin(), arrayClassObjects.end(),
                           [&]
                           {
-                              llvm::Value* classObject =
-                                  helper.getClassObject(builder, descriptor, /*mustInitializeClassObject=*/false);
+                              llvm::Value* classObject = helper.getClassObject(builder, descriptor);
                               descriptor = descriptor.drop_front();
 
                               return classObject;
@@ -1898,8 +1895,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             // TODO: throw NegativeArraySizeException
             llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
 
-            llvm::Value* classObject =
-                helper.getClassObject(builder, "[" + descriptor, /*mustInitializeClassObject=*/false);
+            llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may
             // occur.
             if (!llvm::isa<llvm::Constant>(classObject))
