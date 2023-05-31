@@ -232,6 +232,10 @@ class LazyClassLoaderHelper
 
         if (const ClassObject* classObject = m_classLoader.forNameLoaded(fieldDescriptor))
         {
+            if (mustInitializeClassObject && !classObject->isInitialized())
+            {
+                buildClassInitializerInitStub(builder, *classObject);
+            }
             return returnValueToIRConstant(builder, f(classObject));
         }
 
@@ -318,8 +322,13 @@ public:
         llvm::FunctionType* functionType = descriptorToType(desc, isStatic, builder.getContext());
 
         std::string method = mangleMethod(className, methodName, methodType);
-        if (m_classLoader.forNameLoaded("L" + className + ";"))
+        if (const ClassObject* classObject = m_classLoader.forNameLoaded("L" + className + ";"))
         {
+            if (!classObject->isInitialized())
+            {
+                buildClassInitializerInitStub(builder, *classObject);
+            }
+
             // If the class loader is present then the function should have already been registered and we can just
             // return it directly.
             llvm::Module* module = builder.GetInsertBlock()->getModule();
