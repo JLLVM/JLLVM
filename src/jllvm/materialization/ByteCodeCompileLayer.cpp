@@ -689,7 +689,7 @@ struct CodeGen
         builder.SetInsertPoint(continueBlock);
     }
 
-    llvm::Value* generateAllocArray(llvm::StringRef descriptor, llvm::Value* size)
+    llvm::Value* generateAllocArray(llvm::StringRef descriptor, llvm::Value* classObject, llvm::Value* size)
     {
         auto [elementType, elementSize, elementOffset] = match(
             parseFieldType(descriptor.drop_front()),
@@ -702,9 +702,6 @@ struct CodeGen
             [&](auto) -> std::tuple<llvm::Type*, std::size_t, std::size_t> {
                 return {referenceType(builder.getContext()), sizeof(Object*), Array<>::arrayElementsOffset()};
             });
-
-        // TODO: Can throw class loader or linkage related errors.
-        llvm::Value* classObject = helper.getClassObject(builder, descriptor);
 
         // Size required is the size of the array prior to the elements (equal to the offset to the
         // elements) plus element count * element size.
@@ -778,7 +775,7 @@ void CodeGen::codeGenBody(const Code& code)
             }
         }
 
-        codeGenInstruction(operation);
+        codeGenInstruction(std::move(operation));
     }
 }
 
@@ -1685,8 +1682,11 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             llvm::StringRef descriptor =
                 PoolIndex<ClassInfo>{multiANewArray.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
+
             assert(descriptor.size() - descriptor.drop_while([](char c) { return c == '['; }).size()
                    == multiANewArray.dimensions);
+
+            llvm::StringRef className = descriptor;
             std::uint8_t dimensions = multiANewArray.dimensions;
             std::uint8_t iterations = dimensions - 1;
 
@@ -1694,22 +1694,38 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             std::vector<llvm::BasicBlock*> loopEnds{iterations};
 
             std::vector<llvm::Value*> loopCounts{dimensions};
+            std::vector<llvm::Value*> arrayClassObjects{dimensions};
 
-            std::ranges::generate(loopStarts,
-                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "start", function); });
+            std::generate(loopStarts.begin(), loopStarts.end(),
+                          [&] { return llvm::BasicBlock::Create(builder.getContext(), "start", function); });
 
-            std::ranges::generate(loopEnds | std::views::reverse,
-                                  [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
+            std::generate(loopEnds.rbegin(), loopEnds.rend(),
+                          [&] { return llvm::BasicBlock::Create(builder.getContext(), "end", function); });
 
-            std::ranges::generate(loopCounts | std::views::reverse,
-                                  // TODO: throw NegativeArraySizeException
-                                  [&] { return operandStack.pop_back(builder.getInt32Ty()); });
+            std::generate(loopCounts.rbegin(), loopCounts.rend(),
+                          // TODO: throw NegativeArraySizeException
+                          [&] { return operandStack.pop_back(builder.getInt32Ty()); });
+
+            std::generate(arrayClassObjects.begin(), arrayClassObjects.end(),
+                          [&]
+                          {
+                              llvm::Value* classObject = helper.getClassObject(builder, descriptor);
+                              descriptor = descriptor.drop_front();
+
+                              return classObject;
+                          });
+
+            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
+            if (!llvm::isa<llvm::Constant>(arrayClassObjects[0]))
+            {
+                // Can throw class loader or linkage related errors.
+                generateEHDispatch();
+            }
 
             llvm::BasicBlock* done = llvm::BasicBlock::Create(builder.getContext(), "done", function);
 
-            llvm::StringRef className = descriptor;
             llvm::Value* size = loopCounts[0];
-            llvm::Value* array = generateAllocArray(className, size);
+            llvm::Value* array = generateAllocArray(className, arrayClassObjects[0], size);
             llvm::Value* outerArray = array;
             llvm::BasicBlock* nextEnd = done;
 
@@ -1721,6 +1737,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 llvm::BasicBlock* last = builder.GetInsertBlock();
 
                 llvm::Value* innerSize = loopCounts[i + 1];
+                llvm::Value* classObject = arrayClassObjects[i + 1];
 
                 llvm::Value* cmp = builder.CreateICmpSGT(size, builder.getInt32(0));
                 builder.CreateCondBr(cmp, start, nextEnd);
@@ -1730,13 +1747,11 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
                 phi->addIncoming(builder.getInt32(0), last);
 
-                llvm::Value* innerArray = generateAllocArray(className.drop_front(), innerSize);
+                llvm::Value* innerArray = generateAllocArray(className.drop_front(), classObject, innerSize);
 
                 llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), outerArray,
                                                      {builder.getInt32(0), builder.getInt32(2), phi});
                 builder.CreateStore(innerArray, gep);
-
-                outerArray = innerArray;
 
                 builder.SetInsertPoint(end);
 
@@ -1748,6 +1763,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
                 builder.SetInsertPoint(start);
                 className = className.drop_front();
+                outerArray = innerArray;
                 size = innerSize;
                 nextEnd = end;
             }
