@@ -324,7 +324,7 @@ public:
         std::string method = mangleMethod(className, methodName, methodType);
         if (const ClassObject* classObject = m_classLoader.forNameLoaded("L" + className + ";"))
         {
-            if (!classObject->isInitialized())
+            if (isStatic && !classObject->isInitialized())
             {
                 buildClassInitializerInitStub(builder, *classObject);
             }
@@ -351,7 +351,7 @@ public:
                     [=, *this, desc = std::make_shared<MethodType>(std::move(desc))]
                     {
                         const ClassObject& classObject = m_classLoader.forName("L" + className + ";");
-                        if (classObject.isInitialized())
+                        if (!isStatic || classObject.isInitialized())
                         {
                             auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib},
                                                                                                    m_interner(method)))
