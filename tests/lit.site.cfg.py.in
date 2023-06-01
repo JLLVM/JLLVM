@@ -15,6 +15,7 @@ config.jllvm_src_root = "@JLLVM_SOURCE_DIR@"
 config.jllvm_obj_root = "@JLLVM_BINARY_DIR@"
 config.jllvm_tools_dir = "@JLLVM_TOOLS_DIR@"
 config.java_home = "@JAVA_HOME@"
+config.jasmin_src = "@jasmin_SOURCE_DIR@"
 
 # Support substitution of the tools_dir with user parameters. This is
 # used when we can't determine the tool dir at configuration time.

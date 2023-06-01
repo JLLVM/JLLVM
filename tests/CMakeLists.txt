@@ -1,8 +1,11 @@
+CPMAddPackage("gh:davidar/jasmin#2.4")
+
 find_package(Python3 3.6 COMPONENTS Interpreter REQUIRED)
 
 set(JLLVM_TEST_DEPENDS
         FileCheck count not split-file
         jllvm
+        jasmin
         )
 
 configure_file(
