@@ -98,7 +98,6 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
         return *result;
     }
     LLVM_DEBUG({ llvm::dbgs() << "Creating class object for " << className << '\n'; });
-    m_classFileLoaded(&classFile);
 
     // Get super classes and interfaces but only in prepared states!
     // We have a bit of a chicken-egg situation going on here. The JVM spec requires super class and interface
@@ -109,13 +108,13 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     ClassObject* superClass = nullptr;
     if (std::optional<llvm::StringRef> superClassName = classFile.getSuperClass())
     {
-        superClass = &forName("L" + *superClassName + ";", State::Prepared);
+        superClass = &forName("L" + *superClassName + ";");
     }
 
     llvm::SmallVector<ClassObject*> interfaces;
     for (llvm::StringRef iter : classFile.getInterfaces())
     {
-        interfaces.push_back(&forName("L" + iter + ";", State::Prepared));
+        interfaces.push_back(&forName("L" + iter + ";"));
     }
 
     VTableAssignment vTableAssignment =
@@ -196,9 +195,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
                                      methods, fields, interfaces, className);
     }
     m_mapping.insert({("L" + className + ";").str(), result});
-
-    // 5.5 Initialization, step 7: Initialize super class and interfaces recursively.
-    llvm::for_each(interfaces, [this](ClassObject* interface) { initialize(*interface); });
+    m_prepareClassObject(&classFile, *result);
 
     return *result;
 }
@@ -244,15 +241,10 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescripto
     return curr;
 }
 
-jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor, State state)
+jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor)
 {
     if (ClassObject* result = forNameLoaded(fieldDescriptor))
     {
-        if (state == State::Initialized)
-        {
-            // If the state of the class object has to be initialized, initialize it.
-            initialize(*result);
-        }
         return *result;
     }
 
@@ -297,22 +289,14 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor, Sta
 
     llvm::StringRef raw = result->getBuffer();
     ClassFile classFile = ClassFile::parseFromFile({raw.begin(), raw.end()}, m_stringSaver);
-    ClassObject& classObject = add(std::move(result));
-    switch (state)
-    {
-        case State::Prepared: m_uninitialized.insert(&classObject); break;
-        case State::Initialized: m_initializeClassObject(&classObject); break;
-    }
-    return classObject;
+    return add(std::move(result));
 }
 
 jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
-                                llvm::unique_function<void(ClassObject*)>&& initializeClassObject,
-                                llvm::unique_function<void(const ClassFile*)>&& classFileLoaded,
+                                llvm::unique_function<void(const ClassFile*, ClassObject&)>&& prepareClassObject,
                                 llvm::unique_function<void**()> allocateStatic)
     : m_classPaths(std::move(classPaths)),
-      m_initializeClassObject(std::move(initializeClassObject)),
-      m_classFileLoaded(std::move(classFileLoaded)),
+      m_prepareClassObject(std::move(prepareClassObject)),
       m_allocateStatic(std::move(allocateStatic))
 {
     m_mapping.insert({"B", &m_byte});
@@ -326,17 +310,9 @@ jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
     m_mapping.insert({"V", &m_void});
 }
 
-const jllvm::ClassObject& jllvm::ClassLoader::addAndInitialize(std::unique_ptr<llvm::MemoryBuffer>&& memoryBuffer)
+jllvm::ClassObject& jllvm::ClassLoader::loadBootstrapClasses()
 {
-    ClassObject& classObject = add(std::move(memoryBuffer));
-    m_initializeClassObject(&classObject);
-    return classObject;
-}
-
-void jllvm::ClassLoader::loadBootstrapClasses()
-{
-    // Loading in a prepared state only to avoid running the initializer (just to be safe).
-    m_metaClassObject = &forName("Ljava/lang/Class;", State::Prepared);
+    m_metaClassObject = &forName("Ljava/lang/Class;");
 
     // With the meta class object loaded we can update all so far loaded class objects to be of type 'Class'.
     // This includes 'Class' itself.
@@ -344,7 +320,5 @@ void jllvm::ClassLoader::loadBootstrapClasses()
     {
         classObject->getObjectHeader().classObject = m_metaClassObject;
     }
-
-    // Initialize it with the now "more defined" state.
-    initialize(*m_metaClassObject);
+    return *m_metaClassObject;
 }

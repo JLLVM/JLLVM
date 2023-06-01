@@ -117,27 +117,15 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
     : m_classLoader(
         std::move(classPath),
-        [&](ClassObject* classObject)
+        [this](const ClassFile* classFile, ClassObject& classObject)
         {
-            if (auto classInitializer = m_jit.lookup(classObject->getClassName(), "<clinit>", "()V"))
-            {
-                LLVM_DEBUG({
-                    llvm::dbgs() << "Executing class initializer "
-                                 << mangleMethod(classObject->getClassName(), "<clinit>", "()V") << '\n';
-                });
-                reinterpret_cast<void (*)()>(classInitializer->getAddress())();
-            }
-            else
-            {
-                llvm::consumeError(classInitializer.takeError());
-            }
-
-            if (classObject->isInterface())
+            m_jit.add(classFile);
+            if (classObject.isInterface())
             {
                 return;
             }
 
-            for (const ClassObject* curr : classObject->getSuperClasses())
+            for (const ClassObject* curr : classObject.getSuperClasses())
             {
                 for (const Method& iter : curr->getMethods())
                 {
@@ -146,27 +134,26 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                     {
                         continue;
                     }
-                    classObject->getVTable()[*slot] = methodSelection(m_jit, classObject, iter, curr);
+                    classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
                 }
             }
 
             llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
-            for (const ClassObject* interface : classObject->getAllInterfaces())
+            for (const ClassObject* interface : classObject.getAllInterfaces())
             {
                 idToInterface[interface->getInterfaceId()] = interface;
             }
 
-            for (ITable* iTable : classObject->getITables())
+            for (ITable* iTable : classObject.getITables())
             {
                 const ClassObject* interface = idToInterface[iTable->getId()];
                 for (auto&& [index, method] : llvm::enumerate(llvm::make_filter_range(
                          interface->getMethods(), [](const Method& method) { return !method.isStatic(); })))
                 {
-                    iTable->getMethods()[index] = methodSelection(m_jit, classObject, method, interface);
+                    iTable->getMethods()[index] = methodSelection(m_jit, &classObject, method, interface);
                 }
             }
         },
-        [this](const ClassFile* classFile) { m_jit.add(classFile); },
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_stringInterner(m_classLoader),
       m_gc(/*small random value for now*/ 4096),
@@ -189,13 +176,20 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                       auto* object = static_cast<Object*>(root);
                       m_gc.deleteRoot(root);
                       return object;
+                  }},
+        std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
+                  {
+                      // This should have been checked inline in LLVM IR.
+                      assert(!classObject->isInitialized());
+                      initialize(*classObject);
                   }});
 
     registerJavaClasses(*this);
 
-    m_classLoader.loadBootstrapClasses();
+    initialize(m_classLoader.loadBootstrapClasses());
 
     m_stringInterner.loadStringClass();
+    initialize(m_stringInterner.getStringClass());
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)
@@ -206,7 +200,8 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
         llvm::report_fatal_error("Failed to open " + path);
     }
 
-    const ClassObject& classObject = m_classLoader.addAndInitialize(std::move(*buffer));
+    ClassObject& classObject = m_classLoader.add(std::move(*buffer));
+    initialize(classObject);
     auto lookup = m_jit.lookup(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
     if (!lookup)
     {
@@ -236,4 +231,43 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 std::int32_t jllvm::VirtualMachine::createNewHashCode()
 {
     return m_hashIntDistrib(m_pseudoGen);
+}
+
+void jllvm::VirtualMachine::initialize(ClassObject& classObject)
+{
+    if (classObject.isInitialized())
+    {
+        return;
+    }
+
+    classObject.setInitialized(true);
+
+    // 5.5 Step 7:
+    // Next, if C is a class rather than an interface, then let SC be its superclass and let SI1, ..., SIn be
+    // all superinterfaces of C (whether direct or indirect) that declare at least one non-abstract, non-static
+    // method. The order of superinterfaces is given by a recursive enumeration over the superinterface
+    // hierarchy of each interface directly implemented by C. For each interface I directly implemented by C (in
+    // the order of the interfaces array of C), the enumeration recurs on I's superinterfaces (in the order of
+    // the interfaces array of I) before returning I.
+    //
+    // For each S in the list [ SC, SI1, ..., SIn ], if S has not yet been initialized, then recursively perform
+    // this entire procedure for S. If necessary, verify and prepare S first.
+    // TODO: Implement above in detail.
+    for (ClassObject* base : classObject.getBases())
+    {
+        initialize(*base);
+    }
+
+    auto classInitializer = m_jit.lookup(classObject.getClassName(), "<clinit>", "()V");
+    if (!classInitializer)
+    {
+        llvm::consumeError(classInitializer.takeError());
+        return;
+    }
+
+    LLVM_DEBUG({
+        llvm::dbgs() << "Executing class initializer " << mangleMethod(classObject.getClassName(), "<clinit>", "()V")
+                     << '\n';
+    });
+    reinterpret_cast<void (*)()>(classInitializer->getAddress())();
 }

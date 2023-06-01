@@ -193,9 +193,36 @@ class LazyClassLoaderHelper
     llvm::DataLayout m_dataLayout;
     llvm::Triple m_triple;
 
+    void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject) const
+    {
+        llvm::Function* function = builder.GetInsertBlock()->getParent();
+        llvm::Module* module = function->getParent();
+
+        llvm::Value* classObjectLLVM =
+            builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(&classObject)), builder.getPtrTy());
+        auto* initializedGEP = builder.CreateGEP(builder.getInt8Ty(), classObjectLLVM,
+                                                 builder.getInt32(ClassObject::getInitializedOffset()));
+        auto* initialized =
+            builder.CreateICmpNE(builder.CreateLoad(builder.getInt8Ty(), initializedGEP), builder.getInt8(0));
+
+        auto* classInitializer = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+        builder.CreateCondBr(initialized, continueBlock, classInitializer);
+
+        builder.SetInsertPoint(classInitializer);
+
+        builder.CreateCall(module->getOrInsertFunction("jllvm_initialize_class_object", builder.getVoidTy(),
+                                                       classObjectLLVM->getType()),
+                           classObjectLLVM);
+
+        builder.CreateBr(continueBlock);
+
+        builder.SetInsertPoint(continueBlock);
+    }
+
     template <class F>
     llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::Twine key,
-                                              F&& f)
+                                              F&& f, bool mustInitializeClassObject)
     {
         auto returnValueToIRConstant = [](llvm::IRBuilder<>& builder, const auto& retVal)
         {
@@ -205,6 +232,10 @@ class LazyClassLoaderHelper
 
         if (const ClassObject* classObject = m_classLoader.forNameLoaded(fieldDescriptor))
         {
+            if (mustInitializeClassObject && !classObject->isInitialized())
+            {
+                buildClassInitializerInitStub(builder, *classObject);
+            }
             return returnValueToIRConstant(builder, f(classObject));
         }
 
@@ -232,6 +263,11 @@ class LazyClassLoaderHelper
                         auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
                                                                 stubSymbol, module.get());
                         llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+
+                        if (mustInitializeClassObject && !classObject.isInitialized())
+                        {
+                            buildClassInitializerInitStub(builder, classObject);
+                        }
 
                         builder.CreateRet(returnValueToIRConstant(builder, f(&classObject)));
 
@@ -274,6 +310,8 @@ public:
           m_classLoader(classLoader),
           m_interner(interner)
     {
+        m_mainDylib.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
+                                    { m_implDylib.setLinkOrder(dylibSearchOrder); });
     }
 
     /// Returns a pointer to the function 'methodName' of the type 'methodType' within 'className.
@@ -284,8 +322,13 @@ public:
         llvm::FunctionType* functionType = descriptorToType(desc, isStatic, builder.getContext());
 
         std::string method = mangleMethod(className, methodName, methodType);
-        if (m_classLoader.forNameLoaded("L" + className + ";"))
+        if (const ClassObject* classObject = m_classLoader.forNameLoaded("L" + className + ";"))
         {
+            if (isStatic && !classObject->isInitialized())
+            {
+                buildClassInitializerInitStub(builder, *classObject);
+            }
+
             // If the class loader is present then the function should have already been registered and we can just
             // return it directly.
             llvm::Module* module = builder.GetInsertBlock()->getModule();
@@ -305,13 +348,59 @@ public:
             llvm::cantFail(m_stubsManager.createStub(
                 stubName,
                 llvm::cantFail(m_callbackManager.getCompileCallback(
-                    [=, *this]
+                    [=, *this, desc = std::make_shared<MethodType>(std::move(desc))]
                     {
-                        m_classLoader.forName("L" + className + ";");
-                        auto address =
-                            llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib}, m_interner(method)))
-                                .getAddress();
+                        const ClassObject& classObject = m_classLoader.forName("L" + className + ";");
+                        if (!isStatic || classObject.isInitialized())
+                        {
+                            auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib},
+                                                                                                   m_interner(method)))
+                                               .getAddress();
+                            llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
+                            return address;
+                        }
+
+                        // Create small trampoline initializing the class object.
+
+                        auto context = std::make_unique<llvm::LLVMContext>();
+                        auto module = std::make_unique<llvm::Module>(stubName, *context);
+
+                        module->setDataLayout(m_dataLayout);
+                        module->setTargetTriple(m_triple.str());
+
+                        auto* functionType = descriptorToType(*desc, isStatic, *context);
+
+                        auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
+                                                                stubName, module.get());
+                        llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+
+                        buildClassInitializerInitStub(builder, classObject);
+
+                        llvm::SmallVector<llvm::Value*> args;
+                        for (llvm::Argument& arg : function->args())
+                        {
+                            args.push_back(&arg);
+                        }
+
+                        auto* result = builder.CreateCall(module->getOrInsertFunction(method, functionType), args);
+                        if (builder.getCurrentFunctionReturnType()->isVoidTy())
+                        {
+                            builder.CreateRetVoid();
+                        }
+                        else
+                        {
+                            builder.CreateRet(result);
+                        }
+
+                        llvm::cantFail(m_baseLayer.add(
+                            m_implDylib, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+                        auto address = llvm::cantFail(m_implDylib.getExecutionSession().lookup({&m_implDylib},
+                                                                                               m_interner(stubName)))
+                                           .getAddress();
+
                         llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
+
                         return address;
                     })),
                 llvm::JITSymbolFlags::Exported));
@@ -335,7 +424,8 @@ public:
                                                     ->getField(fieldName, fieldType,
                                                                /*isStatic=*/false)
                                                     ->getOffset();
-                                            });
+            },
+            /*mustInitializeClassObject=*/false);
     }
 
     llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
@@ -382,7 +472,8 @@ public:
                                                 // is chosen and method lookup succeeds.
 
                                                 llvm_unreachable("method not found");
-                                            });
+            },
+            /*mustInitializeClassObject=*/false);
     }
 
     /// Returns an LLVM integer containing the iTable offset in the lower 8 bits and the id of the interface, whose
@@ -433,7 +524,8 @@ public:
                 }
 
                 llvm_unreachable("method not found");
-            });
+            },
+            /*mustInitializeClassObject=*/false);
     }
 
     /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
@@ -444,14 +536,17 @@ public:
         return returnConstantForClassObject(
             builder, "L" + className + ";", fieldName + ";" + fieldType,
             [=](const ClassObject* classObject)
-            { return classObject->getField(fieldName, fieldType, /*isStatic=*/true)->getAddressOfStatic(); });
+            { return classObject->getField(fieldName, fieldType, /*isStatic=*/true)->getAddressOfStatic(); },
+            /*mustInitializeClassObject=*/true);
     }
 
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
-    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor)
+    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
+                                bool mustInitializeClassObject = false)
     {
-        return returnConstantForClassObject(builder, fieldDescriptor, "",
-                                            [=](const ClassObject* classObject) { return classObject; });
+        return returnConstantForClassObject(
+            builder, fieldDescriptor, "", [=](const ClassObject* classObject) { return classObject; },
+            mustInitializeClassObject);
     }
 };
 
@@ -1778,7 +1873,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::StringRef className =
                 PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
 
-            llvm::Value* classObject = helper.getClassObject(builder, "L" + className + ";");
+            llvm::Value* classObject =
+                helper.getClassObject(builder, "L" + className + ";", /*mustInitializeClassObject=*/true);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may
             // occur.
             if (!llvm::isa<llvm::Constant>(classObject))
