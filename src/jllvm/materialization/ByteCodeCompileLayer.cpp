@@ -119,15 +119,15 @@ class OperandStack
 {
     std::vector<std::pair<llvm::AllocaInst*, llvm::Type*>> m_values;
     llvm::IRBuilder<>& m_builder;
-    size_t m_topOfStack{};
+    std::size_t m_topOfStack{};
 
 public:
     OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder) : m_builder(builder), m_values(maxStack)
     {
-        std::generate(
-            m_values.begin(), m_values.end(),
-            [&]
-            { return std::make_pair(builder.CreateAlloca(llvm::PointerType::get(builder.getContext(), 0)), nullptr); });
+        std::generate(m_values.begin(), m_values.end(),
+                      [&] {
+                          return std::pair{builder.CreateAlloca(builder.getPtrTy()), nullptr};
+                      });
     }
 
     llvm::Value* pop_back(llvm::Type* expected = nullptr)
@@ -155,19 +155,21 @@ public:
         m_builder.CreateStore(value, alloc);
     }
 
-    size_t getTopOfStack() const
+    std::size_t getTopOfStackIndex() const
     {
         return m_topOfStack;
     }
 
-    llvm::AllocaInst* getBottomOfStack() const
+    void setBottomOfStack(llvm::Value* value)
     {
-        return m_values.front().first;
+        auto& [alloc, type] = m_values.front();
+        type = value->getType();
+        m_builder.CreateStore(value, alloc);
     }
 
-    void setTopOfStack(size_t topOfStack)
+    void setTopOfStackIndex(std::size_t topOfStackIndex)
     {
-        m_topOfStack = topOfStack;
+        m_topOfStack = topOfStackIndex;
     }
 };
 
@@ -671,7 +673,7 @@ struct CodeGen
             // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
             // required that we register that fact in 'basicBlockStackPointers' explicitly.
             result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            basicBlockStackPointers.insert({result->second, operandStack.getTopOfStack() + 1});
+            basicBlockStackPointers.insert({result->second, operandStack.getTopOfStackIndex() + 1});
         }
     }
 
@@ -706,7 +708,7 @@ struct CodeGen
                 // Catch all used to implement 'finally'.
                 // Set exception object as only object on the stack and clear the active exception.
                 builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
-                builder.CreateStore(phi, operandStack.getBottomOfStack());
+                operandStack.setBottomOfStack(phi);
                 builder.CreateBr(handlerBB);
                 return ehHandler;
             }
@@ -738,7 +740,7 @@ struct CodeGen
 
             builder.SetInsertPoint(jumpToHandler);
             // Set exception object as only object on the stack and clear the active exception.
-            builder.CreateStore(phi, operandStack.getBottomOfStack());
+            operandStack.setBottomOfStack(phi);
             builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
             builder.CreateBr(handlerBB);
 
@@ -834,7 +836,8 @@ void CodeGen::codeGenBody(const Code& code)
     llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
-        if (auto result = endHandlers.find(getOffset(operation)); result != endHandlers.end())
+        std::size_t offset = getOffset(operation);
+        if (auto result = endHandlers.find(offset); result != endHandlers.end())
         {
             for (auto iter : result->second)
             {
@@ -844,7 +847,7 @@ void CodeGen::codeGenBody(const Code& code)
             endHandlers.erase(result);
         }
 
-        if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
+        if (auto result = startHandlers.find(offset); result != startHandlers.end())
         {
             for (const Code::ExceptionTable& iter : result->second)
             {
@@ -855,21 +858,21 @@ void CodeGen::codeGenBody(const Code& code)
             startHandlers.erase(result);
         }
 
-        if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
+        if (auto result = basicBlocks.find(offset); result != basicBlocks.end())
         {
             // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
             // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
             // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
-                basicBlockStackPointers.insert({result->second, operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({result->second, operandStack.getTopOfStackIndex()});
                 builder.CreateBr(result->second);
             }
             builder.SetInsertPoint(result->second);
             if (auto resultStackPointer = basicBlockStackPointers.find(result->second);
                 resultStackPointer != basicBlockStackPointers.end())
             {
-                operandStack.setTopOfStack(resultStackPointer->second);
+                operandStack.setTopOfStackIndex(resultStackPointer->second);
             }
         }
 
@@ -1361,7 +1364,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](Goto gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
-            basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStack()});
+            basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStackIndex()});
             builder.CreateBr(basicBlocks[index]);
         },
         // TODO: GotoW
@@ -1448,8 +1451,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
-            basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-            basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
+            basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStackIndex()});
+            basicBlockStackPointers.insert({next, operandStack.getTopOfStackIndex()});
             builder.CreateCondBr(cond, basicBlock, next);
         },
         [&](IInc iInc)

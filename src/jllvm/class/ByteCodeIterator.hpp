@@ -113,7 +113,7 @@ inline auto byteCodeRange(llvm::ArrayRef<char> current)
     return llvm::make_range(ByteCodeIterator(current.begin()), ByteCodeIterator(current.end()));
 }
 
-inline auto getOffset(const ByteCodeOp& op)
+inline std::size_t getOffset(const ByteCodeOp& op)
 {
     return match(op, [](const auto& op) { return op.offset; });
 }
