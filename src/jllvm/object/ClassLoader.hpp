@@ -47,9 +47,8 @@ class ClassLoader
 
 public:
     /// Constructs a class loader with 'classPaths', which are all directories that class files will be searched for.
-    /// 'initializeClassObject' is called for the initialization step of a class object and should at the very least
-    /// call the class initialization function of the class object.
-    /// 'classFileLoaded' is called when a class file has been loaded and is being used by the class loader.
+    /// 'prepareClassObject' is called when a class file has been loaded and a class object derived from it. This can
+    /// be used to register the class object or prepare it in an additional action outside of the class loader.
     /// 'allocateStatic' should allocate and return 'pointer sized' storage for any static variables of reference type.
     ClassLoader(std::vector<std::string>&& classPaths,
                 llvm::unique_function<void(const ClassFile*, ClassObject&)>&& prepareClassObject,
