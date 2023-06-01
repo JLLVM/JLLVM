@@ -182,6 +182,27 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                       // This should have been checked inline in LLVM IR.
                       assert(!classObject->isInitialized());
                       initialize(*classObject);
+                  }},
+        std::pair{"jllvm_build_class_cast_exception", [&](Object* object, ClassObject* classObject)
+                  {
+                      llvm::StringRef className = object->getClass()->getClassName();
+                      llvm::StringRef prefix;
+                      std::string name;
+                      if (classObject->isClass() || classObject->isInterface())
+                      {
+                          prefix = "class";
+                          name = classObject->getClassName();
+                      }
+                      else
+                      {
+                          // TODO: Pretty print array
+                      }
+                      String* string = m_stringInterner.intern(
+                          llvm::formatv("class {0} cannot be cast to {1} {2}", className, prefix, name).str());
+                      GCUniqueRoot root =
+                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/ClassCastException;")));
+                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
+                      return static_cast<Object*>(root);
                   }});
 
     registerJavaClasses(*this);

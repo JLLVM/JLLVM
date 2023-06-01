@@ -4,6 +4,8 @@
 #include <llvm/ExecutionEngine/Orc/Layer.h>
 #include <llvm/IR/IRBuilder.h>
 
+#include "ByteCodeCompileUtils.hpp"
+
 namespace jllvm
 {
 /// Struct that should be specialized to provide a mapping between C++ and LLVM types and constants.
@@ -73,7 +75,7 @@ struct CppToLLVMType<void>
 
 /// Specialization for any pointer type.
 template <class T>
-struct CppToLLVMType<T*>
+requires(!std::is_base_of_v<ObjectInterface, T>) struct CppToLLVMType<T*>
 {
     static llvm::Type* get(llvm::LLVMContext* context)
     {
@@ -83,6 +85,22 @@ struct CppToLLVMType<T*>
     static llvm::Value* getConstant(T* value, llvm::IRBuilder<>& builder)
     {
         return builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(value)),
+                                      get(&builder.getContext()));
+    }
+};
+
+/// Specialization for Objects type.
+template <std::derived_from<ObjectInterface> T>
+struct CppToLLVMType<T*>
+{
+    static llvm::Type* get(llvm::LLVMContext* context)
+    {
+        return referenceType(*context);
+    }
+
+    static llvm::Value* getConstant(const jllvm::ObjectInterface* object, llvm::IRBuilder<>& builder)
+    {
+        return builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(object)),
                                       get(&builder.getContext()));
     }
 };
