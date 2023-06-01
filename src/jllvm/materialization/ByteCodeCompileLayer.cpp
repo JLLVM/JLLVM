@@ -119,11 +119,10 @@ class OperandStack
 {
     std::vector<std::pair<llvm::AllocaInst*, llvm::Type*>> m_values;
     llvm::IRBuilder<>& m_builder;
-    size_t m_topOfStack;
+    size_t m_topOfStack{};
 
 public:
-    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder)
-        : m_builder(builder), m_values(maxStack), m_topOfStack{0}
+    OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder) : m_builder(builder), m_values(maxStack)
     {
         std::generate(
             m_values.begin(), m_values.end(),
@@ -135,7 +134,9 @@ public:
     {
         auto [alloc, type] = m_values[--m_topOfStack];
         if (expected)
+        {
             type = expected;
+        }
 
         return m_builder.CreateLoad(type, alloc);
     }
