@@ -176,6 +176,11 @@ llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType& typ
         [&](const auto&) { return value; });
 }
 
+bool isCategoryTwo(llvm::Type* type)
+{
+    return type->isIntegerTy(64) || type->isDoubleTy();
+}
+
 /// Class for operand stack
 /// This class also offers method to get and set the current top of stack in order to consider the control flow path
 class OperandStack
@@ -637,7 +642,7 @@ struct CodeGen
     OperandStack operandStack;
     std::vector<llvm::AllocaInst*> locals;
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> basicBlockStackPointers;
+    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> basicBlockStackStates;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
@@ -710,9 +715,9 @@ struct CodeGen
                 continue;
             }
             // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
-            // required that we register that fact in 'basicBlockStackPointers' explicitly.
+            // required that we register that fact in 'basicBlockStackStates' explicitly.
             result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            basicBlockStackPointers.insert({result->second, operandStack.getHandlerState()});
+            basicBlockStackStates.insert({result->second, operandStack.getHandlerState()});
         }
     }
 
@@ -904,12 +909,12 @@ void CodeGen::codeGenBody(const Code& code)
             // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
-                basicBlockStackPointers.insert({result->second, operandStack.saveState()});
+                basicBlockStackStates.insert({result->second, operandStack.saveState()});
                 builder.CreateBr(result->second);
             }
             builder.SetInsertPoint(result->second);
-            if (auto resultStackPointer = basicBlockStackPointers.find(result->second);
-                resultStackPointer != basicBlockStackPointers.end())
+            if (auto resultStackPointer = basicBlockStackStates.find(result->second);
+                resultStackPointer != basicBlockStackStates.end())
             {
                 operandStack.restoreState(resultStackPointer->second);
             }
@@ -1067,14 +1072,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
                   DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
-                [&](OneOf<AStore0, AStore1, AStore2, AStore3>) { return referenceType(builder.getContext()); },
-                [&](OneOf<DStore0, DStore1, DStore2, DStore3>) { return builder.getDoubleTy(); },
-                [&](OneOf<FStore0, FStore1, FStore2, FStore3>) { return builder.getFloatTy(); },
-                [&](OneOf<IStore0, IStore1, IStore2, IStore3>) { return builder.getInt32Ty(); },
-                [&](OneOf<LStore0, LStore1, LStore2, LStore3>) { return builder.getInt64Ty(); });
-
             auto index = match(
                 operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
                 [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0>) { return 0; },
@@ -1086,8 +1083,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](AThrow)
         {
-            llvm::Type* reference = referenceType(builder.getContext());
-
             llvm::Value* exception = operandStack.pop_back();
 
             builder.CreateStore(exception, activeException(function->getParent()));
@@ -1372,7 +1367,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](Goto gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
-            basicBlockStackPointers.insert({basicBlocks[index], operandStack.saveState()});
+            basicBlockStackStates.insert({basicBlocks[index], operandStack.saveState()});
             builder.CreateBr(basicBlocks[index]);
         },
         // TODO: GotoW
@@ -1454,8 +1449,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
-            basicBlockStackPointers.insert({basicBlock, operandStack.saveState()});
-            basicBlockStackPointers.insert({next, operandStack.saveState()});
+            basicBlockStackStates.insert({basicBlock, operandStack.saveState()});
+            basicBlockStackStates.insert({next, operandStack.saveState()});
             builder.CreateCondBr(cond, basicBlock, next);
         },
         [&](IInc iInc)
@@ -1471,6 +1466,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
+            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
@@ -1858,9 +1854,16 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             operandStack.push_back(object);
         },
-        // TODO: Nop
-        [&](Pop) { operandStack.pop_back(); },
-        // TODO: Pop2
+        [](Nop) {}, [&](Pop) { operandStack.pop_back(); },
+        [&](Pop2)
+        {
+            llvm::Type* type = operandStack.pop_back_with_type().second;
+            if (!isCategoryTwo(type))
+            {
+                // Form 1: pop two values of a category 1 computational type
+                operandStack.pop_back();
+            }
+        },
         [&](PutField putField)
         {
             const auto* refInfo = PoolIndex<FieldRefInfo>{putField.index}.resolve(classFile);
@@ -1925,8 +1928,15 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         // TODO: Ret
         [&](Return) { builder.CreateRetVoid(); },
-        [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); }
-        // TODO: Swap
+        [&](SIPush siPush) { operandStack.push_back(builder.getInt32(siPush.value)); },
+        [&](Swap)
+        {
+            llvm::Value* value1 = operandStack.pop_back();
+            llvm::Value* value2 = operandStack.pop_back();
+
+            operandStack.push_back(value1);
+            operandStack.push_back(value2);
+        }
         // TODO: TableSwitch
         // TODO: Wide
     );
