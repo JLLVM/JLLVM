@@ -207,15 +207,10 @@ public:
         std::generate(m_values.begin(), m_values.end(), [&] { return builder.CreateAlloca(builder.getPtrTy()); });
     }
 
-    llvm::Value* pop_back(llvm::Type* expected = nullptr)
+    llvm::Value* pop_back()
     {
         llvm::AllocaInst* alloc = m_values[--m_topOfStack];
         llvm::Type* type = m_types[m_topOfStack];
-        if (expected)
-        {
-            type = expected;
-        }
-
         return m_builder.CreateLoad(type, alloc);
     }
 
@@ -247,7 +242,7 @@ public:
 
     State getHandlerState() const
     {
-        return {{jllvm::referenceType(m_builder.getContext())}, 1u};
+        return {{jllvm::referenceType(m_builder.getContext())}, 1};
     }
 
     void setHandlerStack(llvm::Value* value)
@@ -1107,7 +1102,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](OneOf<CheckCast, InstanceOf> op)
         {
             llvm::PointerType* ty = referenceType(builder.getContext());
-            llvm::Value* object = operandStack.pop_back(ty);
+            llvm::Value* object = operandStack.pop_back();
             llvm::Value* null = llvm::ConstantPointerNull::get(ty);
 
             llvm::Value* isNull = builder.CreateICmpEQ(object, null);
@@ -1476,13 +1471,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
 
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1558,13 +1550,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
 
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1600,13 +1589,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef methodName =
