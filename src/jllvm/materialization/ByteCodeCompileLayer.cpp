@@ -1080,6 +1080,60 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* res = builder.getInt32(biPush.value);
             operandStack.push_back(res);
         },
+        [&](OneOf<CheckCast, InstanceOf> op)
+        {
+            llvm::PointerType* ty = referenceType(builder.getContext());
+            llvm::Value* object = operandStack.pop_back(ty);
+            llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+
+            llvm::Value* isNull = builder.CreateICmpEQ(object, null);
+            auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            llvm::BasicBlock* block = builder.GetInsertBlock();
+            builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
+
+            builder.SetInsertPoint(instanceOfBlock);
+
+            llvm::Value* classObject = loadClassObjectFromPool(op.index);
+
+            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), {ty, ty}, false));
+            llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
+
+            match(
+                operation, [](...) { llvm_unreachable("Invalid operation"); },
+                [&](InstanceOf)
+                {
+                    builder.CreateBr(continueBlock);
+
+                    builder.SetInsertPoint(continueBlock);
+                    llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                    // null references always return 0.
+                    phi->addIncoming(builder.getInt32(0), block);
+                    phi->addIncoming(call, call->getParent());
+
+                    operandStack.push_back(phi);
+                },
+                [&](CheckCast)
+                {
+                    operandStack.push_back(object);
+                    auto* throwBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                    builder.CreateCondBr(builder.CreateTrunc(call, builder.getInt1Ty()), continueBlock, throwBlock);
+
+                    builder.SetInsertPoint(throwBlock);
+
+                    llvm::Value* exception = builder.CreateCall(
+                        function->getParent()->getOrInsertFunction("jllvm_build_class_cast_exception",
+                                                                   llvm::FunctionType::get(ty, {ty, ty}, false)),
+                        {object, classObject});
+
+                    builder.CreateStore(exception, activeException(function->getParent()));
+
+                    builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
+
+                    builder.SetInsertPoint(continueBlock);
+                });
+        },
         [&](D2F)
         {
             llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
@@ -1440,60 +1494,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
             builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
-        },
-        [&](OneOf<InstanceOf, CheckCast> op)
-        {
-            llvm::PointerType* ty = referenceType(builder.getContext());
-            llvm::Value* object = operandStack.pop_back(ty);
-            llvm::Value* null = llvm::ConstantPointerNull::get(ty);
-
-            llvm::Value* isNull = builder.CreateICmpEQ(object, null);
-            auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            llvm::BasicBlock* block = builder.GetInsertBlock();
-            builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
-
-            builder.SetInsertPoint(instanceOfBlock);
-
-            llvm::Value* classObject = loadClassObjectFromPool(op.index);
-
-            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
-                "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), {ty, ty}, false));
-            llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
-
-            match(
-                operation, [](...) { llvm_unreachable("Invalid operation"); },
-                [&](InstanceOf)
-                {
-                    builder.CreateBr(continueBlock);
-
-                    builder.SetInsertPoint(continueBlock);
-                    llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-                    // null references always return 0.
-                    phi->addIncoming(builder.getInt32(0), block);
-                    phi->addIncoming(call, call->getParent());
-
-                    operandStack.push_back(phi);
-                },
-                [&](CheckCast)
-                {
-                    operandStack.push_back(object);
-                    auto* throwBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-                    builder.CreateCondBr(builder.CreateTrunc(call, builder.getInt1Ty()), continueBlock, throwBlock);
-
-                    builder.SetInsertPoint(throwBlock);
-
-                    llvm::Value* exception = builder.CreateCall(
-                        function->getParent()->getOrInsertFunction("jllvm_build_class_cast_exception",
-                                                                   llvm::FunctionType::get(ty, {ty, ty}, false)),
-                        {object, classObject});
-
-                    builder.CreateStore(exception, activeException(function->getParent()));
-
-                    builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
-
-                    builder.SetInsertPoint(continueBlock);
-                });
         },
         // TODO: InvokeDynamic
         [&](InvokeInterface invokeInterface)
