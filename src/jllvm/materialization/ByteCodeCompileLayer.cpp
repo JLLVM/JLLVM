@@ -18,26 +18,6 @@
 
 using namespace jllvm;
 
-template <>
-struct jllvm::CppToLLVMType<const jllvm::ClassObject*>
-{
-    static llvm::Type* get(llvm::LLVMContext* context)
-    {
-        return referenceType(*context);
-    }
-
-    static llvm::Value* getConstant(const jllvm::ClassObject* classObject, llvm::IRBuilder<>& builder)
-    {
-        return builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)),
-                                      get(&builder.getContext()));
-    }
-};
-
-template <>
-struct jllvm::CppToLLVMType<jllvm::ClassObject*> : CppToLLVMType<const jllvm::ClassObject*>
-{
-};
-
 namespace
 {
 auto objectHeaderType(llvm::LLVMContext& context)
@@ -815,6 +795,21 @@ struct CodeGen
         return array;
     }
 
+    llvm::Value* loadClassObjectFromPool(PoolIndex<ClassInfo> index)
+    {
+        llvm::StringRef className = index.resolve(classFile)->nameIndex.resolve(classFile)->text;
+        // TODO: If we ever bother verifying class files then the below could throw verification related exceptions
+        //       (not initialization related since those happen later).
+        if (className.front() == '[')
+        {
+            // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
+            // just the name of the class. Hence, these two cases.
+            return helper.getClassObject(builder, className);
+        }
+
+        return helper.getClassObject(builder, "L" + className + ";");
+    }
+
     void codeGenBody(const Code& code);
 
     void codeGenInstruction(ByteCodeOp operation);
@@ -986,12 +981,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             llvm::Value* classObject = helper.getClassObject(
                 builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(classObject))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -1091,7 +1080,60 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* res = builder.getInt32(biPush.value);
             operandStack.push_back(res);
         },
-        // TODO: CheckCast
+        [&](OneOf<CheckCast, InstanceOf> op)
+        {
+            llvm::PointerType* ty = referenceType(builder.getContext());
+            llvm::Value* object = operandStack.pop_back(ty);
+            llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+
+            llvm::Value* isNull = builder.CreateICmpEQ(object, null);
+            auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+            llvm::BasicBlock* block = builder.GetInsertBlock();
+            builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
+
+            builder.SetInsertPoint(instanceOfBlock);
+
+            llvm::Value* classObject = loadClassObjectFromPool(op.index);
+
+            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), {ty, ty}, false));
+            llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
+
+            match(
+                operation, [](...) { llvm_unreachable("Invalid operation"); },
+                [&](InstanceOf)
+                {
+                    builder.CreateBr(continueBlock);
+
+                    builder.SetInsertPoint(continueBlock);
+                    llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                    // null references always return 0.
+                    phi->addIncoming(builder.getInt32(0), block);
+                    phi->addIncoming(call, call->getParent());
+
+                    operandStack.push_back(phi);
+                },
+                [&](CheckCast)
+                {
+                    operandStack.push_back(object);
+                    auto* throwBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
+                    builder.CreateCondBr(builder.CreateTrunc(call, builder.getInt1Ty()), continueBlock, throwBlock);
+
+                    builder.SetInsertPoint(throwBlock);
+
+                    llvm::Value* exception = builder.CreateCall(
+                        function->getParent()->getOrInsertFunction("jllvm_build_class_cast_exception",
+                                                                   llvm::FunctionType::get(ty, {ty, ty}, false)),
+                        {object, classObject});
+
+                    builder.CreateStore(exception, activeException(function->getParent()));
+
+                    builder.CreateBr(generateEHHandlerChain(exception, builder.GetInsertBlock()));
+
+                    builder.SetInsertPoint(continueBlock);
+                });
+        },
         [&](D2F)
         {
             llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
@@ -1453,50 +1495,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[iInc.index]);
             builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
         },
-        [&](InstanceOf instanceOf)
-        {
-            llvm::StringRef className =
-                PoolIndex<ClassInfo>{instanceOf.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
-
-            llvm::PointerType* ty = referenceType(builder.getContext());
-            llvm::Value* object = operandStack.pop_back(ty);
-            llvm::Value* null = llvm::ConstantPointerNull::get(ty);
-
-            // null references always return 0.
-            llvm::Value* isNull = builder.CreateICmpEQ(object, null);
-            auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            auto* instanceOfBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            llvm::BasicBlock* block = builder.GetInsertBlock();
-            builder.CreateCondBr(isNull, continueBlock, instanceOfBlock);
-
-            builder.SetInsertPoint(instanceOfBlock);
-
-            llvm::Value* classObject;
-            if (className.front() == '[')
-            {
-                // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
-                // just the name of the class. Hence, these two cases.
-                classObject = helper.getClassObject(builder, className);
-            }
-            else
-            {
-                classObject = helper.getClassObject(builder, "L" + className + ";");
-            }
-            // Can throw class loader or linkage related errors.
-            generateEHDispatch();
-
-            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
-                "jllvm_instance_of", llvm::FunctionType::get(builder.getInt32Ty(), ty, classObject->getType()));
-            llvm::Instruction* call = builder.CreateCall(callee, {object, classObject});
-            builder.CreateBr(continueBlock);
-
-            builder.SetInsertPoint(continueBlock);
-            llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-            phi->addIncoming(builder.getInt32(0), block);
-            phi->addIncoming(call, call->getParent());
-
-            operandStack.push_back(phi);
-        },
         // TODO: InvokeDynamic
         [&](InvokeInterface invokeInterface)
         {
@@ -1737,27 +1735,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                         builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
                                                referenceType(builder.getContext())));
                 },
-                [&](const ClassInfo* classInfo)
-                {
-                    llvm::StringRef text = classInfo->nameIndex.resolve(classFile)->text;
-                    llvm::Value* classObject;
-                    if (text.front() == '[')
-                    {
-                        classObject = helper.getClassObject(builder, text);
-                    }
-                    else
-                    {
-                        classObject = helper.getClassObject(builder, "L" + text + ";");
-                    }
-                    // If the class was already loaded 'callee' is optimized to a constant and no exception may
-                    // occur.
-                    if (!llvm::isa<llvm::Constant>(classObject))
-                    {
-                        // Can throw class loader or linkage related errors.
-                        generateEHDispatch();
-                    }
-                    operandStack.push_back(classObject);
-                },
+                [&](const ClassInfo*) { operandStack.push_back(loadClassObjectFromPool(ldc.index)); },
                 [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
         },
         // TODO: LookupSwitch
@@ -1870,18 +1848,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](New newOp)
         {
-            llvm::StringRef className =
-                PoolIndex<ClassInfo>{newOp.index}.resolve(classFile)->nameIndex.resolve(classFile)->text;
-
-            llvm::Value* classObject =
-                helper.getClassObject(builder, "L" + className + ";", /*mustInitializeClassObject=*/true);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may
-            // occur.
-            if (!llvm::isa<llvm::Constant>(classObject))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+            llvm::Value* classObject = loadClassObjectFromPool(newOp.index);
 
             // Size is first 4 bytes in the class object and does not include the object header.
             llvm::Value* fieldAreaPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,

@@ -56,6 +56,13 @@ public:
     }
 
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);
+
+    template <class... Args>
+    void executeObjectConstructor(GCRootRef<Object> object, llvm::StringRef methodDescriptor, Args... args)
+    {
+        auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getClassName(), "<init>", methodDescriptor));
+        reinterpret_cast<void (*)(Object*, Args...)>(addr.getAddress())(static_cast<Object*>(object), args...);
+    }
 };
 
 template <class T>
