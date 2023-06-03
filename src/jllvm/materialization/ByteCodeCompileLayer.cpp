@@ -113,47 +113,143 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const jllvm::Me
     return llvm::AttributeList::get(context, llvm::AttributeSet{}, retAttrs, paramAttrs);
 }
 
+auto resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& builder)
+{
+    struct ArrayInfo
+    {
+        llvm::StringRef descriptor;
+        llvm::Type* type{};
+        std::size_t size{};
+        std::size_t elementOffset{};
+    };
+
+    switch (arrayType)
+    {
+        case ArrayOp::ArrayType::TBoolean:
+            return ArrayInfo{"Z", builder.getInt8Ty(), sizeof(std::uint8_t),
+                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TChar:
+            return ArrayInfo{"C", builder.getInt16Ty(), sizeof(std::uint16_t),
+                             jllvm::Array<std::uint16_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TFloat:
+            return ArrayInfo{"F", builder.getFloatTy(), sizeof(float), jllvm::Array<float>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TDouble:
+            return ArrayInfo{"D", builder.getDoubleTy(), sizeof(double), jllvm::Array<double>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TByte:
+            return ArrayInfo{"B", builder.getInt8Ty(), sizeof(std::uint8_t),
+                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TShort:
+            return ArrayInfo{"S", builder.getInt16Ty(), sizeof(std::int16_t),
+                             jllvm::Array<std::int16_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TInt:
+            return ArrayInfo{"I", builder.getInt32Ty(), sizeof(std::int32_t),
+                             jllvm::Array<std::int32_t>::arrayElementsOffset()};
+        case ArrayOp::ArrayType::TLong:
+            return ArrayInfo{"J", builder.getInt64Ty(), sizeof(std::int64_t),
+                             jllvm::Array<std::int64_t>::arrayElementsOffset()};
+        default: llvm_unreachable("Invalid array type");
+    }
+}
+
+llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType& type, llvm::Value* value)
+{
+    return match(
+        type,
+        [&](BaseType baseType)
+        {
+            switch (baseType.getValue())
+            {
+                case BaseType::Boolean:
+                case BaseType::Byte:
+                case BaseType::Short:
+                {
+                    return builder.CreateSExt(value, builder.getInt32Ty());
+                }
+                case BaseType::Char:
+                {
+                    return builder.CreateZExt(value, builder.getInt32Ty());
+                    break;
+                }
+                default: return value;
+            }
+        },
+        [&](const auto&) { return value; });
+}
+
 /// Class for operand stack
 /// This class also offers method to get and set the current top of stack in order to consider the control flow path
 class OperandStack
 {
     std::vector<llvm::AllocaInst*> m_values;
-    llvm::AllocaInst** m_topOfStack;
+    std::vector<llvm::Type*> m_types;
     llvm::IRBuilder<>& m_builder;
+    std::size_t m_topOfStack{};
+
+    class StackState
+    {
+        std::vector<llvm::Type*> m_types;
+        std::size_t m_topOfStack{};
+
+        StackState(std::vector<llvm::Type*> type, std::size_t topOfStack)
+            : m_types{std::move(type)}, m_topOfStack{topOfStack}
+        {
+        }
+
+        friend class OperandStack;
+    };
 
 public:
+    using State = StackState;
+
     OperandStack(u_int16_t maxStack, llvm::IRBuilder<>& builder)
-        : m_builder(builder), m_values(maxStack), m_topOfStack(m_values.data())
+        : m_builder(builder), m_values{maxStack}, m_types{maxStack}
     {
-        for (auto& alloca : m_values)
-        {
-            alloca = builder.CreateAlloca(llvm::PointerType::get(builder.getContext(), 0));
-        }
+        std::generate(m_values.begin(), m_values.end(), [&] { return builder.CreateAlloca(builder.getPtrTy()); });
     }
 
-    llvm::Value* pop_back(llvm::Type* ty)
+    llvm::Value* pop_back()
     {
-        return m_builder.CreateLoad(ty, *(--m_topOfStack));
+        llvm::AllocaInst* alloc = m_values[--m_topOfStack];
+        llvm::Type* type = m_types[m_topOfStack];
+        return m_builder.CreateLoad(type, alloc);
+    }
+
+    std::pair<llvm::Value*, llvm::Type*> pop_back_with_type()
+    {
+        llvm::AllocaInst* alloc = m_values[--m_topOfStack];
+        llvm::Type* type = m_types[m_topOfStack];
+
+        return {m_builder.CreateLoad(type, alloc), type};
     }
 
     void push_back(llvm::Value* value)
     {
-        m_builder.CreateStore(value, *(m_topOfStack++));
+        llvm::AllocaInst* alloc = m_values[m_topOfStack];
+        m_types[m_topOfStack++] = value->getType();
+        m_builder.CreateStore(value, alloc);
     }
 
-    llvm::AllocaInst** getTopOfStack() const
+    StackState saveState() const
     {
-        return m_topOfStack;
+        return {m_types, m_topOfStack};
     }
 
-    llvm::AllocaInst* getBottomOfStack() const
+    void restoreState(StackState state)
     {
-        return m_values.front();
+        m_types = std::move(state.m_types);
+        m_topOfStack = state.m_topOfStack;
     }
 
-    void setTopOfStack(llvm::AllocaInst** topOfStack)
+    State getHandlerState() const
     {
-        m_topOfStack = topOfStack;
+        return {{jllvm::referenceType(m_builder.getContext())}, 1};
+    }
+
+    void setHandlerStack(llvm::Value* value)
+    {
+        llvm::AllocaInst* alloc = m_values.front();
+        m_types.front() = value->getType();
+        m_builder.CreateStore(value, alloc);
     }
 };
 
@@ -397,13 +493,14 @@ public:
     llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                         llvm::StringRef fieldName, llvm::StringRef fieldType)
     {
-        return returnConstantForClassObject(builder, "L" + className + ";", fieldName + ";" + fieldType,
-                                            [=](const ClassObject* classObject)
-                                            {
-                                                return classObject
-                                                    ->getField(fieldName, fieldType,
-                                                               /*isStatic=*/false)
-                                                    ->getOffset();
+        return returnConstantForClassObject(
+            builder, "L" + className + ";", fieldName + ";" + fieldType,
+            [=](const ClassObject* classObject)
+            {
+                return classObject
+                    ->getField(fieldName, fieldType,
+                               /*isStatic=*/false)
+                    ->getOffset();
             },
             /*mustInitializeClassObject=*/false);
     }
@@ -411,47 +508,46 @@ public:
     llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
                                  llvm::StringRef typeDescriptor)
     {
-        return returnConstantForClassObject(builder, fieldDescriptor, methodName + ";" + typeDescriptor,
-                                            [=](const ClassObject* classObject)
-                                            {
-                                                // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
+        return returnConstantForClassObject(
+            builder, fieldDescriptor, methodName + ";" + typeDescriptor,
+            [=](const ClassObject* classObject)
+            {
+                // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
 
-                                                // Otherwise, method resolution attempts to locate the referenced method
-                                                // in C and its superclasses:
+                // Otherwise, method resolution attempts to locate the referenced method
+                // in C and its superclasses:
 
-                                                // Otherwise, if C declares a method with the name and descriptor
-                                                // specified by the method reference, method lookup succeeds.
+                // Otherwise, if C declares a method with the name and descriptor
+                // specified by the method reference, method lookup succeeds.
 
-                                                // Otherwise, if C has a superclass, step 2 of method resolution is
-                                                // recursively invoked on the direct superclass of C.
-                                                for (const ClassObject* curr : classObject->getSuperClasses())
-                                                {
-                                                    llvm::ArrayRef<Method> methods = curr->getMethods();
-                                                    const Method* iter =
-                                                        llvm::find_if(methods,
-                                                                      [&](const Method& method) {
-                                                                          return !method.isStatic()
-                                                                                 && method.getName() == methodName
-                                                                                 && method.getType() == typeDescriptor;
-                                                                      });
-                                                    if (iter != methods.end())
-                                                    {
-                                                        return *iter->getVTableSlot();
-                                                    }
-                                                }
+                // Otherwise, if C has a superclass, step 2 of method resolution is
+                // recursively invoked on the direct superclass of C.
+                for (const ClassObject* curr : classObject->getSuperClasses())
+                {
+                    llvm::ArrayRef<Method> methods = curr->getMethods();
+                    const Method* iter = llvm::find_if(methods,
+                                                       [&](const Method& method) {
+                                                           return !method.isStatic() && method.getName() == methodName
+                                                                  && method.getType() == typeDescriptor;
+                                                       });
+                    if (iter != methods.end())
+                    {
+                        return *iter->getVTableSlot();
+                    }
+                }
 
-                                                // TODO: Implement below. Requires a vtable slot per implementing class
-                                                //       For any default interface method.
+                // TODO: Implement below. Requires a vtable slot per implementing class
+                //       For any default interface method.
 
-                                                // Otherwise, method resolution attempts to locate the referenced method
-                                                // in the superinterfaces of the specified class C:
+                // Otherwise, method resolution attempts to locate the referenced method
+                // in the superinterfaces of the specified class C:
 
-                                                // If the maximally-specific superinterface methods of C for the name
-                                                // and descriptor specified by the method reference include exactly one
-                                                // method that does not have its ACC_ABSTRACT flag set, then this method
-                                                // is chosen and method lookup succeeds.
+                // If the maximally-specific superinterface methods of C for the name
+                // and descriptor specified by the method reference include exactly one
+                // method that does not have its ACC_ABSTRACT flag set, then this method
+                // is chosen and method lookup succeeds.
 
-                                                llvm_unreachable("method not found");
+                llvm_unreachable("method not found");
             },
             /*mustInitializeClassObject=*/false);
     }
@@ -530,50 +626,6 @@ public:
     }
 };
 
-llvm::Type* ensureI32(llvm::Type* llvmFieldType, llvm::IRBuilder<>& builder)
-{
-    return !llvmFieldType->isIntegerTy() || llvmFieldType->getIntegerBitWidth() >= 32 ? llvmFieldType :
-                                                                                        builder.getInt32Ty();
-}
-
-auto resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& builder)
-{
-    struct ArrayInfo
-    {
-        llvm::StringRef descriptor;
-        llvm::Type* type{};
-        std::size_t size{};
-        std::size_t elementOffset{};
-    };
-
-    switch (arrayType)
-    {
-        case ArrayOp::ArrayType::TBoolean:
-            return ArrayInfo{"Z", builder.getInt8Ty(), sizeof(std::uint8_t),
-                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TChar:
-            return ArrayInfo{"C", builder.getInt16Ty(), sizeof(std::uint16_t),
-                             jllvm::Array<std::uint16_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TFloat:
-            return ArrayInfo{"F", builder.getFloatTy(), sizeof(float), jllvm::Array<float>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TDouble:
-            return ArrayInfo{"D", builder.getDoubleTy(), sizeof(double), jllvm::Array<double>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TByte:
-            return ArrayInfo{"B", builder.getInt8Ty(), sizeof(std::uint8_t),
-                             jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TShort:
-            return ArrayInfo{"S", builder.getInt16Ty(), sizeof(std::int16_t),
-                             jllvm::Array<std::int16_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TInt:
-            return ArrayInfo{"I", builder.getInt32Ty(), sizeof(std::int32_t),
-                             jllvm::Array<std::int32_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TLong:
-            return ArrayInfo{"J", builder.getInt64Ty(), sizeof(std::int64_t),
-                             jllvm::Array<std::int64_t>::arrayElementsOffset()};
-        default: llvm_unreachable("Invalid array type");
-    }
-}
-
 struct CodeGen
 {
     llvm::Function* function;
@@ -585,7 +637,7 @@ struct CodeGen
     OperandStack operandStack;
     std::vector<llvm::AllocaInst*> locals;
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-    llvm::DenseMap<llvm::BasicBlock*, llvm::AllocaInst**> basicBlockStackPointers;
+    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> basicBlockStackPointers;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
@@ -605,11 +657,8 @@ struct CodeGen
           operandStack(code.getMaxStack(), builder),
           locals(code.getMaxLocals())
     {
-        for (auto& alloca : locals)
-        {
-            // We need pointer size bytes, since that is the largest type we may store in a local.
-            alloca = builder.CreateAlloca(llvm::PointerType::get(function->getContext(), 0));
-        }
+        // We need pointer size bytes, since that is the largest type we may store in a local.
+        std::generate(locals.begin(), locals.end(), [&] { return builder.CreateAlloca(builder.getPtrTy()); });
 
         // Arguments are put into the locals. According to the specification, i64s and doubles are split into two
         // locals. We don't actually do that, we just put them into the very first local, but we still have to skip over
@@ -663,7 +712,7 @@ struct CodeGen
             // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
             // required that we register that fact in 'basicBlockStackPointers' explicitly.
             result->second = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            basicBlockStackPointers.insert({result->second, std::next(operandStack.getTopOfStack())});
+            basicBlockStackPointers.insert({result->second, operandStack.getHandlerState()});
         }
     }
 
@@ -698,7 +747,7 @@ struct CodeGen
                 // Catch all used to implement 'finally'.
                 // Set exception object as only object on the stack and clear the active exception.
                 builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
-                builder.CreateStore(phi, operandStack.getBottomOfStack());
+                operandStack.setHandlerStack(phi);
                 builder.CreateBr(handlerBB);
                 return ehHandler;
             }
@@ -730,7 +779,7 @@ struct CodeGen
 
             builder.SetInsertPoint(jumpToHandler);
             // Set exception object as only object on the stack and clear the active exception.
-            builder.CreateStore(phi, operandStack.getBottomOfStack());
+            operandStack.setHandlerStack(phi);
             builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(function->getParent()));
             builder.CreateBr(handlerBB);
 
@@ -826,7 +875,8 @@ void CodeGen::codeGenBody(const Code& code)
     llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
-        if (auto result = endHandlers.find(getOffset(operation)); result != endHandlers.end())
+        std::size_t offset = getOffset(operation);
+        if (auto result = endHandlers.find(offset); result != endHandlers.end())
         {
             for (auto iter : result->second)
             {
@@ -836,7 +886,7 @@ void CodeGen::codeGenBody(const Code& code)
             endHandlers.erase(result);
         }
 
-        if (auto result = startHandlers.find(getOffset(operation)); result != startHandlers.end())
+        if (auto result = startHandlers.find(offset); result != startHandlers.end())
         {
             for (const Code::ExceptionTable& iter : result->second)
             {
@@ -847,21 +897,21 @@ void CodeGen::codeGenBody(const Code& code)
             startHandlers.erase(result);
         }
 
-        if (auto result = basicBlocks.find(getOffset(operation)); result != basicBlocks.end())
+        if (auto result = basicBlocks.find(offset); result != basicBlocks.end())
         {
             // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
             // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
             // bytecode.
             if (builder.GetInsertBlock()->getTerminator() == nullptr)
             {
-                basicBlockStackPointers.insert({result->second, operandStack.getTopOfStack()});
+                basicBlockStackPointers.insert({result->second, operandStack.saveState()});
                 builder.CreateBr(result->second);
             }
             builder.SetInsertPoint(result->second);
             if (auto resultStackPointer = basicBlockStackPointers.find(result->second);
                 resultStackPointer != basicBlockStackPointers.end())
             {
-                operandStack.setTopOfStack(resultStackPointer->second);
+                operandStack.restoreState(resultStackPointer->second);
             }
         }
 
@@ -883,9 +933,9 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](DALoad) { return builder.getDoubleTy(); }, [&](FALoad) { return builder.getFloatTy(); },
                 [&](IALoad) { return builder.getInt32Ty(); }, [&](LALoad) { return builder.getInt64Ty(); });
 
-            llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* index = operandStack.pop_back();
             // TODO: throw NullPointerException if array is null
-            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* array = operandStack.pop_back();
 
             // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
             llvm::Value* gep =
@@ -901,42 +951,25 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
         {
-            auto [popType, arrayType] = match(
-                operation,
-                [](...) -> std::pair<llvm::Type*, llvm::Type*> { llvm_unreachable("Invalid array load operation"); },
-                [&](AAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {referenceType(builder.getContext()), referenceType(builder.getContext())};
-                },
-                [&](BAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getInt32Ty(), builder.getInt8Ty()};
-                },
-                [&](OneOf<CAStore, SAStore>) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getInt32Ty(), builder.getInt16Ty()};
-                },
-                [&](DAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getDoubleTy(), builder.getDoubleTy()};
-                },
-                [&](FAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getFloatTy(), builder.getFloatTy()};
-                },
-                [&](IAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getInt32Ty(), builder.getInt32Ty()};
-                },
-                [&](LAStore) -> std::pair<llvm::Type*, llvm::Type*> {
-                    return {builder.getInt64Ty(), builder.getInt64Ty()};
-                });
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
+                [&](AAStore) { return referenceType(builder.getContext()); },
+                [&](BAStore) { return builder.getInt8Ty(); },
+                [&](OneOf<CAStore, SAStore>) { return builder.getInt16Ty(); },
+                [&](DAStore) { return builder.getDoubleTy(); }, [&](FAStore) { return builder.getFloatTy(); },
+                [&](IAStore) { return builder.getInt32Ty(); }, [&](LAStore) { return builder.getInt64Ty(); });
 
-            llvm::Value* value = operandStack.pop_back(popType);
-            llvm::Value* index = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
+            llvm::Value* index = operandStack.pop_back();
             // TODO: throw NullPointerException if array is null
-            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* array = operandStack.pop_back();
 
             // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
             llvm::Value* gep =
-                builder.CreateGEP(arrayStructType(arrayType), array, {builder.getInt32(0), builder.getInt32(2), index});
+                builder.CreateGEP(arrayStructType(type), array, {builder.getInt32(0), builder.getInt32(2), index});
             match(
                 operation, [](...) {},
-                [&, arrayType = arrayType](OneOf<BAStore, CAStore, SAStore>)
+                [&, arrayType = type](OneOf<BAStore, CAStore, SAStore>)
                 { value = builder.CreateTrunc(value, arrayType); });
 
             builder.CreateStore(value, gep);
@@ -977,7 +1010,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             auto index = PoolIndex<ClassInfo>{aNewArray.index};
             // TODO: throw NegativeArraySizeException
-            llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* count = operandStack.pop_back();
 
             llvm::Value* classObject = helper.getClassObject(
                 builder, "[L" + index.resolve(classFile)->nameIndex.resolve(classFile)->text + ";");
@@ -1002,13 +1035,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<AReturn, DReturn, FReturn, IReturn, LReturn>)
         {
-            llvm::Type* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                [&](AReturn) { return referenceType(builder.getContext()); },
-                [&](DReturn) { return builder.getDoubleTy(); }, [&](FReturn) { return builder.getFloatTy(); },
-                [&](IReturn) { return builder.getInt32Ty(); }, [&](LReturn) { return builder.getInt64Ty(); });
-
-            llvm::Value* value = operandStack.pop_back(type);
+            llvm::Value* value = operandStack.pop_back();
 
             match(
                 operation, [](...) {},
@@ -1028,7 +1055,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](ArrayLength)
         {
-            llvm::Value* array = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* array = operandStack.pop_back();
 
             // The element type of the array type here is actually irrelevant.
             llvm::Value* gep = builder.CreateGEP(arrayStructType(referenceType(builder.getContext())), array,
@@ -1036,15 +1063,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             operandStack.push_back(builder.CreateLoad(builder.getInt32Ty(), gep));
         },
         [&](OneOf<AStore, DStore, FStore, IStore, LStore> store)
-        {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid store operation"); },
-                [&](AStore) { return referenceType(builder.getContext()); },
-                [&](DStore) { return builder.getDoubleTy(); }, [&](FStore) { return builder.getFloatTy(); },
-                [&](IStore) { return builder.getInt32Ty(); }, [&](LStore) { return builder.getInt64Ty(); });
-
-            builder.CreateStore(operandStack.pop_back(type), locals[store.index]);
-        },
+        { builder.CreateStore(operandStack.pop_back(), locals[store.index]); },
         [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
                   DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
         {
@@ -1063,13 +1082,13 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](OneOf<AStore2, DStore2, FStore2, IStore2, LStore2>) { return 2; },
                 [&](OneOf<AStore3, DStore3, FStore3, IStore3, LStore3>) { return 3; });
 
-            builder.CreateStore(operandStack.pop_back(type), locals[index]);
+            builder.CreateStore(operandStack.pop_back(), locals[index]);
         },
         [&](AThrow)
         {
             llvm::Type* reference = referenceType(builder.getContext());
 
-            llvm::Value* exception = operandStack.pop_back(reference);
+            llvm::Value* exception = operandStack.pop_back();
 
             builder.CreateStore(exception, activeException(function->getParent()));
 
@@ -1083,7 +1102,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](OneOf<CheckCast, InstanceOf> op)
         {
             llvm::PointerType* ty = referenceType(builder.getContext());
-            llvm::Value* object = operandStack.pop_back(ty);
+            llvm::Value* object = operandStack.pop_back();
             llvm::Value* null = llvm::ConstantPointerNull::get(ty);
 
             llvm::Value* isNull = builder.CreateICmpEQ(object, null);
@@ -1136,40 +1155,24 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](D2F)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getDoubleTy());
+            llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateFPTrunc(value, builder.getFloatTy()));
         },
         [&](OneOf<D2I, D2L, F2I, F2L>)
         {
-            auto [fromType, toType] = match(
-                operation,
-                [](...) -> std::tuple<llvm::Type*, llvm::Type*> { llvm_unreachable("Invalid conversion operation"); },
-                [&](D2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-                    return {builder.getDoubleTy(), builder.getInt32Ty()};
-                },
-                [&](D2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                    return {builder.getDoubleTy(), builder.getInt64Ty()};
-                },
-                [&](F2I) -> std::tuple<llvm::Type*, llvm::Type*> {
-                    return {builder.getFloatTy(), builder.getInt32Ty()};
-                },
-                [&](F2L) -> std::tuple<llvm::Type*, llvm::Type*> {
-                    return {builder.getFloatTy(), builder.getInt64Ty()};
-                });
+            auto* type = match(
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid conversion operation"); },
+                [&](OneOf<D2I, F2I>) { return builder.getInt32Ty(); },
+                [&](OneOf<D2L, F2L>) { return builder.getInt64Ty(); });
 
-            llvm::Value* value = operandStack.pop_back(fromType);
+            llvm::Value* value = operandStack.pop_back();
 
-            operandStack.push_back(builder.CreateIntrinsic(toType, llvm::Intrinsic::fptosi_sat, {value}));
+            operandStack.push_back(builder.CreateIntrinsic(type, llvm::Intrinsic::fptosi_sat, {value}));
         },
         [&](OneOf<DAdd, FAdd, IAdd, LAdd>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid add operation"); },
-                [&](DAdd) { return builder.getDoubleTy(); }, [&](FAdd) { return builder.getFloatTy(); },
-                [&](IAdd) { return builder.getInt32Ty(); }, [&](LAdd) { return builder.getInt64Ty(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             auto* sum = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid add operation"); },
@@ -1180,13 +1183,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DCmpG, DCmpL, FCmpG, FCmpL>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid comparison operation"); },
-                [&](OneOf<DCmpG, DCmpL>) { return builder.getDoubleTy(); },
-                [&](OneOf<FCmpG, FCmpL>) { return builder.getFloatTy(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             // using unordered compare to allow for NaNs
             // if lhs == rhs result is 0, otherwise the resulting boolean is converted for the default case
@@ -1236,13 +1234,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DDiv, FDiv, IDiv, LDiv>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid div operation"); },
-                [&](DDiv) { return builder.getDoubleTy(); }, [&](FDiv) { return builder.getFloatTy(); },
-                [&](IDiv) { return builder.getInt32Ty(); }, [&](LDiv) { return builder.getInt64Ty(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             auto* quotient = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid div operation"); },
@@ -1253,13 +1246,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DMul, FMul, IMul, LMul>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid mul operation"); },
-                [&](DMul) { return builder.getDoubleTy(); }, [&](FMul) { return builder.getFloatTy(); },
-                [&](IMul) { return builder.getInt32Ty(); }, [&](LMul) { return builder.getInt64Ty(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             auto* product = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid mul operation"); },
@@ -1270,12 +1258,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DNeg, FNeg, INeg, LNeg>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid neg operation"); },
-                [&](DNeg) { return builder.getDoubleTy(); }, [&](FNeg) { return builder.getFloatTy(); },
-                [&](INeg) { return builder.getInt32Ty(); }, [&](LNeg) { return builder.getInt64Ty(); });
-
-            llvm::Value* value = operandStack.pop_back(type);
+            llvm::Value* value = operandStack.pop_back();
 
             auto* result = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid neg operation"); },
@@ -1286,13 +1269,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DRem, FRem, IRem, LRem>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid rem operation"); },
-                [&](DRem) { return builder.getDoubleTy(); }, [&](FRem) { return builder.getFloatTy(); },
-                [&](IRem) { return builder.getInt32Ty(); }, [&](LRem) { return builder.getInt64Ty(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             auto* remainder = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid rem operation"); },
@@ -1303,13 +1281,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](OneOf<DSub, FSub, ISub, LSub>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid sub operation"); },
-                [&](DSub) { return builder.getDoubleTy(); }, [&](FSub) { return builder.getFloatTy(); },
-                [&](ISub) { return builder.getInt32Ty(); }, [&](LSub) { return builder.getInt64Ty(); });
-
-            llvm::Value* rhs = operandStack.pop_back(type);
-            llvm::Value* lhs = operandStack.pop_back(type);
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
 
             auto* difference = match(
                 operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid sub operation"); },
@@ -1320,7 +1293,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         [&](Dup)
         {
-            llvm::Value* val = operandStack.pop_back(builder.getInt64Ty());
+            llvm::Value* val = operandStack.pop_back();
             operandStack.push_back(val);
             operandStack.push_back(val);
         },
@@ -1331,7 +1304,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         // TODO: Dup2X2
         [&](F2D)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getFloatTy());
+            llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateFPExt(value, builder.getDoubleTy()));
         },
         [&](GetField getField)
@@ -1341,7 +1314,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
             llvm::Type* type = descriptorToType(descriptor, builder.getContext());
 
-            llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* objectRef = operandStack.pop_back();
 
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef fieldName =
@@ -1399,47 +1372,47 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         [&](Goto gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
-            basicBlockStackPointers.insert({basicBlocks[index], operandStack.getTopOfStack()});
+            basicBlockStackPointers.insert({basicBlocks[index], operandStack.saveState()});
             builder.CreateBr(basicBlocks[index]);
         },
         // TODO: GotoW
         [&](I2B)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt8Ty());
             operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
         },
         [&](I2C)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
             operandStack.push_back(builder.CreateZExt(truncated, builder.getInt32Ty()));
         },
         [&](I2D)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
         },
         [&](I2F)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
         },
         [&](I2L)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateSExt(value, builder.getInt64Ty()));
         },
         [&](I2S)
         {
-            llvm::Value* value = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* value = operandStack.pop_back();
             llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
             operandStack.push_back(builder.CreateSExt(truncated, builder.getInt32Ty()));
         },
         [&](IAnd)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateAnd(lhs, rhs));
         },
         [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
@@ -1455,24 +1428,19 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             match(
                 operation, [](...) { llvm_unreachable("Invalid comparison operation"); },
-                [&](OneOf<IfACmpEq, IfACmpNe>)
+                [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
                 {
-                    rhs = operandStack.pop_back(referenceType(builder.getContext()));
-                    lhs = operandStack.pop_back(referenceType(builder.getContext()));
-                },
-                [&](OneOf<IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
-                {
-                    rhs = operandStack.pop_back(builder.getInt32Ty());
-                    lhs = operandStack.pop_back(builder.getInt32Ty());
+                    rhs = operandStack.pop_back();
+                    lhs = operandStack.pop_back();
                 },
                 [&](OneOf<IfEq, IfNe, IfLt, IfGe, IfGt, IfLe>)
                 {
                     rhs = builder.getInt32(0);
-                    lhs = operandStack.pop_back(builder.getInt32Ty());
+                    lhs = operandStack.pop_back();
                 },
                 [&](OneOf<IfNonNull, IfNull>)
                 {
-                    lhs = operandStack.pop_back(referenceType(builder.getContext()));
+                    lhs = operandStack.pop_back();
                     rhs = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType()));
                 });
 
@@ -1486,8 +1454,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = builder.CreateICmp(predicate, lhs, rhs);
-            basicBlockStackPointers.insert({basicBlock, operandStack.getTopOfStack()});
-            basicBlockStackPointers.insert({next, operandStack.getTopOfStack()});
+            basicBlockStackPointers.insert({basicBlock, operandStack.saveState()});
+            basicBlockStackPointers.insert({next, operandStack.saveState()});
             builder.CreateCondBr(cond, basicBlock, next);
         },
         [&](IInc iInc)
@@ -1503,13 +1471,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
 
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1573,7 +1538,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             if (descriptor.returnType != FieldType(BaseType::Void))
             {
-                operandStack.push_back(call);
+                operandStack.push_back(extendToStackType(builder, descriptor.returnType, call));
             }
         },
         [&](OneOf<InvokeSpecial, InvokeStatic> invoke)
@@ -1585,13 +1550,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
 
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
@@ -1617,7 +1579,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             if (descriptor.returnType != FieldType(BaseType::Void))
             {
-                operandStack.push_back(call);
+                operandStack.push_back(extendToStackType(builder, descriptor.returnType, call));
             }
         },
         [&](InvokeVirtual invokeVirtual)
@@ -1627,13 +1589,10 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
-                iter =
-                    operandStack.pop_back(i >= 0 ? descriptorToType(descriptor.parameters[i--], builder.getContext()) :
-                                                   referenceType(builder.getContext()));
+                iter = operandStack.pop_back();
             }
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef methodName =
@@ -1665,43 +1624,43 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             if (descriptor.returnType != FieldType(BaseType::Void))
             {
-                operandStack.push_back(call);
+                operandStack.push_back(extendToStackType(builder, descriptor.returnType, call));
             }
         },
         [&](IOr)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateOr(lhs, rhs));
         },
         [&](IShl)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
                 rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
         },
         [&](IShr)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
                 rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
         },
         [&](IUShr)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
                 rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
         },
         [&](IXor)
         {
-            llvm::Value* rhs = operandStack.pop_back(builder.getInt32Ty());
-            llvm::Value* lhs = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* rhs = operandStack.pop_back();
+            llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateXor(lhs, rhs));
         },
         // TODO: JSR
@@ -1749,7 +1708,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             // Pop object as is required by the instruction.
             // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
             //  (un)locking it.
-            operandStack.pop_back(referenceType(builder.getContext()));
+            operandStack.pop_back();
         },
         [&](MultiANewArray multiANewArray)
         {
@@ -1777,7 +1736,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             std::generate(loopCounts.rbegin(), loopCounts.rend(),
                           // TODO: throw NegativeArraySizeException
-                          [&] { return operandStack.pop_back(builder.getInt32Ty()); });
+                          [&] { return operandStack.pop_back(); });
 
             std::generate(arrayClassObjects.begin(), arrayClassObjects.end(),
                           [&]
@@ -1869,7 +1828,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray.atype, builder);
             // TODO: throw NegativeArraySizeException
-            llvm::Value* count = operandStack.pop_back(builder.getInt32Ty());
+            llvm::Value* count = operandStack.pop_back();
 
             llvm::Value* classObject = helper.getClassObject(builder, "[" + descriptor);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may
@@ -1900,11 +1859,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             operandStack.push_back(object);
         },
         // TODO: Nop
-        [&](Pop)
-        {
-            // Type does not matter as we do not use the result
-            operandStack.pop_back(referenceType(builder.getContext()));
-        },
+        [&](Pop) { operandStack.pop_back(); },
         // TODO: Pop2
         [&](PutField putField)
         {
@@ -1916,8 +1871,8 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::StringRef fieldType =
                 refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
             llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-            llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
-            llvm::Value* objectRef = operandStack.pop_back(referenceType(builder.getContext()));
+            llvm::Value* value = operandStack.pop_back();
+            llvm::Value* objectRef = operandStack.pop_back();
             llvm::Value* fieldOffset = helper.getInstanceFieldOffset(builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(fieldOffset))
@@ -1949,7 +1904,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::StringRef fieldType =
                 refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
             llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), builder.getContext());
-            llvm::Value* value = operandStack.pop_back(ensureI32(llvmFieldType, builder));
+            llvm::Value* value = operandStack.pop_back();
             llvm::Value* fieldPtr = helper.getStaticFieldAddress(builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(fieldPtr))
