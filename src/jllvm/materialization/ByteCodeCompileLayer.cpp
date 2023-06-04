@@ -1590,6 +1590,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
+            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
