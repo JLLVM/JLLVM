@@ -61,6 +61,12 @@ struct ArrayOp : ByteCodeBase
     ArrayType atype{};
 };
 
+struct SwitchOp : ByteCodeBase
+{
+    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs;
+    std::int32_t defaultOffset;
+};
+
 #define GENERATE_SELECTOR(name, base, body, parser, size, code) struct name : base body;
 #define GENERATE_SELECTOR_END(name, base, body, parser, size, code) struct name : base body;
 #include "ByteCode.def"
@@ -126,7 +132,9 @@ struct MechanismForBase
     using Base = std::conditional_t<
         std::is_base_of_v<SingletonOp, First>, SingletonOp,
         std::conditional_t<std::is_base_of_v<LocalIndexedOp, First>, LocalIndexedOp,
-                           std::conditional_t<std::is_base_of_v<PoolIndexedOp, First>, PoolIndexedOp, BranchOffsetOp>>>;
+                           std::conditional_t<std::is_base_of_v<PoolIndexedOp, First>, PoolIndexedOp,
+                                              std::conditional_t<std::is_base_of_v<BranchOffsetOp, First>,
+                                                                 BranchOffsetOp, SwitchOp>>>>;
 
     static_assert((std::is_base_of_v<Base, Rest> && ...));
 };

@@ -224,12 +224,12 @@ GENERATE_SELECTOR(
         std::int8_t byte{};
     },
     parseIInc, 3, 0x84)
-GENERATE_SELECTOR(LookupSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, lookupSwitchSize(m_current), 0xab)
+GENERATE_SELECTOR(LookupSwitch, SwitchOp, {}, parseLookupSwitch, lookupSwitchSize(m_current, m_offset), 0xab)
 GENERATE_SELECTOR(MultiANewArray, PoolIndexedOp, { std::uint8_t dimensions; }, parseMultiANewArray, 4, 0xc5)
 GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray, 2, 0xbc)
 GENERATE_SELECTOR(
     SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush, 3, 0x11)
-GENERATE_SELECTOR(TableSwitch, ByteCodeBase, {/* TODO */}, parseNotImplemented, tableSwitchSize(m_current), 0xaa)
+GENERATE_SELECTOR(TableSwitch, SwitchOp, {}, parseTableSwitch, tableSwitchSize(m_current, m_offset), 0xaa)
 GENERATE_SELECTOR_END(Wide, ByteCodeBase, {/* TODO */}, parseNotImplemented, wideSize(m_current), 0xc4)
 
 #undef BRANCH_OFFSET_OP

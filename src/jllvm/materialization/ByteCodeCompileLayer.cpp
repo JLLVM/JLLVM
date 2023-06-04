@@ -702,7 +702,16 @@ struct CodeGen
                         cmpOp)
                 {
                     addBasicBlock(cmpOp.target + cmpOp.offset);
-                    addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t));
+                    addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t));
+                },
+                [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+                {
+                    addBasicBlock(switchOp.offset + switchOp.defaultOffset);
+
+                    for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetsPairs))
+                    {
+                        addBasicBlock(switchOp.offset + target);
+                    }
                 },
                 [](...) {});
         }
@@ -1507,12 +1516,12 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* truncated = builder.CreateTrunc(value, builder.getInt16Ty());
             operandStack.push_back(builder.CreateZExt(truncated, builder.getInt32Ty()));
         },
-        [&](I2D)
+        [&](OneOf<I2D, L2D>)
         {
             llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
         },
-        [&](I2F)
+        [&](OneOf<I2F, L2F>)
         {
             llvm::Value* value = operandStack.pop_back();
             operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
@@ -1753,29 +1762,20 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateOr(lhs, rhs));
         },
-        [&](IShl)
+        [&](OneOf<IShl, IShr, IUShr>)
         {
             llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
                 rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
             llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateShl(lhs, maskedRhs));
-        },
-        [&](IShr)
-        {
-            llvm::Value* rhs = operandStack.pop_back();
-            llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-            llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateAShr(lhs, maskedRhs));
-        },
-        [&](IUShr)
-        {
-            llvm::Value* rhs = operandStack.pop_back();
-            llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x1F)); // According to JVM only the lower 5 bits shall be considered
-            llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateLShr(lhs, maskedRhs));
+
+            auto* result = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid shift operation"); },
+                [&](IShl) { return builder.CreateShl(lhs, maskedRhs); },
+                [&](IShr) { return builder.CreateAShr(lhs, maskedRhs); },
+                [&](IUShr) { return builder.CreateLShr(lhs, maskedRhs); });
+
+            operandStack.push_back(result);
         },
         [&](IXor)
         {
@@ -1785,16 +1785,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         // TODO: JSR
         // TODO: JSRw
-        [&](L2D)
-        {
-            llvm::Value* value = operandStack.pop_back();
-            operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
-        },
-        [&](L2F)
-        {
-            llvm::Value* value = operandStack.pop_back();
-            operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
-        },
         [&](L2I)
         {
             llvm::Value* value = operandStack.pop_back();
@@ -1829,35 +1819,40 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 [&](const ClassInfo*) { operandStack.push_back(loadClassObjectFromPool(ldc.index)); },
                 [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
         },
+        [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+        {
+            llvm::Value* key = operandStack.pop_back();
 
-        // TODO: LookupSwitch
+            llvm::BasicBlock* defaultBlock = basicBlocks[switchOp.offset + switchOp.defaultOffset];
+            basicBlockStackStates.insert({defaultBlock, operandStack.saveState()});
+
+            auto* switchInst = builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
+
+            for (auto [match, target] : switchOp.matchOffsetsPairs)
+            {
+                llvm::BasicBlock* targetBlock = basicBlocks[switchOp.offset + target];
+                basicBlockStackStates.insert({targetBlock, operandStack.saveState()});
+
+                switchInst->addCase(builder.getInt32(match), targetBlock);
+            }
+        },
         // TODO: LOr
-        [&](LShl)
+        [&](OneOf<LShl, LShr, LUShr>)
         {
             llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 6 bits shall be considered
-            llvm::Value* extendedRhs = builder.CreateSExt(maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
+                rhs, builder.getInt32(0x3F));     // According to JVM only the lower 6 bits shall be considered
+            llvm::Value* extendedRhs = builder.CreateSExt(
+                maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
             llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateShl(lhs, extendedRhs));
-        },
-        [&](LShr)
-        {
-            llvm::Value* rhs = operandStack.pop_back();
-            llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 6 bits shall be considered
-            llvm::Value* extendedRhs = builder.CreateSExt(maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
-            llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateAShr(lhs, extendedRhs));
-        },
-        [&](LUShr)
-        {
-            llvm::Value* rhs = operandStack.pop_back();
-            llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 6 bits shall be considered
-            llvm::Value* extendedRhs = builder.CreateSExt(maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
-            llvm::Value* lhs = operandStack.pop_back();
-            operandStack.push_back(builder.CreateLShr(lhs, extendedRhs));
+
+            auto* result = match(
+                operation, [](...) -> llvm::Value* { llvm_unreachable("Invalid shift operation"); },
+                [&](LShl) { return builder.CreateShl(lhs, extendedRhs); },
+                [&](LShr) { return builder.CreateAShr(lhs, extendedRhs); },
+                [&](LUShr) { return builder.CreateLShr(lhs, extendedRhs); });
+
+            operandStack.push_back(result);
         },
         // TODO: LXor
         [&](OneOf<MonitorEnter, MonitorExit>)
@@ -2098,7 +2093,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             operandStack.push_back(value1);
             operandStack.push_back(value2);
         }
-        // TODO: TableSwitch
         // TODO: Wide
     );
 }

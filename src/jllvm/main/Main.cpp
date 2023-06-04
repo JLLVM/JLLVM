@@ -5,6 +5,7 @@
 
 #include <jllvm/vm/VirtualMachine.hpp>
 
+#include <iomanip>
 #include <sstream>
 
 #include "CommandLine.hpp"
@@ -26,8 +27,7 @@ requires(std::is_floating_point_v<T>) struct TrivialPrinter<T>
     auto operator()(void*, void*, T value)
     {
         std::stringstream str;
-        str.precision(std::numeric_limits<T>::digits10);
-        str << std::defaultfloat << value << '\n';
+        str << std::setprecision(std::numeric_limits<T>::digits10) << value << '\n';
         llvm::outs() << str.str();
     }
 };
