@@ -1292,11 +1292,135 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             operandStack.push_back(val);
             operandStack.push_back(val);
         },
-        // TODO: DupX1
-        // TODO: DupX2
-        // TODO: Dup2
-        // TODO: Dup2X1
-        // TODO: Dup2X2
+        [&](DupX1)
+        {
+            llvm::Value* value1 = operandStack.pop_back();
+            llvm::Value* value2 = operandStack.pop_back();
+
+            assert(!isCategoryTwo(value1->getType()) && !isCategoryTwo(value2->getType()));
+
+            operandStack.push_back(value1);
+            operandStack.push_back(value2);
+            operandStack.push_back(value1);
+        },
+        [&](DupX2)
+        {
+            auto [value1, type1] = operandStack.pop_back_with_type();
+            auto [value2, type2] = operandStack.pop_back_with_type();
+
+            if (!isCategoryTwo(type2))
+            {
+                // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
+                llvm::Value* value3 = operandStack.pop_back();
+
+                operandStack.push_back(value1);
+                operandStack.push_back(value3);
+            }
+            else
+            {
+                // Form 2: where value1 is a value of a category 1 computational type and value2 is a value of a
+                // category 2 computational type
+                operandStack.push_back(value1);
+            }
+
+            operandStack.push_back(value2);
+            operandStack.push_back(value1);
+        },
+        [&](Dup2)
+        {
+            auto [value, type] = operandStack.pop_back_with_type();
+
+            if (!isCategoryTwo(type))
+            {
+                // Form 1: where both value1 and value2 are values of a category 1 computational type
+                llvm::Value* value2 = operandStack.pop_back();
+
+                operandStack.push_back(value2);
+                operandStack.push_back(value);
+                operandStack.push_back(value2);
+                operandStack.push_back(value);
+            }
+            else
+            {
+                // Form 2: where value is a value of a category 2 computational type
+                operandStack.push_back(value);
+                operandStack.push_back(value);
+            }
+        },
+        [&](Dup2X1)
+        {
+            auto [value1, type1] = operandStack.pop_back_with_type();
+            auto [value2, type2] = operandStack.pop_back_with_type();
+
+            if (!isCategoryTwo(type1))
+            {
+                // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
+                llvm::Value* value3 = operandStack.pop_back();
+
+                operandStack.push_back(value2);
+                operandStack.push_back(value1);
+                operandStack.push_back(value3);
+            }
+            else
+            {
+                // Form 2: where value1 is a value of a category 2 computational type and value2 is a value of a
+                // category 1 computational type
+                operandStack.push_back(value1);
+            }
+
+            operandStack.push_back(value2);
+            operandStack.push_back(value1);
+        },
+        [&](Dup2X2)
+        {
+            auto [value1, type1] = operandStack.pop_back_with_type();
+            auto [value2, type2] = operandStack.pop_back_with_type();
+
+            if (!isCategoryTwo(type1))
+            {
+                auto [value3, type3] = operandStack.pop_back_with_type();
+
+                if (!isCategoryTwo(type3))
+                {
+                    llvm::Value* value4 = operandStack.pop_back();
+
+                    // Form 1: where value1, value2, value3, and value4 are all values of a category 1 computational
+                    // type
+                    operandStack.push_back(value2);
+                    operandStack.push_back(value1);
+                    operandStack.push_back(value4);
+                }
+                else
+                {
+                    // Form 3: where value1 and value2 are both values of a category 1 computational type and value3 is
+                    // a value of a category 2 computational type:
+                    operandStack.push_back(value2);
+                    operandStack.push_back(value1);
+                }
+
+                operandStack.push_back(value3);
+            }
+            else
+            {
+                if (!isCategoryTwo(type2))
+                {
+                    llvm::Value* value3 = operandStack.pop_back();
+
+                    // Form 2: where value1 is a value of a category 2 computational type and value2 and value3 are both
+                    // values of a category 1 computational type
+                    operandStack.push_back(value1);
+                    operandStack.push_back(value3);
+                }
+                else
+                {
+                    // Form 4: where value1 and value2 are both values of a category 2 computational type
+                    operandStack.push_back(value1);
+                }
+            }
+
+            operandStack.push_back(value2);
+            operandStack.push_back(value1);
+        },
         [&](F2D)
         {
             llvm::Value* value = operandStack.pop_back();
@@ -1466,7 +1590,6 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
