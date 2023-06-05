@@ -37,11 +37,11 @@ class Test
         var y = -5.4427053E8;
         var z = -4.29113472;
 
-        // CHECK: -1.06639e+08
+        // CHECK: -106639384
         print(-x);
-        // CHECK: 5.44271e+08
+        // CHECK: 544270530
         print(-y);
-        // CHECK: 4.29113
+        // CHECK: 4.29113472
         print(-z);
     }
 }

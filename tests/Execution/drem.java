@@ -49,11 +49,11 @@ class Test
         var y = -5.9460864E8;
         var z = 1425.10118;
 
-        // CHECK: 5.4791e+08
+        // CHECK: 547910080
         print(x % y);
-        // CHECK: 1397.81
+        // CHECK: 1397.81175972065
         print(x % z);
-        // CHECK: -848.758
+        // CHECK: -848.757979952823
         print(y % z);
     }
 }

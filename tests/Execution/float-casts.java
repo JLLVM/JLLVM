@@ -29,9 +29,9 @@ class Test
         print((double) p_zero);
         //CHECK: -0
         print((double) n_zero);
-        //CHECK: 9.32337e+18
+        //CHECK: 9.32337151988938e+18
         print((double) p_long_max_plus);
-        //CHECK: -9.32337e+18
+        //CHECK: -9.32337151988938e+18
         print((double) n_long_max_plus);
 
         //CHECK: 0

@@ -26,6 +26,7 @@ requires(std::is_floating_point_v<T>) struct TrivialPrinter<T>
     auto operator()(void*, void*, T value)
     {
         std::stringstream str;
+        str.precision(std::numeric_limits<T>::digits10);
         str << std::defaultfloat << value << '\n';
         llvm::outs() << str.str();
     }

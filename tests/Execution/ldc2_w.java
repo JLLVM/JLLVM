@@ -14,7 +14,7 @@ class Test
         print(-987.654);
 
         // larger double than Float.MAX_VALUE
-        // CHECK: 4.40282e+38
+        // CHECK: 4.4028235e+38
         print(4.4028235E38);
 
         // CHECK: 123456
