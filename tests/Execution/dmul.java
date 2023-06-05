@@ -20,13 +20,13 @@ class Test
         print(nan * p_123);
         print(p_123 * nan);
 
-        // CHECK: 15241.4
-        // CHECK: 15241.4
+        // CHECK: 15241.383936
+        // CHECK: 15241.383936
         print(p_123 * p_123);
         print(n_123 * n_123);
 
-        // CHECK: -15241.4
-        // CHECK: -15241.4
+        // CHECK: -15241.383936
+        // CHECK: -15241.383936
         print(p_123 * n_123);
         print(n_123 * p_123);
 
@@ -44,11 +44,11 @@ class Test
         var y = -4.09644288E8;
         var z = 1374.04144;
 
-        // CHECK: -2.77213e+16
+        // CHECK: -2.77212811226665e+16
         print(x * y);
-        // CHECK: 9.29836e+10
+        // CHECK: 92983571718.7725
         print(x * z);
-        // CHECK: -5.62868e+11
+        // CHECK: -562868227371.295
         print(y * z);
     }
 }

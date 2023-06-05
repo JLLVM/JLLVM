@@ -1661,9 +1661,21 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         },
         // TODO: JSR
         // TODO: JSRw
-        // TODO: L2D
-        // TODO: L2F
-        // TODO: L2I
+        [&](L2D)
+        {
+            llvm::Value* value = operandStack.pop_back();
+            operandStack.push_back(builder.CreateSIToFP(value, builder.getDoubleTy()));
+        },
+        [&](L2F)
+        {
+            llvm::Value* value = operandStack.pop_back();
+            operandStack.push_back(builder.CreateSIToFP(value, builder.getFloatTy()));
+        },
+        [&](L2I)
+        {
+            llvm::Value* value = operandStack.pop_back();
+            operandStack.push_back(builder.CreateTrunc(value, builder.getInt32Ty()));
+        },
         // TODO: LAnd
         // TODO: LCmp
         [&](OneOf<LDC, LDCW, LDC2W> ldc)

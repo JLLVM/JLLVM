@@ -59,11 +59,11 @@ class Test
         var y = 1549700.4;
         var z = -2.1339336E8;
 
-        // CHECK: 1.54969e+06
+        // CHECK: 1549693.7942214
         print(x + y);
-        // CHECK: -2.13393e+08
+        // CHECK: -213393366.605779
         print(x + z);
-        // CHECK: -2.11844e+08
+        // CHECK: -211843659.6
         print(y + z);
     }
 }

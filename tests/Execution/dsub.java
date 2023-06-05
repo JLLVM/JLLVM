@@ -64,11 +64,11 @@ class Test
         var y = -1.09827904E9;
         var z = 1.1562734E7;
 
-        // CHECK: 1.28208e+09
+        // CHECK: 1282078976
         print(x - y);
-        // CHECK: 1.72237e+08
+        // CHECK: 172237202
         print(x - z);
-        // CHECK: -1.10984e+09
+        // CHECK: -1109841774
         print(y - z);
     }
 }
