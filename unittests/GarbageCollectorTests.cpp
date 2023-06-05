@@ -22,7 +22,7 @@ public:
     GarbageCollectorFixture()
         : emptyTestObject(ClassObject::create(m_allocator, /*metaClass=*/nullptr, /*vTableSlots=*/0,
                                               /*fieldAreaSize=*/0, /*methods=*/{},
-                                              /*fields=*/{}, /*bases=*/{}, "TestObject")),
+                                              /*fields=*/{}, /*bases=*/{}, "TestObject", false)),
           arrayOfEmptyTestObject(
               ClassObject::createArray(m_allocator, /*metaClass=*/nullptr, emptyTestObject, m_stringSaver))
     {

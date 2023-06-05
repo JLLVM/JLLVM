@@ -44,16 +44,8 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 {
     auto doLookup = [&](llvm::StringRef className) -> jllvm::VTableSlot
     {
-        // Lookup can and will fail if an abstract class declares the method as abstract. It is still
-        // supposed to be found however, but the interface method is simply forced to be implemented by
-        // derived classes.
-        auto lookup = jit.lookup(className, resolvedMethod.getName(), resolvedMethod.getType());
-        if (!lookup)
-        {
-            llvm::consumeError(lookup.takeError());
-            return nullptr;
-        }
-        return reinterpret_cast<jllvm::VTableSlot>(lookup->getAddress());
+        return reinterpret_cast<jllvm::VTableSlot>(
+            llvm::cantFail(jit.lookup(className, resolvedMethod.getName(), resolvedMethod.getType())).getAddress());
     };
 
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
@@ -73,11 +65,18 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
     // method.
     for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
     {
-        if (llvm::any_of(curr->getMethods(), [&](const jllvm::Method& method)
-                { return !method.isStatic() && canOverride(method, curr, resolvedMethod, resolvedMethodClass); }))
+        const auto* result = llvm::find_if(
+            curr->getMethods(), [&](const jllvm::Method& method)
+            { return !method.isStatic() && canOverride(method, curr, resolvedMethod, resolvedMethodClass); });
+        if (result == curr->getMethods().end())
         {
-            return doLookup(curr->getClassName());
+            continue;
         }
+        if (result->isAbstract())
+        {
+            return nullptr;
+        }
+        return doLookup(curr->getClassName());
     }
 
     // Otherwise, the maximally-specific superinterface methods of C are determined (§5.4.3.3). If exactly one matches
@@ -136,6 +135,11 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                     }
                     classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
                 }
+            }
+
+            if (classObject.isAbstract())
+            {
+                return;
             }
 
             llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;

@@ -454,6 +454,12 @@ public:
         return (m_accessFlags & AccessFlag::Interface) != AccessFlag::None;
     }
 
+    /// Returns true if this class file defines an abstract class.
+    bool isAbstract() const
+    {
+        return (m_accessFlags & AccessFlag::Abstract) != AccessFlag::None;
+    }
+
     /// Returns the fields of this class.
     llvm::ArrayRef<FieldInfo> getFields() const
     {

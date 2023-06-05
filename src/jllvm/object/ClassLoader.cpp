@@ -192,7 +192,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             interfaces.insert(interfaces.begin(), superClass);
         }
         result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.vTableCount, instanceSize,
-                                     methods, fields, interfaces, className);
+                                     methods, fields, interfaces, className, classFile.isAbstract());
     }
     m_mapping.insert({("L" + className + ";").str(), result});
     m_prepareClassObject(&classFile, *result);

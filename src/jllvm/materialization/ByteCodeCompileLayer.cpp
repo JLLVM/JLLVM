@@ -274,7 +274,7 @@ class LazyClassLoaderHelper
     llvm::DataLayout m_dataLayout;
     llvm::Triple m_triple;
 
-    void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject) const
+    static void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject)
     {
         llvm::Function* function = builder.GetInsertBlock()->getParent();
         llvm::Module* module = function->getParent();
@@ -377,27 +377,10 @@ class LazyClassLoaderHelper
         return builder.CreateCall(function);
     }
 
-public:
-    LazyClassLoaderHelper(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib, llvm::orc::JITDylib& implDylib,
-                          llvm::orc::IndirectStubsManager& stubsManager,
-                          llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
-                          llvm::orc::MangleAndInterner& interner, const llvm::DataLayout& dataLayout)
-        : m_mainDylib(mainDylib),
-          m_implDylib(implDylib),
-          m_stubsManager(stubsManager),
-          m_callbackManager(callbackManager),
-          m_baseLayer(baseLayer),
-          m_dataLayout(dataLayout),
-          m_classLoader(classLoader),
-          m_interner(interner)
-    {
-        m_mainDylib.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
-                                    { m_implDylib.setLinkOrder(dylibSearchOrder); });
-    }
-
-    /// Returns a pointer to the function 'methodName' of the type 'methodType' within 'className.
-    llvm::Value* getNonVirtualCallee(llvm::IRBuilder<>& builder, bool isStatic, llvm::StringRef className,
-                                     llvm::StringRef methodName, llvm::StringRef methodType)
+    template <class F>
+    llvm::Value* doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
+                                      llvm::StringRef methodType, bool isStatic, llvm::Twine key,
+                                      llvm::ArrayRef<llvm::Value*> args, F&& f)
     {
         MethodType desc = parseMethodType(methodType);
         llvm::FunctionType* functionType = descriptorToType(desc, isStatic, builder.getContext());
@@ -405,23 +388,12 @@ public:
         std::string method = mangleMethod(className, methodName, methodType);
         if (const ClassObject* classObject = m_classLoader.forNameLoaded("L" + className + ";"))
         {
-            if (isStatic && !classObject->isInitialized())
-            {
-                buildClassInitializerInitStub(builder, *classObject);
-            }
-
-            // If the class loader is present then the function should have already been registered and we can just
-            // return it directly.
-            llvm::Module* module = builder.GetInsertBlock()->getModule();
-            return module->getOrInsertFunction(method, functionType).getCallee();
+            return f(builder, classObject, args);
         }
 
         // Otherwise we create a stub to call the class loader at runtime and then later replace the stub with the
         // real method.
-        std::string stubName = method + "<stub>";
-
-        llvm::Module* module = builder.GetInsertBlock()->getModule();
-        llvm::Value* result = module->getOrInsertFunction(stubName, functionType).getCallee();
+        std::string stubName = (method + key).str();
 
         if (!m_stubsManager.findStub(stubName, true))
         {
@@ -432,16 +404,6 @@ public:
                     [=, *this, desc = std::make_shared<MethodType>(std::move(desc))]
                     {
                         const ClassObject& classObject = m_classLoader.forName("L" + className + ";");
-                        if (!isStatic || classObject.isInitialized())
-                        {
-                            auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup({&m_mainDylib},
-                                                                                                   m_interner(method)))
-                                               .getAddress();
-                            llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
-                            return address;
-                        }
-
-                        // Create small trampoline initializing the class object.
 
                         auto context = std::make_unique<llvm::LLVMContext>();
                         auto module = std::make_unique<llvm::Module>(stubName, *context);
@@ -455,15 +417,37 @@ public:
                                                                 stubName, module.get());
                         llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
-                        buildClassInitializerInitStub(builder, classObject);
-
                         llvm::SmallVector<llvm::Value*> args;
                         for (llvm::Argument& arg : function->args())
                         {
                             args.push_back(&arg);
                         }
 
-                        auto* result = builder.CreateCall(module->getOrInsertFunction(method, functionType), args);
+                        llvm::Value* result = f(builder, &classObject, args);
+
+                        // Small optimization, if no instructions were generated and its just a call to some address
+                        // or function, just point the stub to it instead.
+                        if (auto* call = llvm::dyn_cast<llvm::CallInst>(result);
+                            call && &function->getEntryBlock().front() == result)
+                        {
+                            if (llvm::Function* callee = call->getCalledFunction())
+                            {
+                                auto address = llvm::cantFail(m_mainDylib.getExecutionSession().lookup(
+                                                                  {&m_mainDylib}, m_interner(callee->getName())))
+                                                   .getAddress();
+                                llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
+                                return address;
+                            }
+
+                            if (auto* constant = llvm::dyn_cast<llvm::ConstantExpr>(call->getCalledOperand());
+                                constant && constant->getOpcode() == llvm::Instruction::IntToPtr)
+                            {
+                                auto address = llvm::cast<llvm::ConstantInt>(constant->getOperand(0))->getZExtValue();
+                                llvm::cantFail(m_stubsManager.updatePointer(stubName, address));
+                                return address;
+                            }
+                        }
+
                         if (builder.getCurrentFunctionReturnType()->isVoidTy())
                         {
                             builder.CreateRetVoid();
@@ -490,7 +474,298 @@ public:
                 llvm::orc::absoluteSymbols({{m_interner(stubName), m_stubsManager.findStub(stubName, true)}})));
         }
 
-        return result;
+        llvm::Module* module = builder.GetInsertBlock()->getModule();
+        auto* call = builder.CreateCall(module->getOrInsertFunction(stubName, functionType), args);
+        call->setAttributes(getABIAttributes(builder.getContext(), parseMethodType(methodType), isStatic));
+        return call;
+    }
+
+    struct VTableOffset
+    {
+        std::size_t slot;
+    };
+
+    struct ITableOffset
+    {
+        std::size_t interfaceId;
+        std::size_t slot;
+    };
+
+    using ResolutionResult = swl::variant<VTableOffset, ITableOffset, std::string>;
+
+    static ResolutionResult virtualMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
+                                                    llvm::StringRef methodType)
+    {
+        // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
+
+        // Otherwise, method resolution attempts to locate the referenced method
+        // in C and its superclasses:
+
+        // Otherwise, if C declares a method with the name and descriptor
+        // specified by the method reference, method lookup succeeds.
+
+        // Otherwise, if C has a superclass, step 2 of method resolution is
+        // recursively invoked on the direct superclass of C.
+        for (const ClassObject* curr : classObject->getSuperClasses())
+        {
+            llvm::ArrayRef<Method> methods = curr->getMethods();
+            const Method* iter = llvm::find_if(
+                methods, [&](const Method& method)
+                { return !method.isStatic() && method.getName() == methodName && method.getType() == methodType; });
+            if (iter != methods.end())
+            {
+                if (iter->isFinal())
+                {
+                    // Final method can't be overwritten and we can just create a direct call to it.
+                    return mangleMethod(curr->getClassName(), iter->getName(), iter->getType());
+                }
+                return VTableOffset{*iter->getVTableSlot()};
+            }
+        }
+
+        // Otherwise, method resolution attempts to locate the referenced method
+        // in the superinterfaces of the specified class C:
+
+        // If the maximally-specific superinterface methods of C for the name
+        // and descriptor specified by the method reference include exactly one
+        // method that does not have its ACC_ABSTRACT flag set, then this method
+        // is chosen and method lookup succeeds.
+        for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
+        {
+            const Method* method = llvm::find_if(
+                interface->getMethods(), [&](const jllvm::Method& method)
+                { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
+            if (method != interface->getMethods().end())
+            {
+                return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            }
+        }
+
+        // Otherwise, if any superinterface of C declares a method with the name and descriptor specified by the method
+        // reference that has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set, one of these is arbitrarily
+        // chosen and method lookup succeeds.
+        for (const jllvm::ClassObject* interface : classObject->getAllInterfaces())
+        {
+            const Method* method =
+                llvm::find_if(interface->getMethods(),
+                              [&](const jllvm::Method& method)
+                              {
+                                  return !method.isStatic() && method.getVisibility() != Visibility::Private
+                                         && method.getName() == methodName && method.getType() == methodType;
+                              });
+            if (method != interface->getMethods().end())
+            {
+                return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            }
+        }
+
+        llvm_unreachable("method not found");
+    }
+
+    static ResolutionResult interfaceMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
+                                                      llvm::StringRef methodType, ClassLoader& classLoader)
+    {
+        // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
+
+        // Otherwise, if C declares a method with the name and descriptor specified by the interface method
+        // reference, method lookup succeeds.
+        {
+            llvm::ArrayRef<Method> methods = classObject->getMethods();
+            const Method* iter =
+                llvm::find_if(methods, [&](const Method& method)
+                              { return method.getName() == methodName && method.getType() == methodType; });
+            if (iter != methods.end())
+            {
+                return ITableOffset{classObject->getInterfaceId(), *iter->getVTableSlot()};
+            }
+        }
+
+        // Otherwise, if the class Object declares a method with the name and descriptor specified by the
+        // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
+        // set, method lookup succeeds.
+        {
+            constexpr llvm::StringLiteral className = "java/lang/Object";
+            llvm::ArrayRef<Method> methods = classLoader.forName("L" + className + ";").getMethods();
+            const Method* iter =
+                llvm::find_if(methods,
+                              [&](const Method& method)
+                              {
+                                  return !method.isStatic() && method.getVisibility() == Visibility::Public
+                                         && method.getName() == methodName && method.getType() == methodType;
+                              });
+            if (iter != methods.end())
+            {
+                return VTableOffset{*iter->getVTableSlot()};
+            }
+        }
+
+        // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
+        // descriptor specified by the method reference include exactly one method that does not have its
+        // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
+        for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
+        {
+            const Method* method = llvm::find_if(
+                interface->getMethods(), [&](const jllvm::Method& method)
+                { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
+            if (method != interface->getMethods().end())
+            {
+                return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            }
+        }
+
+        llvm_unreachable("method not found");
+    }
+
+public:
+    LazyClassLoaderHelper(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib, llvm::orc::JITDylib& implDylib,
+                          llvm::orc::IndirectStubsManager& stubsManager,
+                          llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
+                          llvm::orc::MangleAndInterner& interner, const llvm::DataLayout& dataLayout)
+        : m_mainDylib(mainDylib),
+          m_implDylib(implDylib),
+          m_stubsManager(stubsManager),
+          m_callbackManager(callbackManager),
+          m_baseLayer(baseLayer),
+          m_dataLayout(dataLayout),
+          m_classLoader(classLoader),
+          m_interner(interner)
+    {
+        m_mainDylib.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
+                                    { m_implDylib.setLinkOrder(dylibSearchOrder); });
+    }
+
+    /// Returns a pointer to the function 'methodName' of the type 'methodType' within 'className.
+    llvm::Value* doNonVirtualCall(llvm::IRBuilder<>& builder, bool isStatic, llvm::StringRef className,
+                                  llvm::StringRef methodName, llvm::StringRef methodType,
+                                  llvm::ArrayRef<llvm::Value*> args)
+    {
+        return doCallForClassObject(
+            builder, className, methodName, methodType, isStatic, "<static>", args,
+            [isStatic, className = className.str(), methodName = methodName.str(), methodType = methodType.str()](
+                llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
+            {
+                if (isStatic && !classObject->isInitialized())
+                {
+                    buildClassInitializerInitStub(builder, *classObject);
+                }
+
+                MethodType desc = parseMethodType(methodType);
+                llvm::FunctionType* functionType = descriptorToType(desc, isStatic, builder.getContext());
+
+                std::string method = mangleMethod(className, methodName, methodType);
+
+                llvm::Module* module = builder.GetInsertBlock()->getModule();
+                llvm::CallInst* call = builder.CreateCall(module->getOrInsertFunction(method, functionType), args);
+                call->setAttributes(getABIAttributes(builder.getContext(), parseMethodType(methodType), isStatic));
+
+                return call;
+            });
+    }
+
+    enum MethodResolution
+    {
+        Virtual,
+        Interface
+    };
+
+    llvm::Value* doIndirectCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
+                                llvm::StringRef methodType, llvm::ArrayRef<llvm::Value*> args,
+                                MethodResolution resolution)
+    {
+        llvm::StringRef key;
+        switch (resolution)
+        {
+            case Virtual: key = "<virtual>"; break;
+            case Interface: key = "<interface>"; break;
+        }
+        return doCallForClassObject(
+            builder, className, methodName, methodType, false, key, args,
+            [className = className.str(), methodName = methodName.str(), methodType = methodType.str(), resolution,
+             &classLoader = m_classLoader](llvm::IRBuilder<>& builder, const ClassObject* classObject,
+                                           llvm::ArrayRef<llvm::Value*> args)
+            {
+                ResolutionResult resolutionResult;
+                switch (resolution)
+                {
+                    case Virtual:
+                        resolutionResult = virtualMethodResolution(classObject, methodName, methodType);
+                        break;
+                    case Interface:
+                        resolutionResult = interfaceMethodResolution(classObject, methodName, methodType, classLoader);
+                        break;
+                }
+
+                MethodType desc = parseMethodType(methodType);
+                llvm::FunctionType* functionType = descriptorToType(desc, false, builder.getContext());
+
+                if (auto* directCallee = get_if<std::string>(&resolutionResult))
+                {
+                    llvm::Module* module = builder.GetInsertBlock()->getModule();
+                    llvm::CallInst* call =
+                        builder.CreateCall(module->getOrInsertFunction(*directCallee, functionType), args);
+                    call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+
+                    return call;
+                }
+
+                if (auto* virtualCallee = get_if<VTableOffset>(&resolutionResult))
+                {
+                    llvm::Value* methodOffset = builder.getInt32(sizeof(VTableSlot) * virtualCallee->slot);
+                    llvm::Value* thisClassObject =
+                        builder.CreateLoad(referenceType(builder.getContext()), args.front());
+                    llvm::Value* vtblPositionInClassObject = builder.getInt32(ClassObject::getVTableOffset());
+
+                    llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
+                    llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), thisClassObject, {totalOffset});
+                    llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
+
+                    auto* call = builder.CreateCall(functionType, callee, args);
+                    call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+                    return call;
+                }
+
+                auto& iTableOffset = get<ITableOffset>(resolutionResult);
+                std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
+                llvm::Value* slot = builder.getIntN(sizeTBits, iTableOffset.slot);
+                llvm::Value* id = builder.getIntN(sizeTBits, iTableOffset.interfaceId);
+
+                llvm::Value* thisClassObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
+                llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), thisClassObject,
+                                                            {builder.getInt32(ClassObject::getITablesOffset())});
+                llvm::Value* iTables = builder.CreateLoad(
+                    builder.getPtrTy(), builder.CreateGEP(arrayRefType(builder.getContext()), iTablesPtr,
+                                                          {builder.getInt32(0), builder.getInt32(0)}));
+
+                // Linear search over all iTables of 'classObject' until the iTable with the interface id equal to
+                // 'id' is found.
+                llvm::BasicBlock* pred = builder.GetInsertBlock();
+                auto* loopBody = llvm::BasicBlock::Create(builder.getContext(), "", pred->getParent());
+                builder.CreateBr(loopBody);
+
+                builder.SetInsertPoint(loopBody);
+                llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
+                phi->addIncoming(builder.getInt32(0), pred);
+
+                llvm::Value* iTable =
+                    builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(builder.getPtrTy(), iTables, {phi}));
+                llvm::Value* iTableId = builder.CreateLoad(slot->getType(), iTable);
+                llvm::Value* cond = builder.CreateICmpEQ(iTableId, id);
+                llvm::Value* increment = builder.CreateAdd(phi, builder.getInt32(1));
+                phi->addIncoming(increment, loopBody);
+
+                auto* loopContinue = llvm::BasicBlock::Create(builder.getContext(), "", pred->getParent());
+                builder.CreateCondBr(cond, loopContinue, loopBody);
+
+                builder.SetInsertPoint(loopContinue);
+
+                llvm::Value* iTableSlot = builder.CreateGEP(iTableType(builder.getContext()), iTable,
+                                                            {builder.getInt32(0), builder.getInt32(1), slot});
+                llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
+
+                auto* call = builder.CreateCall(functionType, callee, args);
+                call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+                return call;
+            });
     }
 
     /// Returns an LLVM integer constant which contains the offset of the 'fieldName' with the type 'fieldType'
@@ -506,53 +781,6 @@ public:
                     ->getField(fieldName, fieldType,
                                /*isStatic=*/false)
                     ->getOffset();
-            },
-            /*mustInitializeClassObject=*/false);
-    }
-
-    llvm::Value* getVTableOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::StringRef methodName,
-                                 llvm::StringRef typeDescriptor)
-    {
-        return returnConstantForClassObject(
-            builder, fieldDescriptor, methodName + ";" + typeDescriptor,
-            [=](const ClassObject* classObject)
-            {
-                // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
-
-                // Otherwise, method resolution attempts to locate the referenced method
-                // in C and its superclasses:
-
-                // Otherwise, if C declares a method with the name and descriptor
-                // specified by the method reference, method lookup succeeds.
-
-                // Otherwise, if C has a superclass, step 2 of method resolution is
-                // recursively invoked on the direct superclass of C.
-                for (const ClassObject* curr : classObject->getSuperClasses())
-                {
-                    llvm::ArrayRef<Method> methods = curr->getMethods();
-                    const Method* iter = llvm::find_if(methods,
-                                                       [&](const Method& method) {
-                                                           return !method.isStatic() && method.getName() == methodName
-                                                                  && method.getType() == typeDescriptor;
-                                                       });
-                    if (iter != methods.end())
-                    {
-                        return *iter->getVTableSlot();
-                    }
-                }
-
-                // TODO: Implement below. Requires a vtable slot per implementing class
-                //       For any default interface method.
-
-                // Otherwise, method resolution attempts to locate the referenced method
-                // in the superinterfaces of the specified class C:
-
-                // If the maximally-specific superinterface methods of C for the name
-                // and descriptor specified by the method reference include exactly one
-                // method that does not have its ACC_ABSTRACT flag set, then this method
-                // is chosen and method lookup succeeds.
-
-                llvm_unreachable("method not found");
             },
             /*mustInitializeClassObject=*/false);
     }
@@ -875,7 +1103,7 @@ struct CodeGen
 
     void codeGenBody(const Code& code);
 
-    void codeGenInstruction(ByteCodeOp operation);
+    void codeGenInstruction(ByteCodeOp invoke);
 };
 
 void CodeGen::codeGenBody(const Code& code)
@@ -1592,76 +1820,31 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             builder.CreateStore(builder.CreateAdd(local, builder.getInt32(iInc.byte)), locals[iInc.index]);
         },
         // TODO: InvokeDynamic
-        [&](InvokeInterface invokeInterface)
+        [&](OneOf<InvokeInterface, InvokeVirtual> invoke)
         {
-            const RefInfo* refInfo = PoolIndex<RefInfo>{invokeInterface.index}.resolve(classFile);
+            const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
 
             MethodType descriptor =
                 parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
 
-            int i = descriptor.parameters.size() - 1;
             std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
                 iter = operandStack.pop_back();
             }
-
             llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef methodType =
                 refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
 
-            llvm::Value* idAndSlot =
-                helper.getITableIdAndOffset(builder, "L" + className + ";", methodName, methodType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(idAndSlot))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
-
-            std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
-            llvm::Value* slot = builder.CreateAnd(idAndSlot, builder.getIntN(sizeTBits, (1 << 8) - 1));
-            llvm::Value* id = builder.CreateLShr(idAndSlot, builder.getIntN(sizeTBits, 8));
-
-            llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-            llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), classObject,
-                                                        {builder.getInt32(ClassObject::getITablesOffset())});
-            llvm::Value* iTables =
-                builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(arrayRefType(builder.getContext()), iTablesPtr,
-                                                                         {builder.getInt32(0), builder.getInt32(0)}));
-
-            // Linear search over all iTables of 'classObject' until the iTable with the interface id equal to
-            // 'id' is found.
-            auto* loopBody = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            llvm::BasicBlock* pred = builder.GetInsertBlock();
-            builder.CreateBr(loopBody);
-
-            builder.SetInsertPoint(loopBody);
-            llvm::PHINode* phi = builder.CreatePHI(builder.getInt32Ty(), 2);
-            phi->addIncoming(builder.getInt32(0), pred);
-
-            llvm::Value* iTable =
-                builder.CreateLoad(builder.getPtrTy(), builder.CreateGEP(builder.getPtrTy(), iTables, {phi}));
-            llvm::Value* iTableId = builder.CreateLoad(idAndSlot->getType(), iTable);
-            llvm::Value* cond = builder.CreateICmpEQ(iTableId, id);
-            llvm::Value* increment = builder.CreateAdd(phi, builder.getInt32(1));
-            phi->addIncoming(increment, loopBody);
-
-            auto* loopContinue = llvm::BasicBlock::Create(builder.getContext(), "", function);
-            builder.CreateCondBr(cond, loopContinue, loopBody);
-
-            builder.SetInsertPoint(loopContinue);
-
-            llvm::Value* iTableSlot = builder.CreateGEP(iTableType(builder.getContext()), iTable,
-                                                        {builder.getInt32(0), builder.getInt32(1), slot});
-            llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
-
             llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
             prepareArgumentsForCall(builder, args, functionType);
-            auto* call = builder.CreateCall(functionType, callee, args);
-            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
+
+            llvm::Value* call =
+                helper.doIndirectCall(builder, className, methodName, methodType, args,
+                                      holds_alternative<InvokeInterface>(operation) ? LazyClassLoaderHelper::Interface :
+                                                                                      LazyClassLoaderHelper::Virtual);
 
             generateEHDispatch();
 
@@ -1690,65 +1873,11 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
                 refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
             llvm::StringRef methodType =
                 refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-            llvm::Value* callee = helper.getNonVirtualCallee(builder, isStatic, className, methodName, methodType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(callee))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
 
             llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, builder.getContext());
             prepareArgumentsForCall(builder, args, functionType);
 
-            auto* call = builder.CreateCall(functionType, callee, args);
-            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, isStatic));
-
-            generateEHDispatch();
-
-            if (descriptor.returnType != FieldType(BaseType::Void))
-            {
-                operandStack.push_back(extendToStackType(builder, descriptor.returnType, call));
-            }
-        },
-        [&](InvokeVirtual invokeVirtual)
-        {
-            const RefInfo* refInfo = PoolIndex<RefInfo>{invokeVirtual.index}.resolve(classFile);
-
-            MethodType descriptor =
-                parseMethodType(refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
-
-            std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
-            for (auto& iter : llvm::reverse(args))
-            {
-                iter = operandStack.pop_back();
-            }
-            llvm::StringRef className = refInfo->classIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-            llvm::StringRef methodName =
-                refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
-            llvm::StringRef methodType =
-                refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text;
-            llvm::Value* slot = helper.getVTableOffset(builder, "L" + className + ";", methodName, methodType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(slot))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
-            llvm::Value* slotSize = builder.getInt16(sizeof(VTableSlot));
-            llvm::Value* methodOffset = builder.CreateMul(slot, slotSize);
-            llvm::Value* classObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
-            llvm::Value* vtblPositionInClassObject = builder.getInt16(ClassObject::getVTableOffset());
-
-            llvm::Value* totalOffset = builder.CreateAdd(vtblPositionInClassObject, methodOffset);
-            llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), classObject, {totalOffset});
-            llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
-
-            llvm::FunctionType* functionType = descriptorToType(descriptor, false, builder.getContext());
-            prepareArgumentsForCall(builder, args, functionType);
-            auto* call = builder.CreateCall(functionType, callee, args);
-            call->setAttributes(getABIAttributes(builder.getContext(), descriptor, /*isStatic=*/false));
-
+            llvm::Value* call = helper.doNonVirtualCall(builder, isStatic, className, methodName, methodType, args);
             generateEHDispatch();
 
             if (descriptor.returnType != FieldType(BaseType::Void))
