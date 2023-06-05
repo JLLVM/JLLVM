@@ -1108,7 +1108,7 @@ struct CodeGen
 
     void codeGenBody(const Code& code);
 
-    void codeGenInstruction(ByteCodeOp invoke);
+    void codeGenInstruction(ByteCodeOp operation);
 };
 
 void CodeGen::codeGenBody(const Code& code)
