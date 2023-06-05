@@ -254,10 +254,11 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::StringRef m_className;
     bool m_isPrimitive = false;
     bool m_initialized = false;
+    bool m_isAbstract = false;
 
     ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
-                llvm::StringRef className);
+                llvm::StringRef className, bool isAbstract);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className);
@@ -302,7 +303,7 @@ public:
     static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass, std::size_t vTableSlots,
                                std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
-                               llvm::StringRef className);
+                               llvm::StringRef className, bool isAbstract);
 
     /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
     /// 'interfaceId' is the globally unique id of this interface.
@@ -449,6 +450,12 @@ public:
     bool isClass() const
     {
         return !isArray() && !isPrimitive() && !isInterface();
+    }
+
+    /// Returns true if this class object represents an abstract Java class.
+    bool isAbstract() const
+    {
+        return m_isAbstract;
     }
 
     /// Returns true if an instance of this class object would also be an instance of 'other'.
