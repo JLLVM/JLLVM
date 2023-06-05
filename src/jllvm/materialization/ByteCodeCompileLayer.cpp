@@ -634,7 +634,8 @@ public:
                                     { m_implDylib.setLinkOrder(dylibSearchOrder); });
     }
 
-    /// Returns a pointer to the function 'methodName' of the type 'methodType' within 'className.
+    /// Creates a non-virtual call to the possibly static function 'methodName' of the type 'methodType' within
+    /// 'className' using 'args'. This is used to implement `invokestatic` and `invokespecial`.
     llvm::Value* doNonVirtualCall(llvm::IRBuilder<>& builder, bool isStatic, llvm::StringRef className,
                                   llvm::StringRef methodName, llvm::StringRef methodType,
                                   llvm::ArrayRef<llvm::Value*> args)
@@ -664,10 +665,14 @@ public:
 
     enum MethodResolution
     {
+        /// 5.4.3.3. Method Resolution from the JVM Spec.
         Virtual,
+        /// 5.4.3.4. Interface Method Resolution from the JVM Spec.
         Interface
     };
 
+    /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
+    /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.
     llvm::Value* doIndirectCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
                                 llvm::StringRef methodType, llvm::ArrayRef<llvm::Value*> args,
                                 MethodResolution resolution)
