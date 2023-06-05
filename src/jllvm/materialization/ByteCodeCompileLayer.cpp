@@ -1709,7 +1709,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 5 bits shall be considered
+                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 6 bits shall be considered
             llvm::Value* extendedRhs = builder.CreateSExt(maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
             llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateAShr(lhs, extendedRhs));
@@ -1718,7 +1718,7 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
         {
             llvm::Value* rhs = operandStack.pop_back();
             llvm::Value* maskedRhs = builder.CreateAnd(
-                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 5 bits shall be considered
+                rhs, builder.getInt32(0x3F)); // According to JVM only the lower 6 bits shall be considered
             llvm::Value* extendedRhs = builder.CreateSExt(maskedRhs, builder.getInt64Ty()); // LLVM only accepts binary ops with the same types for both operands
             llvm::Value* lhs = operandStack.pop_back();
             operandStack.push_back(builder.CreateLShr(lhs, extendedRhs));
