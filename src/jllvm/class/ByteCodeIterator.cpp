@@ -104,34 +104,67 @@ ByteCodeOp parseMultiANewArray(const char* bytes, std::size_t offset)
     return MultiANewArray{offset, index, dimensions};
 }
 
+template <std::same_as<LookupSwitch> OpCode>
+ByteCodeOp parseLookupSwitch(const char* bytes, std::size_t offset)
+{
+    bytes += 4 - (offset % 4);
+
+    auto defaultOffset = consume<std::int32_t>(bytes);
+    auto pairCount = consume<std::int32_t>(bytes);
+    assert(pairCount >= 0);
+
+    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs(pairCount);
+
+    std::generate(matchOffsetsPairs.begin(), matchOffsetsPairs.end(),
+                  [&] {
+                      return std::pair{consume<std::int32_t>(bytes), consume<std::int32_t>(bytes)};
+                  });
+
+    return LookupSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
+}
+
+template <std::same_as<TableSwitch> OpCode>
+ByteCodeOp parseTableSwitch(const char* bytes, std::size_t offset)
+{
+    bytes += 4 - (offset % 4);
+
+    auto defaultOffset = consume<std::int32_t>(bytes);
+    auto lowByte = consume<std::int32_t>(bytes);
+    auto highByte = consume<std::int32_t>(bytes);
+
+    assert(lowByte <= highByte);
+
+    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs(highByte - lowByte + 1);
+
+    std::generate(matchOffsetsPairs.begin(), matchOffsetsPairs.end(),
+                  [&] {
+                      return std::pair{lowByte++, consume<std::int32_t>(bytes)};
+                  });
+
+    return TableSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
+}
+
 template <class>
 ByteCodeOp parseNotImplemented(const char*, std::size_t)
 {
     llvm::report_fatal_error("NOT YET IMPLEMENTED");
 }
 
-std::size_t lookupSwitchSize(const char* bytes)
+std::size_t lookupSwitchSize(const char* bytes, std::size_t offset)
 {
-    std::uint64_t padding = llvm::offsetToAlignedAddr(bytes + 1, llvm::Align(4));
-    const char* pairCountPtr = bytes + 5 + padding;
-    std::uint32_t pairCount;
-    std::memcpy(&pairCount, pairCountPtr, sizeof(std::uint32_t));
-    pairCount = llvm::support::endian::byte_swap(pairCount, llvm::support::big);
-    return 1 + padding + 4 + 8 * pairCount;
+    std::uint64_t padding = 3 - (offset % 4);
+    const char* pairCountPtr = bytes + 1 + padding + 4;
+    auto pairCount = consume<std::int32_t>(pairCountPtr);
+
+    return 1 + padding + 4 + 4 + 8 * pairCount;
 }
 
-std::size_t tableSwitchSize(const char* bytes)
+std::size_t tableSwitchSize(const char* bytes, std::size_t offset)
 {
-    std::uint64_t padding = llvm::offsetToAlignedAddr(bytes + 1, llvm::Align(4));
-    const char* padded = bytes + 5 + padding;
-    std::uint32_t lowByte;
-    std::memcpy(&lowByte, padded, sizeof(std::uint32_t));
-    lowByte = llvm::support::endian::byte_swap(lowByte, llvm::support::big);
-    padded += sizeof(std::uint32_t);
-    std::uint32_t highByte;
-    std::memcpy(&highByte, padded, sizeof(std::uint32_t));
-    highByte = llvm::support::endian::byte_swap(highByte, llvm::support::big);
-
+    std::uint64_t padding = 3 - (offset % 4);
+    const char* padded = bytes + 1 + padding + 4;
+    auto lowByte = consume<std::int32_t>(padded);
+    auto highByte = consume<std::int32_t>(padded);
     return 1 + padding + 4 + 4 + 4 + (highByte - lowByte + 1) * 4;
 }
 
