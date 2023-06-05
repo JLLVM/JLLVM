@@ -1730,13 +1730,12 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
             }
             operandStack.push_back(field);
         },
-        [&](Goto gotoOp)
+        [&](OneOf<Goto, GotoW> gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
             basicBlockStackStates.insert({basicBlocks[index], operandStack.saveState()});
             builder.CreateBr(basicBlocks[index]);
         },
-        // TODO: GotoW
         [&](I2B)
         {
             llvm::Value* value = operandStack.pop_back();
