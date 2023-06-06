@@ -2225,9 +2225,58 @@ void CodeGen::codeGenInstruction(ByteCodeOp operation)
 
             operandStack.push_back(value1);
             operandStack.push_back(value2);
-        }
-        // TODO: Wide
-    );
+        },
+        [&](Wide wide)
+        {
+            llvm::Type* type;
+            switch (wide.opCode)
+            {
+                default: llvm_unreachable("Invalid wide operation");
+                case OpCodes::AStore:
+                case OpCodes::DStore:
+                case OpCodes::FStore:
+                case OpCodes::IStore:
+                case OpCodes::LStore:
+                {
+                    builder.CreateStore(operandStack.pop_back(), locals[wide.index]);
+                    return;
+                }
+                case OpCodes::Ret: llvm_unreachable("NOT YET IMPLEMENTED");
+                case OpCodes::IInc:
+                {
+                    llvm::Value* local = builder.CreateLoad(builder.getInt32Ty(), locals[wide.index]);
+                    builder.CreateStore(builder.CreateAdd(local, builder.getInt32(*wide.value)), locals[wide.index]);
+                    return;
+                }
+                case OpCodes::ALoad:
+                {
+                    type = referenceType(builder.getContext());
+                    break;
+                }
+                case OpCodes::DLoad:
+                {
+                    type = builder.getDoubleTy();
+                    break;
+                }
+                case OpCodes::FLoad:
+                {
+                    type = builder.getFloatTy();
+                    break;
+                }
+                case OpCodes::ILoad:
+                {
+                    type = builder.getInt32Ty();
+                    break;
+                }
+                case OpCodes::LLoad:
+                {
+                    type = builder.getInt64Ty();
+                    break;
+                }
+            }
+
+            operandStack.push_back(builder.CreateLoad(type, locals[wide.index]));
+        });
 }
 
 } // namespace

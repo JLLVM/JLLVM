@@ -66,35 +66,35 @@ ByteCodeOp parseBranchOffset(const char* bytes, std::size_t offset)
     }
 }
 
-template <std::same_as<BIPush> OpCode>
+template <std::same_as<BIPush>>
 ByteCodeOp parseBIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return BIPush{offset, consume<std::int8_t>(bytes)};
 }
 
-template <std::same_as<NewArray> OpCode>
+template <std::same_as<NewArray>>
 ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return NewArray{offset, consume<ArrayOp::ArrayType>(bytes)};
 }
 
-template <std::same_as<IInc> OpCode>
+template <std::same_as<IInc>>
 ByteCodeOp parseIInc(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return IInc{offset, consume<std::uint8_t>(bytes), consume<std::int8_t>(bytes)};
 }
 
-template <std::same_as<SIPush> OpCode>
+template <std::same_as<SIPush>>
 ByteCodeOp parseSIPush(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return SIPush{offset, consume<std::int16_t>(bytes)};
 }
 
-template <std::same_as<MultiANewArray> OpCode>
+template <std::same_as<MultiANewArray>>
 ByteCodeOp parseMultiANewArray(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
@@ -104,7 +104,7 @@ ByteCodeOp parseMultiANewArray(const char* bytes, std::size_t offset)
     return MultiANewArray{offset, index, dimensions};
 }
 
-template <std::same_as<LookupSwitch> OpCode>
+template <std::same_as<LookupSwitch>>
 ByteCodeOp parseLookupSwitch(const char* bytes, std::size_t offset)
 {
     bytes += 4 - (offset % 4);
@@ -123,7 +123,7 @@ ByteCodeOp parseLookupSwitch(const char* bytes, std::size_t offset)
     return LookupSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
 }
 
-template <std::same_as<TableSwitch> OpCode>
+template <std::same_as<TableSwitch>>
 ByteCodeOp parseTableSwitch(const char* bytes, std::size_t offset)
 {
     bytes += 4 - (offset % 4);
@@ -144,10 +144,19 @@ ByteCodeOp parseTableSwitch(const char* bytes, std::size_t offset)
     return TableSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
 }
 
-template <class>
-ByteCodeOp parseNotImplemented(const char*, std::size_t)
+template <std::same_as<Wide>>
+ByteCodeOp parseWide(const char* bytes, std::size_t offset)
 {
-    llvm::report_fatal_error("NOT YET IMPLEMENTED");
+    consume<OpCodes>(bytes);
+    auto opCode = consume<OpCodes>(bytes);
+    auto index = consume<std::uint16_t>(bytes);
+    std::optional<std::int16_t> value{};
+    if (opCode == OpCodes::IInc)
+    {
+        value = consume<std::int16_t>(bytes);
+    }
+
+    return Wide{offset, opCode, index, value};
 }
 
 std::size_t lookupSwitchSize(const char* bytes, std::size_t offset)
