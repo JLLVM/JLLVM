@@ -13,18 +13,18 @@ class CodeGenerator
     llvm::Function* m_function;
     const ClassFile& m_classFile;
     LazyClassLoaderHelper m_helper;
-    StringInterner& stringInterner;
-    const MethodType& functionMethodType;
-    llvm::IRBuilder<> builder;
-    OperandStack operandStack;
-    std::vector<llvm::AllocaInst*> locals;
-    llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> basicBlocks;
-    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> basicBlockStackStates;
+    StringInterner& m_stringInterner;
+    const MethodType& m_functionMethodType;
+    llvm::IRBuilder<> m_builder;
+    OperandStack m_operandStack;
+    std::vector<llvm::AllocaInst*> m_locals;
+    llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> m_basicBlocks;
+    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> m_basicBlockStackStates;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
     // std::list because we want the iterator stability when deleting handlers (requires random access).
-    std::list<HandlerInfo> activeHandlers;
+    std::list<HandlerInfo> m_activeHandlers;
     // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
 
@@ -49,11 +49,11 @@ public:
         : m_function{function},
           m_classFile{classFile},
           m_helper{std::move(helper)},
-          stringInterner{stringInterner},
-          functionMethodType{methodType},
-          builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
-          operandStack{builder, maxStack},
-          locals{maxLocals}
+          m_stringInterner{stringInterner},
+          m_functionMethodType{methodType},
+          m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
+          m_operandStack{m_builder, maxStack},
+          m_locals{maxLocals}
     {
     }
 
