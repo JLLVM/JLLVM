@@ -2,6 +2,31 @@
 
 #include <jllvm/support/Variant.hpp>
 
+llvm::Type* jllvm::arrayRefType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(context, {llvm::PointerType::get(context, 0),
+                                           llvm::Type::getIntNTy(context, std::numeric_limits<std::size_t>::digits)});
+}
+
+llvm::Type* jllvm::arrayStructType(llvm::Type* elementType)
+{
+    return llvm::StructType::get(elementType->getContext(), {objectHeaderType(elementType->getContext()),
+                                                             llvm::Type::getInt32Ty(elementType->getContext()),
+                                                             llvm::ArrayType::get(elementType, 0)});
+}
+
+llvm::Type* jllvm::iTableType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(context, {llvm::Type::getIntNTy(context, std::numeric_limits<std::size_t>::digits),
+                                           llvm::ArrayType::get(llvm::PointerType::get(context, 0), 0)});
+}
+
+llvm::Type* jllvm::objectHeaderType(llvm::LLVMContext& context)
+{
+    return llvm::StructType::get(/*classObject*/ jllvm::referenceType(context),
+                                 /*hashCode*/ llvm::Type::getInt32Ty(context));
+}
+
 llvm::PointerType* jllvm::referenceType(llvm::LLVMContext& context)
 {
     return llvm::PointerType::get(context, 1);
