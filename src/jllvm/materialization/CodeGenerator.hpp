@@ -1,8 +1,9 @@
 #pragma once
 
+#include <jllvm/class/ByteCodeIterator.hpp>
+#include <jllvm/vm/StringInterner.hpp>
+
 #include "CodeGeneratorUtils.hpp"
-#include "jllvm/class/ByteCodeIterator.hpp"
-#include "jllvm/vm/StringInterner.hpp"
 
 namespace jllvm
 {
@@ -57,7 +58,7 @@ public:
     {
     }
 
-    /// This function should ideally be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
+    /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
     /// and have at most 'maxLocals' local variables.
     void generateCode(const Code& code);
 };

@@ -507,54 +507,6 @@ llvm::Value* LazyClassLoaderHelper::getInstanceFieldOffset(llvm::IRBuilder<>& bu
         /*mustInitializeClassObject=*/false);
 }
 
-llvm::Value* LazyClassLoaderHelper::getITableIdAndOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
-                                                         llvm::StringRef methodName, llvm::StringRef typeDescriptor)
-{
-    return returnConstantForClassObject(
-        builder, fieldDescriptor, methodName + ";" + typeDescriptor,
-        [=](const ClassObject* classObject)
-        {
-            // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
-
-            // Otherwise, if C declares a method with the name and descriptor specified by the interface method
-            // reference, method lookup succeeds.
-            {
-                llvm::ArrayRef<Method> methods = classObject->getMethods();
-                const Method* iter =
-                    llvm::find_if(methods, [&](const Method& method)
-                                  { return method.getName() == methodName && method.getType() == typeDescriptor; });
-                if (iter != methods.end())
-                {
-                    return classObject->getInterfaceId() << 8 | *iter->getVTableSlot();
-                }
-            }
-
-            // TODO:
-            // Otherwise, if the class Object declares a method with the name and descriptor specified by the
-            // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
-            // set, method lookup succeeds.
-
-            // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
-            // descriptor specified by the method reference include exactly one method that does not have its
-            // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
-            for (const ClassObject* interface : classObject->maximallySpecificInterfaces())
-            {
-                const Method* method = llvm::find_if(interface->getMethods(),
-                                                     [&](const Method& method) {
-                                                         return !method.isAbstract() && method.getName() == methodName
-                                                                && method.getType() == typeDescriptor;
-                                                     });
-                if (method != interface->getMethods().end())
-                {
-                    return interface->getInterfaceId() << 8 | *method->getVTableSlot();
-                }
-            }
-
-            llvm_unreachable("method not found");
-        },
-        /*mustInitializeClassObject=*/false);
-}
-
 llvm::Value* LazyClassLoaderHelper::getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                                           llvm::StringRef fieldName, llvm::StringRef fieldType)
 {

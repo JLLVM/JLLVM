@@ -179,12 +179,6 @@ public:
     llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                         llvm::StringRef fieldName, llvm::StringRef fieldType);
 
-    /// Returns an LLVM integer containing the iTable offset in the lower 8 bits and the id of the interface, whose
-    /// iTable should be indexed into from the 9th bit onwards for the class indicated by 'fieldDescriptor',
-    /// the method named 'methodName' with the type 'typeDescriptor'.
-    llvm::Value* getITableIdAndOffset(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
-                                      llvm::StringRef methodName, llvm::StringRef typeDescriptor);
-
     /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
     /// within the class 'className'.
     llvm::Value* getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef fieldName,
