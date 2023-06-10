@@ -6,44 +6,53 @@
 
 class Test
 {
-    public static native void print(int i);
+    public static native void print(boolean b);
 
     public static void main(String[] args)
     {
         Object o = null;
 
         // CHECK: 0
-        print(o instanceof Object ? 1 : 0);
+        print(o instanceof Object);
 
-        var array = new Test[1];
-
-        // CHECK: 1
-        print(array instanceof Test[] ? 1 : 0);
+        var pArray = new int[1];
 
         // CHECK: 1
-        print(array instanceof Object[] ? 1 : 0);
+        print(pArray instanceof int[]);
 
         // CHECK: 1
-        print(array instanceof Object ? 1 : 0);
+        print(pArray instanceof Object);
 
         // CHECK: 0
-        print(((Object)array) instanceof Test[][] ? 1 : 0);
+        print(((Object)pArray) instanceof int[][]);
+
+        var aArray = new Test[1];
+
+        // CHECK: 1
+        print(aArray instanceof Test[]);
+
+        // CHECK: 1
+        print(aArray instanceof Object[]);
+
+        // CHECK: 1
+        print(aArray instanceof Object);
+
+        // CHECK: 0
+        print(((Object)aArray) instanceof Test[][]);
 
         B c = new C();
 
         // CHECK: 1
-        print(c instanceof A ? 1 : 0);
+        print(c instanceof A);
 
         // CHECK: 1
-        print(c instanceof B ? 1 : 0);
+        print(c instanceof B);
 
         // CHECK: 1
-        print(c instanceof C ? 1 : 0);
+        print(c instanceof C);
 
         // CHECK: 1
-        print(c instanceof Object ? 1 : 0);
-
-        // TODO: test array of primitive types once creating those is implemented.
+        print(c instanceof Object);
     }
 }
 
