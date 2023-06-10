@@ -839,7 +839,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* truncated = m_builder.CreateTrunc(value, m_builder.getInt16Ty());
             m_operandStack.push_back(m_builder.CreateSExt(truncated, m_builder.getInt32Ty()));
         },
-        [&](IAnd)
+        [&](OneOf<IAnd, LAnd>)
         {
             llvm::Value* rhs = m_operandStack.pop_back();
             llvm::Value* lhs = m_operandStack.pop_back();
@@ -959,7 +959,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType, call));
             }
         },
-        [&](IOr)
+        [&](OneOf<IOr, LOr>)
         {
             llvm::Value* rhs = m_operandStack.pop_back();
             llvm::Value* lhs = m_operandStack.pop_back();
@@ -980,7 +980,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_operandStack.push_back(result);
         },
-        [&](IXor)
+        [&](OneOf<IXor, LXor>)
         {
             llvm::Value* rhs = m_operandStack.pop_back();
             llvm::Value* lhs = m_operandStack.pop_back();
@@ -993,8 +993,16 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* value = m_operandStack.pop_back();
             m_operandStack.push_back(m_builder.CreateTrunc(value, m_builder.getInt32Ty()));
         },
-        // TODO: LAnd
-        // TODO: LCmp
+        [&](LCmp)
+        {
+            llvm::Value* rhs = m_operandStack.pop_back();
+            llvm::Value* lhs = m_operandStack.pop_back();
+            llvm::Value* notEqual = m_builder.CreateICmpNE(lhs, rhs); // false if equal => 0
+            notEqual = m_builder.CreateZExt(notEqual, m_builder.getInt32Ty());
+            llvm::Value* otherCmp = m_builder.CreateICmpSLT(lhs, rhs);
+            llvm::Value* otherCase = m_builder.getInt32(-1);
+            m_operandStack.push_back(m_builder.CreateSelect(otherCmp, otherCase, notEqual));
+        },
         [&](OneOf<LDC, LDCW, LDC2W> ldc)
         {
             PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
@@ -1040,7 +1048,6 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
         },
-        // TODO: LOr
         [&](OneOf<LShl, LShr, LUShr>)
         {
             llvm::Value* rhs = m_operandStack.pop_back();
@@ -1059,7 +1066,6 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_operandStack.push_back(result);
         },
-        // TODO: LXor
         [&](OneOf<MonitorEnter, MonitorExit>)
         {
             // Pop object as is required by the instruction.
