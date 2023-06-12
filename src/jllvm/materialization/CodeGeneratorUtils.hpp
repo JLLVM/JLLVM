@@ -6,12 +6,39 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 
+#include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/ClassLoader.hpp>
 
 #include "ByteCodeCompileUtils.hpp"
 
 namespace jllvm
 {
+
+class ByteCodeTypeChecker
+{
+    llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> m_sections;
+    std::vector<llvm::Type*> m_typeStack;
+    llvm::LLVMContext& m_context;
+    const ClassFile& m_classFile;
+
+    template <class... Args>
+    struct OneOfBase : ByteCodeBase
+    {
+        template <class T, class = std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>>
+        OneOfBase(T&& value) : ByteCodeBase(std::forward<T>(value))
+        {
+        }
+    };
+
+public:
+    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile)
+        : m_context{context}, m_classFile{classFile}
+    {
+    }
+
+    void check(const Code& code);
+};
+
 /// Class for JVM operand stack
 /// This class also offers method to save and restore the current state of the stack in order to consider the control
 /// flow path

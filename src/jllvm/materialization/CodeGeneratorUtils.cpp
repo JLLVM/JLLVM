@@ -79,6 +79,196 @@ public:
 };
 } // namespace
 
+void ByteCodeTypeChecker::check(const Code& code)
+{
+    auto* addressType = referenceType(m_context);
+    auto* doubleType = llvm::Type::getDoubleTy(m_context);
+    auto* floatType = llvm::Type::getFloatTy(m_context);
+    auto* intType = llvm::Type::getInt32Ty(m_context);
+    auto* longType = llvm::Type::getInt64Ty(m_context);
+
+    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
+    {
+        match(
+            operation,
+            [&](AALoad)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+                m_typeStack.push_back(addressType);
+            },
+            [&](OneOfBase<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
+            { m_typeStack.erase(m_typeStack.end() - 3, m_typeStack.end()); },
+            [&](OneOfBase<AConstNull, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, New>)
+            { m_typeStack.push_back(addressType); },
+            [&](OneOfBase<ANewArray, NewArray>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.push_back(addressType);
+            },
+            [&](OneOfBase<AReturn, AStore, AStore0, AStore1, AStore2, AStore3, DAdd, DDiv, DMul, DRem, DStore, DStore0,
+                          DStore1, DStore2, DStore3, DSub, FAdd, FDiv, FMul, FRem, FReturn, FStore, FStore0, FStore1,
+                          FStore2, FStore3, FSub, IAdd, IAnd, IDiv, IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IfNonNull,
+                          IfNull, IMul, IOr, IRem, IReturn, IShl, IShr, IStore, IStore0, IStore1, IStore2, IStore3,
+                          ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LookupSwitch, LOr, LRem, LReturn, LShl, LShr,
+                          LStore, LStore0, LStore1, LStore2, LStore3, LSub, LUShr, LXor, MonitorEnter, MonitorExit, Pop,
+                          PutStatic, TableSwitch>) { m_typeStack.pop_back(); },
+            [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.push_back(intType);
+            },
+            [&](OneOfBase<AThrow, CheckCast, DNeg, FNeg, Goto, GotoW, I2B, I2C, I2S, IInc, INeg, LNeg, Nop, Ret,
+                          Return>) { /* Types do not change */ },
+            [&](OneOfBase<BALoad, CALoad, DCmpG, DCmpL, FCmpG, FCmpL, IALoad, LCmp, SALoad>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+                m_typeStack.push_back(intType);
+            },
+            [&](OneOfBase<BIPush, IConstM1, IConst0, IConst1, IConst2, IConst3, IConst4, IConst5, ILoad, ILoad0, ILoad1,
+                          ILoad2, ILoad3, SIPush>) { m_typeStack.push_back(intType); },
+            [&](OneOfBase<D2F, I2F, L2F>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.push_back(floatType);
+            },
+            [&](OneOfBase<D2L, F2L, I2L>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.push_back(longType);
+            },
+            [&](DALoad)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+                m_typeStack.push_back(doubleType);
+            },
+            [&](OneOfBase<DConst0, DConst1, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DReturn>)
+            { m_typeStack.push_back(doubleType); },
+            [&](Dup) { m_typeStack.push_back(m_typeStack.back()); },
+            [&](DupX1)
+            {
+                // TODO
+            },
+            [&](DupX2)
+            {
+                // TODO
+            },
+            [&](Dup2)
+            {
+                // TODO
+            },
+            [&](Dup2X1)
+            {
+                // TODO
+            },
+            [&](Dup2X2)
+            {
+                // TODO
+            },
+            [&](OneOfBase<F2D, I2D, L2D>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.push_back(doubleType);
+            },
+            [&](FALoad)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+                m_typeStack.push_back(floatType);
+            },
+            [&](OneOfBase<FConst0, FConst1, FConst2, FLoad, FLoad0, FLoad1, FLoad2, FLoad3>)
+            { m_typeStack.push_back(floatType); },
+            [&](OneOf<GetField, GetStatic> get)
+            {
+                FieldType descriptor = parseFieldType(PoolIndex<FieldRefInfo>{get.index}
+                                                          .resolve(m_classFile)
+                                                          ->nameAndTypeIndex.resolve(m_classFile)
+                                                          ->descriptorIndex.resolve(m_classFile)
+                                                          ->text);
+                llvm::Type* type = descriptorToType(descriptor, m_context);
+                if (type->isIntegerTy())
+                    ;
+            },
+            [&](OneOfBase<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, PutField>)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+            },
+            [&](InvokeDynamic)
+            {
+                // TODO
+            },
+            [&](OneOf<InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual> invoke)
+            {
+                MethodType descriptor = parseMethodType(PoolIndex<RefInfo>{invoke.index}
+                                                            .resolve(m_classFile)
+                                                            ->nameAndTypeIndex.resolve(m_classFile)
+                                                            ->descriptorIndex.resolve(m_classFile)
+                                                            ->text);
+
+                for (auto& _ : descriptor.parameters)
+                {
+                    m_typeStack.pop_back();
+                }
+
+                // static does not pop this
+                if (!holds_alternative<InvokeStatic>(operation))
+                {
+                    m_typeStack.pop_back();
+                }
+            },
+            [&](JSR)
+            {
+                // TODO
+            },
+            [&](JSRw)
+            {
+                // TODO
+            },
+            [&](LALoad)
+            {
+                m_typeStack.pop_back();
+                m_typeStack.pop_back();
+                m_typeStack.push_back(longType);
+            },
+            [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>)
+            { m_typeStack.push_back(longType); },
+            [&](OneOf<LDC, LDCW, LDC2W> ldc)
+            {
+                PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
+                          InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
+                    pool{ldc.index};
+
+                match(
+                    pool.resolve(m_classFile), [&](const ClassInfo*) { m_typeStack.push_back(addressType); },
+                    [&](const DoubleInfo* doubleInfo) { m_typeStack.push_back(doubleType); },
+                    [&](const FloatInfo* floatInfo) { m_typeStack.push_back(floatType); },
+                    [&](const IntegerInfo* integerInfo) { m_typeStack.push_back(intType); },
+                    [&](const LongInfo* longInfo) { m_typeStack.push_back(longType); },
+                    [&](const StringInfo* stringInfo) { m_typeStack.push_back(addressType); },
+                    [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
+            },
+            [&](MultiANewArray multiANewArray)
+            {
+                for (int i = 0; i < multiANewArray.dimensions; ++i)
+                {
+                    m_typeStack.pop_back();
+                }
+            },
+            [&](Pop2)
+            {
+                // TODO
+            },
+            [&](Swap) { std::swap(m_typeStack.back(), *(m_typeStack.end() - 2)); },
+            [&](Wide)
+            {
+                // TODO
+            });
+    }
+}
+
 void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject)
 {
     llvm::Function* function = builder.GetInsertBlock()->getParent();
