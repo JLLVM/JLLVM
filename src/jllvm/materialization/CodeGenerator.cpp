@@ -762,14 +762,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* fieldPtr = m_builder.CreateGEP(m_builder.getInt8Ty(), objectRef, {fieldOffset});
             llvm::Value* field = m_builder.CreateLoad(type, fieldPtr);
-            if (const auto* baseType = get_if<BaseType>(&descriptor); baseType && baseType->getValue() < BaseType::Int)
-            {
-                // Extend to the operands stack i32 type.
-                field = m_builder.CreateIntCast(field, m_builder.getInt32Ty(),
-                                                /*isSigned=*/!baseType->isUnsigned());
-            }
 
-            m_operandStack.push_back(field);
+            m_operandStack.push_back(extendToStackType(m_builder, descriptor, field));
         },
         [&](GetStatic getStatic)
         {
@@ -792,13 +786,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             FieldType descriptor = parseFieldType(fieldType);
             llvm::Type* type = descriptorToType(descriptor, m_builder.getContext());
             llvm::Value* field = m_builder.CreateLoad(type, fieldPtr);
-            if (const auto* baseType = get_if<BaseType>(&descriptor); baseType && baseType->getValue() < BaseType::Int)
-            {
-                // Extend to the operands stack i32 type.
-                field = m_builder.CreateIntCast(field, m_builder.getInt32Ty(),
-                                                /*isSigned=*/!baseType->isUnsigned());
-            }
-            m_operandStack.push_back(field);
+
+            m_operandStack.push_back(extendToStackType(m_builder, descriptor, field));
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
