@@ -271,7 +271,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
                 // can just create a direct call to them.
                 return mangleMethod(curr->getClassName(), iter->getName(), iter->getType());
             }
-            return VTableOffset{*iter->getVTableSlot()};
+            return VTableOffset{*iter->getTableSlot()};
         }
     }
 
@@ -289,7 +289,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
             { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
         if (method != interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
         }
     }
 
@@ -307,7 +307,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
                           });
         if (method != interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
         }
     }
 
@@ -329,7 +329,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
                           { return method.getName() == methodName && method.getType() == methodType; });
         if (iter != methods.end())
         {
-            return ITableOffset{classObject->getInterfaceId(), *iter->getVTableSlot()};
+            return ITableOffset{classObject->getInterfaceId(), *iter->getTableSlot()};
         }
     }
 
@@ -348,7 +348,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
                                            });
         if (iter != methods.end())
         {
-            return VTableOffset{*iter->getVTableSlot()};
+            return VTableOffset{*iter->getTableSlot()};
         }
     }
 
@@ -362,7 +362,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
             { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
         if (method != interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getVTableSlot()};
+            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
         }
     }
 

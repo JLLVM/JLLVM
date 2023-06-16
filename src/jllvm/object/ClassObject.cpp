@@ -14,7 +14,7 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 } // namespace
 
 jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
-                                               std::size_t vTableSlots, std::uint32_t fieldAreaSize,
+                                               std::uint32_t vTableSlots, std::uint32_t fieldAreaSize,
                                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                                llvm::ArrayRef<ClassObject*> bases, llvm::StringRef className,
                                                bool isAbstract)
@@ -31,30 +31,34 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
                 {
                     continue;
                 }
-                // TODO: We should probably calculate the method count of an interface once and store it in the
-                // interface.
-                iTables.push_back(ITable::create(allocator, classObject->getInterfaceId(),
-                                                 llvm::count_if(classObject->getMethods(), [](const Method& method)
-                                                                { return !method.isStatic(); })));
+                iTables.push_back(
+                    ITable::create(allocator, classObject->getInterfaceId(), classObject->getTableSize()));
             }
         }
     }
 
-    auto* result =
-        new (allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(vTableSlots), alignof(ClassObject)))
-            ClassObject(metaClass, fieldAreaSize, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
-                        arrayRefAlloc(allocator, bases), arrayRefAlloc(allocator, iTables), className, isAbstract);
+    // Abstract classes don't need a V-Table since they can't be instantiated and therefore can't ever occur as
+    // class object in an 'invokevirtual' instruction.
+    // Their methods nevertheless have v-table slot assignments since subclasses can call them and need to account for
+    // them in their v-table size.
+    std::uint32_t allocatedVTableSlots = isAbstract ? 0 : vTableSlots;
+    void* storage =
+        allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(allocatedVTableSlots), alignof(ClassObject));
+    auto* result = new (storage) ClassObject(metaClass, vTableSlots, fieldAreaSize, arrayRefAlloc(allocator, methods),
+                                             arrayRefAlloc(allocator, fields), arrayRefAlloc(allocator, bases),
+                                             arrayRefAlloc(allocator, iTables), className, isAbstract);
     // Zero out vTable.
-    std::memset(result->getVTable(), 0, vTableSlots * sizeof(VTableSlot));
+    std::fill(result->getVTable().begin(), result->getVTable().end(), nullptr);
     return result;
 }
 
-jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize,
+jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
                                 llvm::StringRef className, bool isAbstract)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(fieldAreaSize),
+      m_tableSize(vTableSlots),
       m_methods(methods),
       m_fields(fields),
       m_bases(bases),
@@ -90,7 +94,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false)
+    : ClassObject(nullptr, 0, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false)
 {
     // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
     m_isPrimitive = true;
@@ -119,6 +123,7 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interf
                                 llvm::StringRef className)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(0),
+      m_tableSize(llvm::count_if(methods, [](const Method& method) { return method.getTableSlot(); })),
       m_methods(methods),
       m_fields(fields),
       m_bases(interfaces),
