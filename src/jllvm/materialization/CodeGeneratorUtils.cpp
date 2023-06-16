@@ -77,129 +77,235 @@ public:
         m_debugBuilder.finalize();
     }
 };
+
+inline bool isCategoryTwo(llvm::Type* type)
+{
+    return type->isIntegerTy(64) || type->isDoubleTy();
+}
+
+template <class... Args>
+struct OneOfBase : ByteCodeBase
+{
+    template <class T, class = std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>>
+    OneOfBase(T&& value) : ByteCodeBase(std::forward<T>(value))
+    {
+    }
+};
 } // namespace
 
-void ByteCodeTypeChecker::check(const Code& code)
+ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
 {
-    auto* addressType = referenceType(m_context);
-    auto* doubleType = llvm::Type::getDoubleTy(m_context);
-    auto* floatType = llvm::Type::getFloatTy(m_context);
-    auto* intType = llvm::Type::getInt32Ty(m_context);
-    auto* longType = llvm::Type::getInt64Ty(m_context);
+    SectionMap sections;
+    TypeStack typeStack;
+
+    llvm::Type* addressType = referenceType(m_context);
+    llvm::Type* doubleType = llvm::Type::getDoubleTy(m_context);
+    llvm::Type* floatType = llvm::Type::getFloatTy(m_context);
+    llvm::Type* intType = llvm::Type::getInt32Ty(m_context);
+    llvm::Type* longType = llvm::Type::getInt64Ty(m_context);
+
+    TypeStack handlerStack{addressType};
+
+    for (const auto& exception : code.getExceptionTable())
+    {
+        sections.insert({exception.handlerPc, handlerStack});
+    }
 
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
+        if (auto result = sections.find(getOffset(operation)); result != sections.end())
+        {
+            typeStack = result->second;
+        }
+
         match(
-            operation,
-            [&](AALoad)
+            operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
+            [&](OneOfBase<AALoad, ANewArray, NewArray>)
             {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
-                m_typeStack.push_back(addressType);
+                if (holds_alternative<AALoad>(operation))
+                {
+                    typeStack.pop_back();
+                }
+                typeStack.back() = addressType;
             },
             [&](OneOfBase<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
-            { m_typeStack.erase(m_typeStack.end() - 3, m_typeStack.end()); },
+            { typeStack.erase(typeStack.end() - 3, typeStack.end()); },
             [&](OneOfBase<AConstNull, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, New>)
-            { m_typeStack.push_back(addressType); },
-            [&](OneOfBase<ANewArray, NewArray>)
-            {
-                m_typeStack.pop_back();
-                m_typeStack.push_back(addressType);
-            },
+            { typeStack.push_back(addressType); },
             [&](OneOfBase<AReturn, AStore, AStore0, AStore1, AStore2, AStore3, DAdd, DDiv, DMul, DRem, DStore, DStore0,
                           DStore1, DStore2, DStore3, DSub, FAdd, FDiv, FMul, FRem, FReturn, FStore, FStore0, FStore1,
-                          FStore2, FStore3, FSub, IAdd, IAnd, IDiv, IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IfNonNull,
-                          IfNull, IMul, IOr, IRem, IReturn, IShl, IShr, IStore, IStore0, IStore1, IStore2, IStore3,
-                          ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LookupSwitch, LOr, LRem, LReturn, LShl, LShr,
-                          LStore, LStore0, LStore1, LStore2, LStore3, LSub, LUShr, LXor, MonitorEnter, MonitorExit, Pop,
-                          PutStatic, TableSwitch>) { m_typeStack.pop_back(); },
-            [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>)
-            {
-                m_typeStack.pop_back();
-                m_typeStack.push_back(intType);
-            },
-            [&](OneOfBase<AThrow, CheckCast, DNeg, FNeg, Goto, GotoW, I2B, I2C, I2S, IInc, INeg, LNeg, Nop, Ret,
+                          FStore2, FStore3, FSub, IAdd, IAnd, IDiv, IMul, IOr, IRem, IReturn, IShl, IShr, IStore,
+                          IStore0, IStore1, IStore2, IStore3, ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LOr, LRem,
+                          LReturn, LShl, LShr, LStore, LStore0, LStore1, LStore2, LStore3, LSub, LUShr, LXor,
+                          MonitorEnter, MonitorExit, Pop, PutStatic>) { typeStack.pop_back(); },
+            [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>) { typeStack.back() = intType; },
+            [&](OneOfBase<AThrow, CheckCast, DNeg, FNeg, I2B, I2C, I2S, IInc, INeg, LNeg, Nop,
                           Return>) { /* Types do not change */ },
             [&](OneOfBase<BALoad, CALoad, DCmpG, DCmpL, FCmpG, FCmpL, IALoad, LCmp, SALoad>)
             {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
-                m_typeStack.push_back(intType);
+                typeStack.pop_back();
+                typeStack.back() = intType;
             },
             [&](OneOfBase<BIPush, IConstM1, IConst0, IConst1, IConst2, IConst3, IConst4, IConst5, ILoad, ILoad0, ILoad1,
-                          ILoad2, ILoad3, SIPush>) { m_typeStack.push_back(intType); },
-            [&](OneOfBase<D2F, I2F, L2F>)
+                          ILoad2, ILoad3, SIPush>) { typeStack.push_back(intType); },
+            [&](OneOfBase<D2F, I2F, L2F, FALoad>)
             {
-                m_typeStack.pop_back();
-                m_typeStack.push_back(floatType);
+                if (holds_alternative<FALoad>(operation))
+                {
+                    typeStack.pop_back();
+                }
+                typeStack.back() = floatType;
             },
-            [&](OneOfBase<D2L, F2L, I2L>)
+            [&](OneOfBase<D2L, F2L, I2L, LALoad>)
             {
-                m_typeStack.pop_back();
-                m_typeStack.push_back(longType);
+                if (holds_alternative<LALoad>(operation))
+                {
+                    typeStack.pop_back();
+                }
+                typeStack.back() = longType;
             },
-            [&](DALoad)
+            [&](OneOfBase<DALoad, F2D, I2D, L2D>)
             {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
-                m_typeStack.push_back(doubleType);
+                if (holds_alternative<DALoad>(operation))
+                {
+                    typeStack.pop_back();
+                }
+                typeStack.back() = doubleType;
             },
             [&](OneOfBase<DConst0, DConst1, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DReturn>)
-            { m_typeStack.push_back(doubleType); },
-            [&](Dup) { m_typeStack.push_back(m_typeStack.back()); },
+            { typeStack.push_back(doubleType); },
+            [&](Dup) { typeStack.push_back(typeStack.back()); },
             [&](DupX1)
             {
-                // TODO
+                auto iter = typeStack.end();
+                llvm::Type* type1 = *--iter;
+                llvm::Type* type2 = *--iter;
+
+                assert(!isCategoryTwo(type1) && !isCategoryTwo(type2));
+
+                typeStack.insert(iter, type1);
             },
             [&](DupX2)
             {
-                // TODO
+                auto iter = typeStack.end();
+                llvm::Type* type1 = *--iter;
+                llvm::Type* type2 = *--iter;
+
+                if (!isCategoryTwo(type2))
+                {
+                    // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
+                    llvm::Type* type3 = *--iter;
+                }
+
+                typeStack.insert(iter, type1);
             },
             [&](Dup2)
             {
-                // TODO
+                auto iter = typeStack.end();
+                llvm::Type* type = *--iter;
+
+                if (!isCategoryTwo(type))
+                {
+                    // Form 1: where both value1 and value2 are values of a category 1 computational type
+                    llvm::Type* type2 = *--iter;
+
+                    typeStack.push_back(type2);
+                }
+
+                typeStack.push_back(type);
             },
             [&](Dup2X1)
             {
-                // TODO
+                auto iter = typeStack.end();
+                llvm::Type* type1 = *--iter;
+                llvm::Type* type2 = *--iter;
+
+                if (!isCategoryTwo(type1))
+                {
+                    // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
+
+                    typeStack.insert(--iter, {type2, type1});
+                }
+                else
+                {
+                    // Form 2: where value1 is a value of a category 2 computational type and value2 is a value of a
+                    // category 1 computational type
+                    typeStack.insert(iter, type1);
+                }
             },
             [&](Dup2X2)
             {
-                // TODO
-            },
-            [&](OneOfBase<F2D, I2D, L2D>)
-            {
-                m_typeStack.pop_back();
-                m_typeStack.push_back(doubleType);
-            },
-            [&](FALoad)
-            {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
-                m_typeStack.push_back(floatType);
+                auto iter = typeStack.end();
+                llvm::Type* type1 = *--iter;
+                llvm::Type* type2 = *--iter;
+
+                if (!isCategoryTwo(type1))
+                {
+                    llvm::Type* type3 = *--iter;
+
+                    if (!isCategoryTwo(type3))
+                    {
+                        // Form 1: where value1, value2, value3, and value4 are all values of a category 1 computational
+                        // type
+                        --iter;
+                    }
+
+                    typeStack.insert(iter, {type2, type1});
+                }
+                else
+                {
+                    if (!isCategoryTwo(type2))
+                    {
+                        // Form 2: where value1 is a value of a category 2 computational type and value2 and value3 are
+                        // both values of a category 1 computational type
+                        --iter;
+                    }
+
+                    typeStack.insert(iter, type1);
+                }
             },
             [&](OneOfBase<FConst0, FConst1, FConst2, FLoad, FLoad0, FLoad1, FLoad2, FLoad3>)
-            { m_typeStack.push_back(floatType); },
+            { typeStack.push_back(floatType); },
             [&](OneOf<GetField, GetStatic> get)
             {
+                if (holds_alternative<GetField>(operation))
+                {
+                    typeStack.pop_back();
+                }
+
                 FieldType descriptor = parseFieldType(PoolIndex<FieldRefInfo>{get.index}
                                                           .resolve(m_classFile)
                                                           ->nameAndTypeIndex.resolve(m_classFile)
                                                           ->descriptorIndex.resolve(m_classFile)
                                                           ->text);
+
                 llvm::Type* type = descriptorToType(descriptor, m_context);
-                if (type->isIntegerTy())
-                    ;
+                if (type->isIntegerTy() && !type->isIntegerTy(64))
+                {
+                    type = intType;
+                }
+
+                typeStack.push_back(type);
             },
-            [&](OneOfBase<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, PutField>)
+            [&](OneOf<Goto, GotoW> gotoOp) {
+                sections.insert({gotoOp.offset + gotoOp.target, typeStack});
+            },
+            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
+                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
+                    cmpOp)
             {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
+                typeStack.pop_back();
+
+                match(
+                    operation,
+                    [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
+                    { typeStack.pop_back(); },
+                    [](...) {});
+
+                sections.insert({cmpOp.offset + cmpOp.target, typeStack});
+                sections.insert({cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t), typeStack});
             },
-            [&](InvokeDynamic)
-            {
-                // TODO
-            },
+            // TODO InvokeDynamic
             [&](OneOf<InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual> invoke)
             {
                 MethodType descriptor = parseMethodType(PoolIndex<RefInfo>{invoke.index}
@@ -210,31 +316,29 @@ void ByteCodeTypeChecker::check(const Code& code)
 
                 for (auto& _ : descriptor.parameters)
                 {
-                    m_typeStack.pop_back();
+                    typeStack.pop_back();
                 }
 
                 // static does not pop this
                 if (!holds_alternative<InvokeStatic>(operation))
                 {
-                    m_typeStack.pop_back();
+                    typeStack.pop_back();
+                }
+
+                llvm::Type* type = descriptorToType(descriptor.returnType, m_context);
+                if (type->isIntegerTy() && !type->isIntegerTy(64))
+                {
+                    type = intType;
+                }
+
+                if (!type->isVoidTy())
+                {
+                    typeStack.push_back(type);
                 }
             },
-            [&](JSR)
-            {
-                // TODO
-            },
-            [&](JSRw)
-            {
-                // TODO
-            },
-            [&](LALoad)
-            {
-                m_typeStack.pop_back();
-                m_typeStack.pop_back();
-                m_typeStack.push_back(longType);
-            },
-            [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>)
-            { m_typeStack.push_back(longType); },
+            // TODO JSR
+            // TODO JSRw
+            [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>) { typeStack.push_back(longType); },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
@@ -242,31 +346,101 @@ void ByteCodeTypeChecker::check(const Code& code)
                     pool{ldc.index};
 
                 match(
-                    pool.resolve(m_classFile), [&](const ClassInfo*) { m_typeStack.push_back(addressType); },
-                    [&](const DoubleInfo* doubleInfo) { m_typeStack.push_back(doubleType); },
-                    [&](const FloatInfo* floatInfo) { m_typeStack.push_back(floatType); },
-                    [&](const IntegerInfo* integerInfo) { m_typeStack.push_back(intType); },
-                    [&](const LongInfo* longInfo) { m_typeStack.push_back(longType); },
-                    [&](const StringInfo* stringInfo) { m_typeStack.push_back(addressType); },
+                    pool.resolve(m_classFile), [&](const ClassInfo*) { typeStack.push_back(addressType); },
+                    [&](const DoubleInfo*) { typeStack.push_back(doubleType); },
+                    [&](const FloatInfo*) { typeStack.push_back(floatType); },
+                    [&](const IntegerInfo*) { typeStack.push_back(intType); },
+                    [&](const LongInfo*) { typeStack.push_back(longType); },
+                    [&](const StringInfo*) { typeStack.push_back(addressType); },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
+            },
+            [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+            {
+                typeStack.pop_back();
+                sections.insert({switchOp.offset + switchOp.defaultOffset, typeStack});
+
+                for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetsPairs))
+                {
+                    sections.insert({switchOp.offset + target, typeStack});
+                }
             },
             [&](MultiANewArray multiANewArray)
             {
                 for (int i = 0; i < multiANewArray.dimensions; ++i)
                 {
-                    m_typeStack.pop_back();
+                    typeStack.pop_back();
                 }
+
+                typeStack.push_back(addressType);
             },
             [&](Pop2)
             {
-                // TODO
+                llvm::Type* type = typeStack.back();
+                typeStack.pop_back();
+                if (!isCategoryTwo(type))
+                {
+                    typeStack.pop_back();
+                }
             },
-            [&](Swap) { std::swap(m_typeStack.back(), *(m_typeStack.end() - 2)); },
-            [&](Wide)
+            [&](PutField)
             {
-                // TODO
+                typeStack.pop_back();
+                typeStack.pop_back();
+            },
+            // TODO Ret
+            [&](Swap) { std::swap(typeStack.back(), *(typeStack.end() - 2)); },
+            [&](Wide wide)
+            {
+                llvm::Type* type;
+                switch (wide.opCode)
+                {
+                    default: llvm_unreachable("Invalid wide operation");
+                    case OpCodes::AStore:
+                    case OpCodes::DStore:
+                    case OpCodes::FStore:
+                    case OpCodes::IStore:
+                    case OpCodes::LStore:
+                    {
+                        typeStack.pop_back();
+                        return;
+                    }
+                    case OpCodes::Ret: llvm_unreachable("NOT YET IMPLEMENTED"); // TODO
+                    case OpCodes::IInc:
+                    {
+                        return;
+                    }
+                    case OpCodes::ALoad:
+                    {
+                        type = addressType;
+                        break;
+                    }
+                    case OpCodes::DLoad:
+                    {
+                        type = doubleType;
+                        break;
+                    }
+                    case OpCodes::FLoad:
+                    {
+                        type = floatType;
+                        break;
+                    }
+                    case OpCodes::ILoad:
+                    {
+                        type = intType;
+                        break;
+                    }
+                    case OpCodes::LLoad:
+                    {
+                        type = longType;
+                        break;
+                    }
+                }
+
+                typeStack.push_back(type);
             });
     }
+
+    return sections;
 }
 
 void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject)

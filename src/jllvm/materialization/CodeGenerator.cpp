@@ -184,58 +184,21 @@ void CodeGenerator::generateCode(const Code& code)
         }
     }
 
-    calculateBasicBlocks(code);
+    createBasicBlocks(code);
     generateCodeBody(code);
 
     m_debugBuilder.finalizeSubprogram(subprogram);
     m_debugBuilder.finalize();
 }
 
-void CodeGenerator::calculateBasicBlocks(const Code& code)
+void CodeGenerator::createBasicBlocks(const Code& code)
 {
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
+    auto sectionMap = ByteCodeTypeChecker{m_builder.getContext(), m_classFile}.check(code);
+
+    for (auto& [offset, state] : sectionMap)
     {
-        auto addBasicBlock = [&](std::uint16_t target)
-        {
-            auto [result, inserted] = m_basicBlocks.insert({target, nullptr});
-
-            if (inserted)
-            {
-                result->second = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-            }
-        };
-        match(
-            operation, [&](OneOf<Goto, GotoW> gotoOp) { addBasicBlock(gotoOp.target + gotoOp.offset); },
-            [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
-                      IfGe, IfGt, IfLe, IfNonNull, IfNull>
-                    cmpOp)
-            {
-                addBasicBlock(cmpOp.target + cmpOp.offset);
-                addBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t));
-            },
-            [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
-            {
-                addBasicBlock(switchOp.offset + switchOp.defaultOffset);
-
-                for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetsPairs))
-                {
-                    addBasicBlock(switchOp.offset + target);
-                }
-            },
-            [](...) {});
-    }
-
-    for (const auto& iter : code.getExceptionTable())
-    {
-        auto [result, inserted] = m_basicBlocks.insert({iter.handlerPc, nullptr});
-        if (!inserted)
-        {
-            continue;
-        }
-        // Handlers have the special semantic of only having the caught exception at the very top. It is therefore
-        // required that we register that fact in 'basicBlockStackStates' explicitly.
-        result->second = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-        m_basicBlockStackStates.insert({result->second, m_operandStack.getHandlerState()});
+        m_basicBlocks.insert(
+            {offset, {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(state)}});
     }
 }
 
@@ -279,15 +242,10 @@ void CodeGenerator::generateCodeBody(const Code& code)
             // bytecode.
             if (m_builder.GetInsertBlock()->getTerminator() == nullptr)
             {
-                m_basicBlockStackStates.insert({result->second, m_operandStack.saveState()});
-                m_builder.CreateBr(result->second);
+                m_builder.CreateBr(result->second.first);
             }
-            m_builder.SetInsertPoint(result->second);
-            if (auto resultStackPointer = m_basicBlockStackStates.find(result->second);
-                resultStackPointer != m_basicBlockStackStates.end())
-            {
-                m_operandStack.restoreState(resultStackPointer->second);
-            }
+            m_builder.SetInsertPoint(result->second.first);
+            m_operandStack.restoreState(result->second.second);
         }
 
         generateInstruction(std::move(operation));
@@ -668,8 +626,6 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* value1 = m_operandStack.pop_back();
             llvm::Value* value2 = m_operandStack.pop_back();
 
-            assert(!isCategoryTwo(value1->getType()) && !isCategoryTwo(value2->getType()));
-
             m_operandStack.push_back(value1);
             m_operandStack.push_back(value2);
             m_operandStack.push_back(value1);
@@ -851,8 +807,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](OneOf<Goto, GotoW> gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
-            m_basicBlockStackStates.insert({m_basicBlocks[index], m_operandStack.saveState()});
-            m_builder.CreateBr(m_basicBlocks[index]);
+            m_builder.CreateBr(m_basicBlocks[index].first);
         },
         [&](I2B)
         {
@@ -897,8 +852,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                   IfGe, IfGt, IfLe, IfNonNull, IfNull>
                 cmpOp)
         {
-            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset];
-            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(int16_t)];
+            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset].first;
+            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].first;
 
             llvm::Value* rhs;
             llvm::Value* lhs;
@@ -932,8 +887,6 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = m_builder.CreateICmp(predicate, lhs, rhs);
-            m_basicBlockStackStates.insert({basicBlock, m_operandStack.saveState()});
-            m_basicBlockStackStates.insert({next, m_operandStack.saveState()});
             m_builder.CreateCondBr(cond, basicBlock, next);
         },
         [&](IInc iInc)
@@ -1083,15 +1036,13 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* key = m_operandStack.pop_back();
 
-            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset];
-            m_basicBlockStackStates.insert({defaultBlock, m_operandStack.saveState()});
+            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset].first;
 
             auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
 
             for (auto [match, target] : switchOp.matchOffsetsPairs)
             {
-                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target];
-                m_basicBlockStackStates.insert({targetBlock, m_operandStack.saveState()});
+                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target].first;
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
@@ -1440,7 +1391,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
 
     for (auto [handlerPC, catchType] : m_activeHandlers)
     {
-        llvm::BasicBlock* handlerBB = m_basicBlocks[handlerPC];
+        llvm::BasicBlock* handlerBB = m_basicBlocks[handlerPC].first;
 
         llvm::PointerType* ty = referenceType(m_builder.getContext());
 

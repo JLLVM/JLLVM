@@ -16,19 +16,11 @@ namespace jllvm
 
 class ByteCodeTypeChecker
 {
-    llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> m_sections;
-    std::vector<llvm::Type*> m_typeStack;
+    using TypeStack = std::vector<llvm::Type*>;
+    using SectionMap = llvm::DenseMap<std::uint16_t, TypeStack>;
+
     llvm::LLVMContext& m_context;
     const ClassFile& m_classFile;
-
-    template <class... Args>
-    struct OneOfBase : ByteCodeBase
-    {
-        template <class T, class = std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>>
-        OneOfBase(T&& value) : ByteCodeBase(std::forward<T>(value))
-        {
-        }
-    };
 
 public:
     ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile)
@@ -36,7 +28,7 @@ public:
     {
     }
 
-    void check(const Code& code);
+    SectionMap check(const Code& code);
 };
 
 /// Class for JVM operand stack
@@ -49,21 +41,8 @@ class OperandStack
     llvm::IRBuilder<>& m_builder;
     std::size_t m_topOfStack{};
 
-    class StackState
-    {
-        std::vector<llvm::Type*> m_types;
-        std::size_t m_topOfStack{};
-
-        StackState(std::vector<llvm::Type*> type, std::size_t topOfStack)
-            : m_types{std::move(type)}, m_topOfStack{topOfStack}
-        {
-        }
-
-        friend class OperandStack;
-    };
-
 public:
-    using State = StackState;
+    using State = std::vector<llvm::Type*>;
 
     OperandStack(llvm::IRBuilder<>& builder, std::uint16_t maxStack)
         : m_builder(builder), m_values{maxStack}, m_types{maxStack}
@@ -93,20 +72,10 @@ public:
         m_builder.CreateStore(value, alloc);
     }
 
-    StackState saveState() const
+    void restoreState(const State& state)
     {
-        return {m_types, m_topOfStack};
-    }
-
-    void restoreState(StackState state)
-    {
-        m_types = std::move(state.m_types);
-        m_topOfStack = state.m_topOfStack;
-    }
-
-    State getHandlerState() const
-    {
-        return {{referenceType(m_builder.getContext())}, 1};
+        llvm::copy(state, m_types.begin());
+        m_topOfStack = state.size();
     }
 
     void setHandlerStack(llvm::Value* value)
