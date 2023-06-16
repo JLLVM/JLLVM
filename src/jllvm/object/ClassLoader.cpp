@@ -42,7 +42,7 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
     llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> assignment;
     for (const MethodInfo& iter : classFile.getMethods())
     {
-        // If the method can never overwrite we don't need to assign it a v-table slot.
+        // If the method can't be overwritten we don't need to assign it a v-table slot.
         if (!iter.needsVTableSlot(classFile))
         {
             continue;

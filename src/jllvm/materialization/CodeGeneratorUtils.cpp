@@ -265,9 +265,10 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
             { return !method.isStatic() && method.getName() == methodName && method.getType() == methodType; });
         if (iter != methods.end())
         {
-            if (iter->isFinal())
+            if (!iter->getVTableSlot())
             {
-                // Final method can't be overwritten and we can just create a direct call to it.
+                // Methods that can't be overwritten, like final or private methods won't have a v-table slot and we
+                // can just create a direct call to them.
                 return mangleMethod(curr->getClassName(), iter->getName(), iter->getType());
             }
             return VTableOffset{*iter->getVTableSlot()};

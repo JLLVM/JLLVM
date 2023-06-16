@@ -383,7 +383,7 @@ public:
     /// Returns true if this method requires a VTable slot.
     bool needsVTableSlot(const ClassFile& classFile) const
     {
-        return !isStatic() && getName(classFile) != "<init>";
+        return !isPrivate() && !isFinal() && !isStatic() && getName(classFile) != "<init>";
     }
 
     /// Returns the name of this method.
