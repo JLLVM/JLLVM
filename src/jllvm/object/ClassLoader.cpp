@@ -15,31 +15,16 @@ namespace
 {
 struct VTableAssignment
 {
-    llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> methodToSlot;
-    std::uint16_t vTableCount;
+    llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> methodToSlot;
+    std::uint32_t vTableCount;
 };
 
 VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllvm::ClassObject* superClass)
 {
     using namespace jllvm;
 
-    std::uint16_t vTableCount = 0;
-    if (superClass)
-    {
-        for (const jllvm::ClassObject* curr : superClass->getSuperClasses())
-        {
-            for (const Method& iter : curr->getMethods())
-            {
-                if (auto slot = iter.getVTableSlot())
-                {
-                    vTableCount = std::max(vTableCount, *slot);
-                }
-            }
-        }
-        vTableCount++;
-    }
-
-    llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> assignment;
+    std::uint32_t nextVTableSlot = superClass ? superClass->getTableSize() : 0;
+    llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> assignment;
     for (const MethodInfo& iter : classFile.getMethods())
     {
         // If the method can never overwrite we don't need to assign it a v-table slot.
@@ -47,14 +32,14 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
         {
             continue;
         }
-        assignment.insert({&iter, vTableCount++});
+        assignment.insert({&iter, nextVTableSlot++});
     }
-    return {std::move(assignment), vTableCount};
+    return {std::move(assignment), nextVTableSlot};
 }
 
 VTableAssignment assignITableSlots(const jllvm::ClassFile& classFile)
 {
-    llvm::DenseMap<const jllvm::MethodInfo*, std::uint16_t> methodToSlot;
+    llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> methodToSlot;
 
     for (const jllvm::MethodInfo& iter : classFile.getMethods())
     {
@@ -123,7 +108,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     llvm::SmallVector<Method> methods;
     for (const MethodInfo& methodInfo : classFile.getMethods())
     {
-        std::optional<std::uint16_t> vTableSlot;
+        std::optional<std::uint32_t> vTableSlot;
         if (auto result = vTableAssignment.methodToSlot.find(&methodInfo);
             result != vTableAssignment.methodToSlot.end())
         {
