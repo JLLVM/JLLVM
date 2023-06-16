@@ -33,8 +33,8 @@ class Method
 {
     llvm::StringRef m_name;
     llvm::StringRef m_type;
-    std::uint16_t m_vTableSlot;
-    std::uint8_t m_hasVTableSlot : 1;
+    std::uint32_t m_tableSlot;
+    std::uint8_t m_hasTableSlot : 1;
     std::uint8_t m_isStatic : 1;
     std::uint8_t m_isFinal : 1;
     std::uint8_t m_isNative : 1;
@@ -42,12 +42,12 @@ class Method
     std::uint8_t m_isAbstract : 1;
 
 public:
-    Method(llvm::StringRef name, llvm::StringRef type, std::optional<std::uint16_t> vTableSlot, bool isStatic,
+    Method(llvm::StringRef name, llvm::StringRef type, std::optional<std::uint32_t> vTableSlot, bool isStatic,
            bool isFinal, bool isNative, Visibility visibility, bool isAbstract)
         : m_name(name),
           m_type(type),
-          m_vTableSlot(vTableSlot.value_or(0)),
-          m_hasVTableSlot(vTableSlot.has_value()),
+          m_tableSlot(vTableSlot.value_or(0)),
+          m_hasTableSlot(vTableSlot.has_value()),
           m_isStatic(isStatic),
           m_isFinal(isFinal),
           m_isNative(isNative),
@@ -68,15 +68,15 @@ public:
         return m_type;
     }
 
-    /// Returns the v-table slot of this method if it has one.
-    /// Note that a method may or may-not have a v-table slot regardless of if the method can be overwritten.
-    std::optional<std::uint16_t> getVTableSlot() const
+    /// Returns either the V-table slot or I-Table (depending on whether the method is part of a class or interface)
+    /// of this method if it has one.
+    std::optional<std::uint16_t> getTableSlot() const
     {
-        if (!m_hasVTableSlot)
+        if (!m_hasTableSlot)
         {
             return std::nullopt;
         }
-        return m_vTableSlot;
+        return m_tableSlot;
     }
 
     /// Returns true if this method is static.
@@ -245,6 +245,8 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     // Custom data we add starts here. Since ClassObjects are always created in the class loader heap and never
     // directly form Java code or on the GC we can extend the layout given by the JDK.
     std::int32_t m_fieldAreaSize;
+    // V-Table size for classes, I-Table size for Interfaces.
+    std::int32_t m_tableSize;
     llvm::ArrayRef<Method> m_methods;
     llvm::ArrayRef<Field> m_fields;
     // Contains all the bases of this class object. For classes, this contains the superclass (except for 'Object')
@@ -256,9 +258,9 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     bool m_initialized = false;
     bool m_isAbstract = false;
 
-    ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
-                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
-                llvm::StringRef className, bool isAbstract);
+    ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
+                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
+                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, bool isAbstract);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className);
@@ -300,8 +302,8 @@ public:
     /// 'bases' must contain all direct superclasses and interfaces implemented by the class object, with the
     /// superclass in the very first position (if it has one).
     /// 'className' is the name of the user class in the JVM internal format.
-    static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass, std::size_t vTableSlots,
-                               std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
+    static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+                               std::uint32_t vTableSlots, std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
                                llvm::StringRef className, bool isAbstract);
 
@@ -485,9 +487,9 @@ public:
     }
 
     /// Returns the VTable slots for the class.
-    VTableSlot* getVTable()
+    llvm::MutableArrayRef<VTableSlot> getVTable()
     {
-        return getTrailingObjects<VTableSlot>();
+        return {getTrailingObjects<VTableSlot>(), isAbstract() || isInterface() ? 0 : getTableSize()};
     }
 
     /// Returns the list of ITables of this class.
@@ -500,6 +502,16 @@ public:
     constexpr static std::size_t getITablesOffset()
     {
         return offsetof(ClassObject, m_iTables);
+    }
+
+    /// Returns the size of the I-Table if this class object represents an interface and the size of the V-Table
+    /// otherwise.
+    /// If the class is abstract, the v-table size does not reflect the actual size of the v-table of this class, as
+    /// abstract classes do not have any, but rather the v-table size any subclasses need to accommodate when
+    /// inheriting from this class.
+    std::uint32_t getTableSize() const
+    {
+        return m_tableSize;
     }
 
     /// Returns a range of all (direct and indirect) interfaces of this class object in order of "maximally specific" as
