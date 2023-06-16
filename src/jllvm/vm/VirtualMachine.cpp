@@ -119,7 +119,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
         [this](const ClassFile* classFile, ClassObject& classObject)
         {
             m_jit.add(classFile);
-            if (classObject.isInterface() || classObject.isAbstract())
+            if (classObject.isInterface())
             {
                 return;
             }
@@ -128,13 +128,18 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             {
                 for (const Method& iter : curr->getMethods())
                 {
-                    auto slot = iter.getTableSlot();
+                    auto slot = iter.getVTableSlot();
                     if (!slot)
                     {
                         continue;
                     }
                     classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
                 }
+            }
+
+            if (classObject.isAbstract())
+            {
+                return;
             }
 
             llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
@@ -146,14 +151,10 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
             for (ITable* iTable : classObject.getITables())
             {
                 const ClassObject* interface = idToInterface[iTable->getId()];
-                for (const Method& iter : interface->getMethods())
+                for (auto&& [index, method] : llvm::enumerate(llvm::make_filter_range(
+                         interface->getMethods(), [](const Method& method) { return !method.isStatic(); })))
                 {
-                    auto slot = iter.getTableSlot();
-                    if (!slot)
-                    {
-                        continue;
-                    }
-                    iTable->getMethods()[*slot] = methodSelection(m_jit, &classObject, iter, interface);
+                    iTable->getMethods()[index] = methodSelection(m_jit, &classObject, method, interface);
                 }
             }
         },
