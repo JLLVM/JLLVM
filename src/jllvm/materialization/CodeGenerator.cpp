@@ -1,5 +1,7 @@
 #include "CodeGenerator.hpp"
 
+#include <llvm/Support/ModRef.h>
+
 using namespace jllvm;
 
 namespace
@@ -24,6 +26,52 @@ llvm::FunctionCallee allocationFunction(llvm::Module* module)
     function->addFnAttrs(llvm::AttrBuilder(module->getContext())
                              .addAllocSizeAttr(0, std::nullopt)
                              .addAllocKindAttr(llvm::AllocFnKind::Alloc | llvm::AllocFnKind::Zeroed));
+    function->addRetAttrs(llvm::AttrBuilder(module->getContext())
+                              .addAlignmentAttr(alignof(ObjectHeader))
+                              .addAttribute(llvm::Attribute::NonNull)
+                              .addAttribute(llvm::Attribute::NoUndef));
+    return function;
+}
+
+llvm::FunctionCallee instanceOfFunction(llvm::Module* module)
+{
+    auto* function = module->getFunction("jllvm_instance_of");
+    if (function)
+    {
+        return function;
+    }
+
+    llvm::Type* ty = referenceType(module->getContext());
+    function = llvm::Function::Create(
+        llvm::FunctionType::get(llvm::IntegerType::get(module->getContext(), 32), {ty, ty}, false),
+        llvm::GlobalValue::ExternalLinkage, "jllvm_instance_of", module);
+    function->addFnAttrs(llvm::AttrBuilder(module->getContext())
+                             .addAttribute("gc-leaf-function")
+                             .addMemoryAttr(llvm::MemoryEffects::readOnly())
+                             .addAttribute(llvm::Attribute::WillReturn)
+                             .addAttribute(llvm::Attribute::NoUnwind));
+    function->addParamAttr(0, llvm::Attribute::NoCapture);
+    function->addParamAttr(1, llvm::Attribute::NoCapture);
+    function->addRetAttrs(llvm::AttrBuilder(module->getContext()).addAttribute(llvm::Attribute::NoUndef));
+    return function;
+}
+
+llvm::FunctionCallee forNameLoadedFunction(llvm::Module* module)
+{
+    auto* function = module->getFunction("jllvm_for_name_loaded");
+    if (function)
+    {
+        return function;
+    }
+
+    llvm::Type* ty = referenceType(module->getContext());
+    function =
+        llvm::Function::Create(llvm::FunctionType::get(ty, {llvm::PointerType::get(module->getContext(), 0)}, false),
+                               llvm::GlobalValue::ExternalLinkage, "jllvm_for_name_loaded", module);
+    function->addFnAttrs(llvm::AttrBuilder(module->getContext())
+                             .addAttribute("gc-leaf-function")
+                             .addAttribute(llvm::Attribute::NoUnwind)
+                             .addMemoryAttr(llvm::MemoryEffects::inaccessibleOrArgMemOnly()));
     return function;
 }
 
@@ -421,9 +469,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* classObject = loadClassObjectFromPool(op.index);
 
-            llvm::FunctionCallee callee = m_function->getParent()->getOrInsertFunction(
-                "jllvm_instance_of", llvm::FunctionType::get(m_builder.getInt32Ty(), {ty, ty}, false));
-            llvm::Instruction* call = m_builder.CreateCall(callee, {object, classObject});
+            llvm::Instruction* call =
+                m_builder.CreateCall(instanceOfFunction(m_function->getParent()), {object, classObject});
 
             match(
                 operation, [](...) { llvm_unreachable("Invalid operation"); },
@@ -1395,15 +1442,13 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
             return ehHandler;
         }
 
-        // Since an exception class must be loaded for any instance of the class to be created, we can be
-        // certain that the exception is not of the type if the class has not yet been loaded. And most
-        // importantly, don't need to eagerly load it.
-        llvm::FunctionCallee forNameLoaded =
-            m_function->getParent()->getOrInsertFunction("jllvm_for_name_loaded", ty, m_builder.getPtrTy());
         llvm::SmallString<64> buffer;
         llvm::Value* className = m_builder.CreateGlobalStringPtr(
             ("L" + catchType.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text + ";").toStringRef(buffer));
-        llvm::Value* classObject = m_builder.CreateCall(forNameLoaded, className);
+        // Since an exception class must be loaded for any instance of the class to be created, we can be
+        // certain that the exception is not of the type if the class has not yet been loaded. And most
+        // importantly, don't need to eagerly load it.
+        llvm::Value* classObject = m_builder.CreateCall(forNameLoadedFunction(m_function->getParent()), className);
         llvm::Value* notLoaded = m_builder.CreateICmpEQ(classObject, llvm::ConstantPointerNull::get(ty));
 
         auto* nextHandler = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
@@ -1412,9 +1457,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
 
         m_builder.SetInsertPoint(instanceOfCheck);
 
-        llvm::FunctionCallee callee = m_function->getParent()->getOrInsertFunction(
-            "jllvm_instance_of", m_builder.getInt32Ty(), ty, classObject->getType());
-        llvm::Value* call = m_builder.CreateCall(callee, {phi, classObject});
+        llvm::Value* call = m_builder.CreateCall(instanceOfFunction(m_function->getParent()), {phi, classObject});
         call = m_builder.CreateTrunc(call, m_builder.getInt1Ty());
 
         auto* jumpToHandler = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
