@@ -13,19 +13,17 @@
 
 namespace
 {
-struct VTableAssignment
+struct TableAssignment
 {
     llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> methodToSlot;
-    std::uint32_t vTableCount;
+    std::uint32_t tableSize;
 };
 
-VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllvm::ClassObject* superClass)
+TableAssignment assignTableSlots(const jllvm::ClassFile& classFile, const jllvm::ClassObject* superClass)
 {
-    using namespace jllvm;
-
-    std::uint32_t nextVTableSlot = superClass ? superClass->getTableSize() : 0;
+    std::uint32_t nextVTableSlot = (superClass && !classFile.isInterface()) ? superClass->getTableSize() : 0;
     llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> assignment;
-    for (const MethodInfo& iter : classFile.getMethods())
+    for (const jllvm::MethodInfo& iter : classFile.getMethods())
     {
         // If the method can't be overwritten we don't need to assign it a v-table slot.
         if (!iter.needsVTableSlot(classFile))
@@ -35,22 +33,6 @@ VTableAssignment assignVTableSlots(const jllvm::ClassFile& classFile, const jllv
         assignment.insert({&iter, nextVTableSlot++});
     }
     return {std::move(assignment), nextVTableSlot};
-}
-
-VTableAssignment assignITableSlots(const jllvm::ClassFile& classFile)
-{
-    llvm::DenseMap<const jllvm::MethodInfo*, std::uint32_t> methodToSlot;
-
-    for (const jllvm::MethodInfo& iter : classFile.getMethods())
-    {
-        if (iter.isStatic())
-        {
-            continue;
-        }
-        methodToSlot.insert({&iter, methodToSlot.size()});
-    }
-
-    return {std::move(methodToSlot), 0};
 }
 
 jllvm::Visibility visibility(const jllvm::MethodInfo& methodInfo)
@@ -102,8 +84,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
         interfaces.push_back(&forName("L" + iter + ";"));
     }
 
-    VTableAssignment vTableAssignment =
-        classFile.isInterface() ? assignITableSlots(classFile) : assignVTableSlots(classFile, superClass);
+    TableAssignment vTableAssignment = assignTableSlots(classFile, superClass);
 
     llvm::SmallVector<Method> methods;
     for (const MethodInfo& methodInfo : classFile.getMethods())
@@ -176,7 +157,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
         {
             interfaces.insert(interfaces.begin(), superClass);
         }
-        result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.vTableCount, instanceSize,
+        result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.tableSize, instanceSize,
                                      methods, fields, interfaces, className, classFile.isAbstract());
     }
     m_mapping.insert({("L" + className + ";").str(), result});

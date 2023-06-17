@@ -243,6 +243,30 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
     return call;
 }
 
+LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::vTableResult(const jllvm::ClassObject* classObject,
+                                                                            const jllvm::Method* method)
+{
+    if (!method->getTableSlot())
+    {
+        // Methods that can't be overwritten, like final or private methods won't have a v-table slot and we
+        // can just create a direct call to them.
+        return mangleMethod(classObject->getClassName(), method->getName(), method->getType());
+    }
+    return VTableOffset{*method->getTableSlot()};
+}
+
+LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::iTableResult(const jllvm::ClassObject* interface,
+                                                                            const jllvm::Method* method)
+{
+    if (!method->getTableSlot())
+    {
+        // Methods that can't be overwritten, like final or private methods won't have a v-table slot and we
+        // can just create a direct call to them.
+        return mangleMethod(interface->getClassName(), method->getName(), method->getType());
+    }
+    return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
+}
+
 LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodResolution(const ClassObject* classObject,
                                                                                        llvm::StringRef methodName,
                                                                                        llvm::StringRef methodType)
@@ -263,16 +287,11 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
         const Method* iter = llvm::find_if(
             methods, [&](const Method& method)
             { return !method.isStatic() && method.getName() == methodName && method.getType() == methodType; });
-        if (iter != methods.end())
+        if (iter == methods.end())
         {
-            if (!iter->getTableSlot())
-            {
-                // Methods that can't be overwritten, like final or private methods won't have a v-table slot and we
-                // can just create a direct call to them.
-                return mangleMethod(curr->getClassName(), iter->getName(), iter->getType());
-            }
-            return VTableOffset{*iter->getTableSlot()};
+            continue;
         }
+        return vTableResult(curr, iter);
     }
 
     // Otherwise, method resolution attempts to locate the referenced method
@@ -287,10 +306,11 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
         const Method* method = llvm::find_if(
             interface->getMethods(), [&](const Method& method)
             { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
-        if (method != interface->getMethods().end())
+        if (method == interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
+            continue;
         }
+        return iTableResult(interface, method);
     }
 
     // Otherwise, if any superinterface of C declares a method with the name and descriptor specified by the method
@@ -305,10 +325,11 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::virtualMethodReso
                               return !method.isStatic() && method.getVisibility() != Visibility::Private
                                      && method.getName() == methodName && method.getType() == methodType;
                           });
-        if (method != interface->getMethods().end())
+        if (method == interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
+            continue;
         }
+        return iTableResult(interface, method);
     }
 
     llvm_unreachable("method not found");
@@ -329,7 +350,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
                           { return method.getName() == methodName && method.getType() == methodType; });
         if (iter != methods.end())
         {
-            return ITableOffset{classObject->getInterfaceId(), *iter->getTableSlot()};
+            return iTableResult(classObject, iter);
         }
     }
 
@@ -338,7 +359,8 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
     // set, method lookup succeeds.
     {
         constexpr llvm::StringLiteral className = "java/lang/Object";
-        llvm::ArrayRef<Method> methods = classLoader.forName("L" + className + ";").getMethods();
+        ClassObject& object = classLoader.forName("L" + className + ";");
+        llvm::ArrayRef<Method> methods = object.getMethods();
         const Method* iter = llvm::find_if(methods,
                                            [&](const Method& method)
                                            {
@@ -348,7 +370,7 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
                                            });
         if (iter != methods.end())
         {
-            return VTableOffset{*iter->getTableSlot()};
+            return vTableResult(&object, iter);
         }
     }
 
@@ -360,10 +382,11 @@ LazyClassLoaderHelper::ResolutionResult LazyClassLoaderHelper::interfaceMethodRe
         const Method* method = llvm::find_if(
             interface->getMethods(), [&](const Method& method)
             { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
-        if (method != interface->getMethods().end())
+        if (method == interface->getMethods().end())
         {
-            return ITableOffset{interface->getInterfaceId(), *method->getTableSlot()};
+            continue;
         }
+        return iTableResult(interface, method);
     }
 
     llvm_unreachable("method not found");
