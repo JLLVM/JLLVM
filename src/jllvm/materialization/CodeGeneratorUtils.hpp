@@ -130,6 +130,10 @@ class LazyClassLoaderHelper
 
     using ResolutionResult = swl::variant<VTableOffset, ITableOffset, std::string>;
 
+    static ResolutionResult vTableResult(const ClassObject* classObject, const Method* method);
+
+    static ResolutionResult iTableResult(const ClassObject* interface, const Method* method);
+
     static ResolutionResult virtualMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
                                                     llvm::StringRef methodType);
 
