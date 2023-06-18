@@ -57,9 +57,23 @@ public:
         function->setSubprogram(m_subProgram);
     }
 
+    ~TrivialDebugInfoBuilder()
+    {
+        finalize();
+    }
+
+    TrivialDebugInfoBuilder(const TrivialDebugInfoBuilder&) = delete;
+    TrivialDebugInfoBuilder(TrivialDebugInfoBuilder&&) = delete;
+    TrivialDebugInfoBuilder& operator=(const TrivialDebugInfoBuilder&) = delete;
+    TrivialDebugInfoBuilder& operator=(TrivialDebugInfoBuilder&&) = delete;
+
     void finalize()
     {
-        m_debugBuilder.finalizeSubprogram(m_subProgram);
+        if (!m_subProgram)
+        {
+            return;
+        }
+        m_debugBuilder.finalizeSubprogram(std::exchange(m_subProgram, nullptr));
         m_debugBuilder.finalize();
     }
 };
