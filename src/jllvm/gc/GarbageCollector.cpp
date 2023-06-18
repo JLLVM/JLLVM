@@ -118,7 +118,7 @@ void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                 }
                 case jllvm::StackMapEntry::Indirect:
                 {
-                    auto rp = _Unwind_GetGR(context, iter.registerNumber);
+                    auto rp = _Unwind_GetCFA(context);
                     auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
                     for (std::size_t i = 0; i < iter.count; i++)
                     {
@@ -175,7 +175,7 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                 }
                 case jllvm::StackMapEntry::Indirect:
                 {
-                    auto rp = _Unwind_GetGR(context, iter.registerNumber);
+                    auto rp = _Unwind_GetCFA(context);
                     auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
                     for (std::size_t i = 0; i < iter.count; i++)
                     {

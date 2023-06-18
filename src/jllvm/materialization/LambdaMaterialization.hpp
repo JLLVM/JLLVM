@@ -173,6 +173,7 @@ public:
 
         llvm::Function* function =
             llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, m_symbol, module.get());
+        function->addFnAttr(llvm::Attribute::UWTable);
 
         auto* type = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), sizeof(F));
         auto* closure = new llvm::GlobalVariable(
