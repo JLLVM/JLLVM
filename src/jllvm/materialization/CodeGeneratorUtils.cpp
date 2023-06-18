@@ -1,5 +1,7 @@
 #include "CodeGeneratorUtils.hpp"
 
+#include <llvm/IR/DIBuilder.h>
+
 #include "ByteCodeLayer.hpp"
 #include "LambdaMaterialization.hpp"
 
@@ -35,6 +37,32 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodTyp
     }
     return llvm::AttributeList::get(context, llvm::AttributeSet{}, retAttrs, paramAttrs);
 }
+
+class TrivialDebugInfoBuilder
+{
+    llvm::DIBuilder m_debugBuilder;
+    llvm::DISubprogram* m_subProgram;
+
+public:
+    TrivialDebugInfoBuilder(llvm::Function* function) : m_debugBuilder(*function->getParent())
+    {
+        llvm::DIFile* file = m_debugBuilder.createFile(".", ".");
+        m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
+
+        m_subProgram =
+            m_debugBuilder.createFunction(file, function->getName(), "", file, 1,
+                                          m_debugBuilder.createSubroutineType(m_debugBuilder.getOrCreateTypeArray({})),
+                                          1, llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
+
+        function->setSubprogram(m_subProgram);
+    }
+
+    void finalize()
+    {
+        m_debugBuilder.finalizeSubprogram(m_subProgram);
+        m_debugBuilder.finalize();
+    }
+};
 } // namespace
 
 void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject)
@@ -84,7 +112,7 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
         return returnValueToIRConstant(builder, f(classObject));
     }
 
-    std::string stubSymbol = ("<classLoad>" + fieldDescriptor + key).str();
+    std::string stubSymbol = ("Class load " + fieldDescriptor + key).str();
     if (!m_stubsManager.findStub(stubSymbol, true))
     {
         llvm::cantFail(m_stubsManager.createStub(
@@ -106,6 +134,7 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
                                                             stubSymbol, module.get());
+                    TrivialDebugInfoBuilder debugInfoBuilder(function);
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
                     if (mustInitializeClassObject && !classObject.isInitialized())
@@ -114,6 +143,8 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
                     }
 
                     builder.CreateRet(returnValueToIRConstant(builder, f(&classObject)));
+
+                    debugInfoBuilder.finalize();
 
                     llvm::cantFail(m_baseLayer.add(m_implDylib,
                                                    llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
@@ -156,7 +187,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 
     // Otherwise we create a stub to call the class loader at runtime and then later replace the stub with the
     // real method.
-    std::string stubName = (method + key).str();
+    std::string stubName = (key + " " + method).str();
 
     if (!m_stubsManager.findStub(stubName, true))
     {
@@ -178,6 +209,8 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, stubName,
                                                             module.get());
+                    TrivialDebugInfoBuilder debugInfoBuilder(function);
+
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
                     llvm::SmallVector<llvm::Value*> args;
@@ -219,6 +252,8 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
                     {
                         builder.CreateRet(result);
                     }
+
+                    debugInfoBuilder.finalize();
 
                     llvm::cantFail(m_baseLayer.add(m_implDylib,
                                                    llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
@@ -397,7 +432,7 @@ llvm::Value* LazyClassLoaderHelper::doNonVirtualCall(llvm::IRBuilder<>& builder,
                                                      llvm::StringRef methodType, llvm::ArrayRef<llvm::Value*> args)
 {
     return doCallForClassObject(
-        builder, className, methodName, methodType, isStatic, "<static>", args,
+        builder, className, methodName, methodType, isStatic, "Static Call Stub for", args,
         [isStatic, className = className.str(), methodName = methodName.str(), methodType = methodType.str()](
             llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
         {
@@ -426,8 +461,8 @@ llvm::Value* LazyClassLoaderHelper::doIndirectCall(llvm::IRBuilder<>& builder, l
     llvm::StringRef key;
     switch (resolution)
     {
-        case Virtual: key = "<virtual>"; break;
-        case Interface: key = "<interface>"; break;
+        case Virtual: key = "Virtual Call Stub for"; break;
+        case Interface: key = "Interface Call Stub for"; break;
     }
     return doCallForClassObject(
         builder, className, methodName, methodType, false, key, args,
