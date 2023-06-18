@@ -1,5 +1,6 @@
 #include "JNIImplementationLayer.hpp"
 
+#include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -92,9 +93,21 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 module->setDataLayout(m_dataLayout);
                 module->setTargetTriple(LLVM_HOST_TRIPLE);
 
+                llvm::DIBuilder debugBuilder(*module);
+                llvm::DIFile* file = debugBuilder.createFile(".", ".");
+                llvm::DICompileUnit* cu =
+                    debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
+
+                llvm::DISubprogram* subprogram = debugBuilder.createFunction(
+                    file, bridgeName, bridgeName, file, 1,
+                    debugBuilder.createSubroutineType(debugBuilder.getOrCreateTypeArray({})), 1, llvm::DINode::FlagZero,
+                    llvm::DISubprogram::SPFlagDefinition);
+
                 MethodType methodType = parseMethodType(methodInfo->getDescriptor(*classFile));
                 auto* function = llvm::Function::Create(descriptorToType(methodType, methodInfo->isStatic(), *context),
                                                         llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
+                function->setSubprogram(subprogram);
+
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
                 llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
@@ -179,6 +192,9 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 {
                     builder.CreateRet(result);
                 }
+
+                debugBuilder.finalizeSubprogram(subprogram);
+                debugBuilder.finalize();
 
                 llvm::cantFail(
                     m_irLayer.add(m_jniBridges, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
