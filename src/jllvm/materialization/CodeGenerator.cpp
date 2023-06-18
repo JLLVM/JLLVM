@@ -159,6 +159,15 @@ ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& b
 
 void CodeGenerator::generateCode(const Code& code)
 {
+    llvm::DIFile* file = m_debugBuilder.createFile("temp.java", ".");
+    llvm::DICompileUnit* cu = m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
+
+    llvm::DISubprogram* subprogram =
+        m_debugBuilder.createFunction(file, m_function->getName(), "", file, 1,
+                                      m_debugBuilder.createSubroutineType(m_debugBuilder.getOrCreateTypeArray({})), 1,
+                                      llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
+    m_function->setSubprogram(subprogram);
+
     // We need pointer size bytes, since that is the largest type we may store in a local.
     std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
 
@@ -177,6 +186,9 @@ void CodeGenerator::generateCode(const Code& code)
 
     calculateBasicBlocks(code);
     generateCodeBody(code);
+
+    m_debugBuilder.finalizeSubprogram(subprogram);
+    m_debugBuilder.finalize();
 }
 
 void CodeGenerator::calculateBasicBlocks(const Code& code)

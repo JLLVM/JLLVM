@@ -1,5 +1,7 @@
 #pragma once
 
+#include <llvm/IR/DIBuilder.h>
+
 #include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/vm/StringInterner.hpp>
 
@@ -17,6 +19,7 @@ class CodeGenerator
     StringInterner& m_stringInterner;
     const MethodType& m_functionMethodType;
     llvm::IRBuilder<> m_builder;
+    llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
     std::vector<llvm::AllocaInst*> m_locals;
     llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> m_basicBlocks;
@@ -53,6 +56,7 @@ public:
           m_stringInterner{stringInterner},
           m_functionMethodType{methodType},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
+          m_debugBuilder{*function->getParent()},
           m_operandStack{m_builder, maxStack},
           m_locals{maxLocals}
     {
