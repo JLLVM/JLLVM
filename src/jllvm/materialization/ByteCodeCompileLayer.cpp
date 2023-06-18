@@ -22,6 +22,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
         llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
                                llvm::GlobalValue::ExternalLinkage, mangleMethod(*methodInfo, *classFile), module.get());
     function->setGC("coreclr");
+    function->addFnAttr(llvm::Attribute::UWTable);
 #ifdef LLVM_ADDRESS_SANITIZER_BUILD
     function->addFnAttr(llvm::Attribute::SanitizeAddress);
 #endif

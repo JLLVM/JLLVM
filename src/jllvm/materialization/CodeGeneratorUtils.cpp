@@ -148,6 +148,7 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
                                                             stubSymbol, module.get());
+                    function->addFnAttr(llvm::Attribute::UWTable);
                     TrivialDebugInfoBuilder debugInfoBuilder(function);
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
@@ -223,6 +224,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, stubName,
                                                             module.get());
+                    function->addFnAttr(llvm::Attribute::UWTable);
                     TrivialDebugInfoBuilder debugInfoBuilder(function);
 
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
