@@ -9,8 +9,7 @@
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/object/Object.hpp>
-
-#include <unwind.h>
+#include <jllvm/unwind/Unwinder.hpp>
 
 #define DEBUG_TYPE "jvm"
 
@@ -94,114 +93,99 @@ bool shouldBeAddedToWorkList(ObjectRepr* repr, ObjectRepr* from, ObjectRepr* to)
 void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::StackMapEntry>>& map,
                        std::vector<ObjectRepr*>& results, ObjectRepr* from, ObjectRepr* to)
 {
-    auto lambda = [&](_Unwind_Context* context)
-    {
-        auto programCounter = _Unwind_GetIP(context);
-        for (const auto& iter : map.lookup(programCounter))
+    jllvm::unwindStack(
+        [&](jllvm::UnwindFrame context)
         {
-            switch (iter.type)
+            for (const auto& iter : map.lookup(context.getProgramCounter()))
             {
-                case jllvm::StackMapEntry::Register:
+                switch (iter.type)
                 {
-                    auto rp = _Unwind_GetGR(context, iter.registerNumber);
-                    auto* object = reinterpret_cast<ObjectRepr*>(rp);
-                    if (shouldBeAddedToWorkList(object, from, to))
+                    case jllvm::StackMapEntry::Register:
                     {
-                        results.push_back(object);
-                        object->markSeen();
-                    }
-                    break;
-                }
-                case jllvm::StackMapEntry::Direct:
-                {
-                    llvm_unreachable("We don't do stack allocations");
-                }
-                case jllvm::StackMapEntry::Indirect:
-                {
-                    auto rp = _Unwind_GetCFA(context);
-                    auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
-                    for (std::size_t i = 0; i < iter.count; i++)
-                    {
-                        auto* object = ptr[i];
-                        if (!shouldBeAddedToWorkList(object, from, to))
+                        auto rp = context.getIntegerRegister(iter.registerNumber);
+                        auto* object = reinterpret_cast<ObjectRepr*>(rp);
+                        if (shouldBeAddedToWorkList(object, from, to))
                         {
-                            continue;
+                            results.push_back(object);
+                            object->markSeen();
                         }
-                        object->markSeen();
-                        results.push_back(object);
+                        break;
                     }
-                    break;
+                    case jllvm::StackMapEntry::Direct:
+                    {
+                        llvm_unreachable("We don't do stack allocations");
+                    }
+                    case jllvm::StackMapEntry::Indirect:
+                    {
+                        auto rp = context.getStackPointer();
+                        auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
+                        for (std::size_t i = 0; i < iter.count; i++)
+                        {
+                            auto* object = ptr[i];
+                            if (!shouldBeAddedToWorkList(object, from, to))
+                            {
+                                continue;
+                            }
+                            object->markSeen();
+                            results.push_back(object);
+                        }
+                        break;
+                    }
                 }
             }
-        }
-    };
-
-    _Unwind_Backtrace(
-        +[](_Unwind_Context* context, void* lp)
-        {
-            (*reinterpret_cast<decltype(lambda)*>(lp))(context);
-            return _URC_NO_REASON;
-        },
-        &lambda);
+        });
 }
 
 void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::StackMapEntry>>& map,
                        const llvm::DenseMap<ObjectRepr*, ObjectRepr*>& mapping)
 {
-    auto lambda = [&](_Unwind_Context* context)
-    {
-        auto programCounter = _Unwind_GetIP(context);
-        for (const auto& iter : map.lookup(programCounter))
+    jllvm::unwindStack(
+        [&](jllvm::UnwindFrame context)
         {
-            switch (iter.type)
+            for (const auto& iter : map.lookup(context.getProgramCounter()))
             {
-                case jllvm::StackMapEntry::Register:
+                switch (iter.type)
                 {
-                    auto rp = _Unwind_GetGR(context, iter.registerNumber);
-                    if (!rp)
+                    case jllvm::StackMapEntry::Register:
                     {
+                        auto rp = context.getIntegerRegister(iter.registerNumber);
+                        if (!rp)
+                        {
+                            break;
+                        }
+                        auto* object = reinterpret_cast<ObjectRepr*>(rp);
+                        if (auto* replacement = mapping.lookup(object))
+                        {
+                            context.setIntegerRegister(iter.registerNumber,
+                                                       reinterpret_cast<std::uintptr_t>(replacement));
+                        }
                         break;
                     }
-                    auto* object = reinterpret_cast<ObjectRepr*>(rp);
-                    if (auto* replacement = mapping.lookup(object))
+                    case jllvm::StackMapEntry::Direct:
                     {
-                        _Unwind_SetGR(context, iter.registerNumber, reinterpret_cast<std::uintptr_t>(replacement));
+                        llvm_unreachable("We don't do stack allocations");
                     }
-                    break;
-                }
-                case jllvm::StackMapEntry::Direct:
-                {
-                    llvm_unreachable("We don't do stack allocations");
-                }
-                case jllvm::StackMapEntry::Indirect:
-                {
-                    auto rp = _Unwind_GetCFA(context);
-                    auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
-                    for (std::size_t i = 0; i < iter.count; i++)
+                    case jllvm::StackMapEntry::Indirect:
                     {
-                        auto* object = ptr[i];
-                        if (!object)
+                        auto rp = context.getStackPointer();
+                        auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
+                        for (std::size_t i = 0; i < iter.count; i++)
                         {
-                            continue;
+                            auto* object = ptr[i];
+                            if (!object)
+                            {
+                                continue;
+                            }
+                            if (ObjectRepr* replacement = mapping.lookup(object))
+                            {
+                                ptr[i] = replacement;
+                            }
                         }
-                        if (ObjectRepr* replacement = mapping.lookup(object))
-                        {
-                            ptr[i] = replacement;
-                        }
+                        break;
                     }
-                    break;
                 }
             }
-        }
-    };
-
-    _Unwind_Backtrace(
-        +[](_Unwind_Context* context, void* lp)
-        {
-            (*reinterpret_cast<decltype(lambda)*>(lp))(context);
-            return _URC_NO_REASON;
-        },
-        &lambda);
+        });
 }
 
 template <class F>
