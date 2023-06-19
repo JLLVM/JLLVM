@@ -55,6 +55,12 @@ public:
         return m_gc;
     }
 
+    /// Returns the class loader instance of the virtual machine.
+    ClassLoader& getClassLoader()
+    {
+        return m_classLoader;
+    }
+
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);
 
     template <class... Args>

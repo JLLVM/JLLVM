@@ -129,6 +129,21 @@ public:
         // Noop until (if?) we need some C++ initialization code.
     }
 
+    static const ClassObject* getPrimitiveClass(VirtualMachine& vm, GCRootRef<ClassObject>, GCRootRef<String> string)
+    {
+        static llvm::DenseMap<llvm::StringRef, char> mapping = {
+            {"boolean", 'Z'}, {"char", 'C'},  {"byte", 'B'}, {"short", 'S'}, {"int", 'I'},
+            {"double", 'D'},  {"float", 'F'}, {"void", 'V'}, {"long", 'L'},
+        };
+        std::string utf8 = string->toUTF8();
+        char c = mapping.lookup(utf8);
+        if (c == 0)
+        {
+            return nullptr;
+        }
+        return &vm.getClassLoader().forName(llvm::Twine(c));
+    }
+
     bool isArray()
     {
         return javaThis->isArray();
@@ -146,7 +161,57 @@ public:
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
         std::make_tuple(addMember<&ClassModel::registerNatives>(), addMember<&ClassModel::isArray>(),
-                        addMember<&ClassModel::desiredAssertionStatus0>());
+                        addMember<&ClassModel::desiredAssertionStatus0>(), addMember<&ClassModel::getPrimitiveClass>());
+};
+
+class FloatModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static std::uint32_t floatToRawIntBits(VirtualMachine&, GCRootRef<ClassObject>, float value)
+    {
+        // TODO: Use std::bit_cast once supported by our C++20.
+        std::uint32_t repr;
+        std::memcpy(&repr, &value, sizeof(float));
+        return repr;
+    }
+
+    static float intBitsToFloat(VirtualMachine&, GCRootRef<ClassObject>, std::uint32_t value)
+    {
+        // TODO: Use std::bit_cast once supported by our C++20.
+        float repr;
+        std::memcpy(&repr, &value, sizeof(float));
+        return repr;
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/Float";
+    constexpr static auto methods = std::make_tuple(addMember<&floatToRawIntBits>(), addMember<&intBitsToFloat>());
+};
+
+class DoubleModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static std::uint64_t doubleToRawLongBits(VirtualMachine&, GCRootRef<ClassObject>, double value)
+    {
+        // TODO: Use std::bit_cast once supported by our C++20.
+        std::uint64_t repr;
+        std::memcpy(&repr, &value, sizeof(double));
+        return repr;
+    }
+
+    static double longBitsToDouble(VirtualMachine&, GCRootRef<ClassObject>, std::uint64_t value)
+    {
+        // TODO: Use std::bit_cast once supported by our C++20.
+        double repr;
+        std::memcpy(&repr, &value, sizeof(double));
+        return repr;
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/Double";
+    constexpr static auto methods = std::make_tuple(addMember<&doubleToRawLongBits>(), addMember<&longBitsToDouble>());
 };
 
 /// Model implementation for the native methods of Javas 'Thowable' class.
