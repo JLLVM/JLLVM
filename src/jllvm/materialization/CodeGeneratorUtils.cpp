@@ -93,29 +93,23 @@ struct OneOfBase : ByteCodeBase
 };
 } // namespace
 
-ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
+void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uint16_t offset, TypeStack typeStack)
 {
-    SectionMap sections;
-    TypeStack typeStack;
+    bool done = false;
 
-    llvm::Type* addressType = referenceType(m_context);
-    llvm::Type* doubleType = llvm::Type::getDoubleTy(m_context);
-    llvm::Type* floatType = llvm::Type::getFloatTy(m_context);
-    llvm::Type* intType = llvm::Type::getInt32Ty(m_context);
-    llvm::Type* longType = llvm::Type::getInt64Ty(m_context);
-
-    TypeStack handlerStack{addressType};
-
-    for (const auto& exception : code.getExceptionTable())
+    auto pushNext = [&](std::uint16_t next)
     {
-        sections.insert({exception.handlerPc, handlerStack});
-    }
-
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
-    {
-        if (auto result = sections.find(getOffset(operation)); result != sections.end())
+        if (m_basicBlocks.insert({next, typeStack}).second)
         {
-            typeStack = result->second;
+            m_offsetStack.push_back(next);
+        }
+    };
+
+    for (ByteCodeOp operation : byteCodeRange(section, offset))
+    {
+        if (done)
+        {
+            return;
         }
 
         match(
@@ -126,35 +120,35 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 {
                     typeStack.pop_back();
                 }
-                typeStack.back() = addressType;
+                typeStack.back() = m_addressType;
             },
             [&](OneOfBase<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
             { typeStack.erase(typeStack.end() - 3, typeStack.end()); },
             [&](OneOfBase<AConstNull, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, New>)
-            { typeStack.push_back(addressType); },
-            [&](OneOfBase<AReturn, AStore, AStore0, AStore1, AStore2, AStore3, DAdd, DDiv, DMul, DRem, DStore, DStore0,
-                          DStore1, DStore2, DStore3, DSub, FAdd, FDiv, FMul, FRem, FReturn, FStore, FStore0, FStore1,
-                          FStore2, FStore3, FSub, IAdd, IAnd, IDiv, IMul, IOr, IRem, IReturn, IShl, IShr, IStore,
-                          IStore0, IStore1, IStore2, IStore3, ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LOr, LRem,
-                          LReturn, LShl, LShr, LStore, LStore0, LStore1, LStore2, LStore3, LSub, LUShr, LXor,
-                          MonitorEnter, MonitorExit, Pop, PutStatic>) { typeStack.pop_back(); },
-            [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>) { typeStack.back() = intType; },
-            [&](OneOfBase<AThrow, CheckCast, DNeg, FNeg, I2B, I2C, I2S, IInc, INeg, LNeg, Nop,
-                          Return>) { /* Types do not change */ },
+            { typeStack.push_back(m_addressType); },
+            [&](OneOfBase<AReturn, AThrow, DReturn, FReturn, IReturn, LReturn, Return>) { done = true; },
+            [&](OneOfBase<AStore, AStore0, AStore1, AStore2, AStore3, DAdd, DDiv, DMul, DRem, DStore, DStore0, DStore1,
+                          DStore2, DStore3, DSub, FAdd, FDiv, FMul, FRem, FStore, FStore0, FStore1, FStore2, FStore3,
+                          FSub, IAdd, IAnd, IDiv, IMul, IOr, IRem, IShl, IShr, IStore, IStore0, IStore1, IStore2,
+                          IStore3, ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LOr, LRem, LShl, LShr, LStore, LStore0,
+                          LStore1, LStore2, LStore3, LSub, LUShr, LXor, MonitorEnter, MonitorExit, Pop, PutStatic>)
+            { typeStack.pop_back(); },
+            [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>) { typeStack.back() = m_intType; },
+            [&](OneOfBase<CheckCast, DNeg, FNeg, I2B, I2C, I2S, IInc, INeg, LNeg, Nop>) { /* Types do not change */ },
             [&](OneOfBase<BALoad, CALoad, DCmpG, DCmpL, FCmpG, FCmpL, IALoad, LCmp, SALoad>)
             {
                 typeStack.pop_back();
-                typeStack.back() = intType;
+                typeStack.back() = m_intType;
             },
             [&](OneOfBase<BIPush, IConstM1, IConst0, IConst1, IConst2, IConst3, IConst4, IConst5, ILoad, ILoad0, ILoad1,
-                          ILoad2, ILoad3, SIPush>) { typeStack.push_back(intType); },
+                          ILoad2, ILoad3, SIPush>) { typeStack.push_back(m_intType); },
             [&](OneOfBase<D2F, I2F, L2F, FALoad>)
             {
                 if (holds_alternative<FALoad>(operation))
                 {
                     typeStack.pop_back();
                 }
-                typeStack.back() = floatType;
+                typeStack.back() = m_floatType;
             },
             [&](OneOfBase<D2L, F2L, I2L, LALoad>)
             {
@@ -162,7 +156,7 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 {
                     typeStack.pop_back();
                 }
-                typeStack.back() = longType;
+                typeStack.back() = m_longType;
             },
             [&](OneOfBase<DALoad, F2D, I2D, L2D>)
             {
@@ -170,10 +164,10 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 {
                     typeStack.pop_back();
                 }
-                typeStack.back() = doubleType;
+                typeStack.back() = m_doubleType;
             },
-            [&](OneOfBase<DConst0, DConst1, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DReturn>)
-            { typeStack.push_back(doubleType); },
+            [&](OneOfBase<DConst0, DConst1, DLoad, DLoad0, DLoad1, DLoad2, DLoad3>)
+            { typeStack.push_back(m_doubleType); },
             [&](Dup) { typeStack.push_back(typeStack.back()); },
             [&](DupX1)
             {
@@ -265,7 +259,7 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 }
             },
             [&](OneOfBase<FConst0, FConst1, FConst2, FLoad, FLoad0, FLoad1, FLoad2, FLoad3>)
-            { typeStack.push_back(floatType); },
+            { typeStack.push_back(m_floatType); },
             [&](OneOf<GetField, GetStatic> get)
             {
                 if (holds_alternative<GetField>(operation))
@@ -282,13 +276,15 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 llvm::Type* type = descriptorToType(descriptor, m_context);
                 if (type->isIntegerTy() && !type->isIntegerTy(64))
                 {
-                    type = intType;
+                    type = m_intType;
                 }
 
                 typeStack.push_back(type);
             },
-            [&](OneOf<Goto, GotoW> gotoOp) {
-                sections.insert({gotoOp.offset + gotoOp.target, typeStack});
+            [&](OneOf<Goto, GotoW> gotoOp)
+            {
+                pushNext(gotoOp.offset + gotoOp.target);
+                done = true;
             },
             [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq, IfNe, IfLt,
                       IfGe, IfGt, IfLe, IfNonNull, IfNull>
@@ -302,8 +298,9 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                     { typeStack.pop_back(); },
                     [](...) {});
 
-                sections.insert({cmpOp.offset + cmpOp.target, typeStack});
-                sections.insert({cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t), typeStack});
+                pushNext(cmpOp.offset + cmpOp.target);
+                pushNext(cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t));
+                done = true;
             },
             // TODO InvokeDynamic
             [&](OneOf<InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual> invoke)
@@ -328,7 +325,7 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 llvm::Type* type = descriptorToType(descriptor.returnType, m_context);
                 if (type->isIntegerTy() && !type->isIntegerTy(64))
                 {
-                    type = intType;
+                    type = m_intType;
                 }
 
                 if (!type->isVoidTy())
@@ -338,7 +335,8 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
             },
             // TODO JSR
             // TODO JSRw
-            [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>) { typeStack.push_back(longType); },
+            [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>)
+            { typeStack.push_back(m_longType); },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
@@ -346,23 +344,25 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                     pool{ldc.index};
 
                 match(
-                    pool.resolve(m_classFile), [&](const ClassInfo*) { typeStack.push_back(addressType); },
-                    [&](const DoubleInfo*) { typeStack.push_back(doubleType); },
-                    [&](const FloatInfo*) { typeStack.push_back(floatType); },
-                    [&](const IntegerInfo*) { typeStack.push_back(intType); },
-                    [&](const LongInfo*) { typeStack.push_back(longType); },
-                    [&](const StringInfo*) { typeStack.push_back(addressType); },
+                    pool.resolve(m_classFile), [&](const ClassInfo*) { typeStack.push_back(m_addressType); },
+                    [&](const DoubleInfo*) { typeStack.push_back(m_doubleType); },
+                    [&](const FloatInfo*) { typeStack.push_back(m_floatType); },
+                    [&](const IntegerInfo*) { typeStack.push_back(m_intType); },
+                    [&](const LongInfo*) { typeStack.push_back(m_longType); },
+                    [&](const StringInfo*) { typeStack.push_back(m_addressType); },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
             },
             [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
             {
                 typeStack.pop_back();
-                sections.insert({switchOp.offset + switchOp.defaultOffset, typeStack});
+
+                pushNext(switchOp.offset + switchOp.defaultOffset);
 
                 for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetsPairs))
                 {
-                    sections.insert({switchOp.offset + target, typeStack});
+                    pushNext(switchOp.offset + target);
                 }
+                done = true;
             },
             [&](MultiANewArray multiANewArray)
             {
@@ -371,7 +371,7 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                     typeStack.pop_back();
                 }
 
-                typeStack.push_back(addressType);
+                typeStack.push_back(m_addressType);
             },
             [&](Pop2)
             {
@@ -411,27 +411,27 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                     }
                     case OpCodes::ALoad:
                     {
-                        type = addressType;
+                        type = m_addressType;
                         break;
                     }
                     case OpCodes::DLoad:
                     {
-                        type = doubleType;
+                        type = m_doubleType;
                         break;
                     }
                     case OpCodes::FLoad:
                     {
-                        type = floatType;
+                        type = m_floatType;
                         break;
                     }
                     case OpCodes::ILoad:
                     {
-                        type = intType;
+                        type = m_intType;
                         break;
                     }
                     case OpCodes::LLoad:
                     {
-                        type = longType;
+                        type = m_longType;
                         break;
                     }
                 }
@@ -439,8 +439,30 @@ ByteCodeTypeChecker::SectionMap ByteCodeTypeChecker::check(const Code& code)
                 typeStack.push_back(type);
             });
     }
+}
 
-    return sections;
+ByteCodeTypeChecker::BasicBlockMap ByteCodeTypeChecker::check(const Code& code)
+{
+    llvm::ArrayRef<char> byteCode = code.getCode();
+
+    for (const auto& exception : code.getExceptionTable())
+    {
+        m_basicBlocks.insert({exception.handlerPc, {m_addressType}});
+        m_offsetStack.push_back(exception.handlerPc);
+    }
+
+    m_basicBlocks.insert({0, {}});
+    m_offsetStack.push_back(0);
+
+    while (!m_offsetStack.empty())
+    {
+        std::uint16_t startOffset = m_offsetStack.back();
+        m_offsetStack.pop_back();
+
+        checkBasicBlock(byteCode.drop_front(startOffset), startOffset, m_basicBlocks[startOffset]);
+    }
+
+    return std::move(m_basicBlocks);
 }
 
 void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject)
