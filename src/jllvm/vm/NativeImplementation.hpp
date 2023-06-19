@@ -231,6 +231,27 @@ public:
     constexpr static auto methods = std::make_tuple(addMember<&ThrowableModel::fillInStackTrace>());
 };
 
+class SystemModel : public ModelBase<Object>
+{
+public:
+    using Base::Base;
+
+    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        // Noop in our implementation.
+    }
+
+    static std::int64_t nanoTime(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        auto now = std::chrono::high_resolution_clock::now();
+        return std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/System";
+    constexpr static auto methods = std::make_tuple(addMember<&SystemModel::registerNatives>(),
+                                                    addMember<&SystemModel::nanoTime>());
+};
+
 /// Register any models for builtin Java classes in the VM.
 void registerJavaClasses(VirtualMachine& virtualMachine);
 
