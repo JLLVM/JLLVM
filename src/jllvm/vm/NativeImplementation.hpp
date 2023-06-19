@@ -171,6 +171,7 @@ public:
 
     static std::uint32_t floatToRawIntBits(VirtualMachine&, GCRootRef<ClassObject>, float value)
     {
+        // TODO: Use std::bit_cast once supported by our C++20.
         std::uint32_t repr;
         std::memcpy(&repr, &value, sizeof(float));
         return repr;
@@ -178,6 +179,7 @@ public:
 
     static float intBitsToFloat(VirtualMachine&, GCRootRef<ClassObject>, std::uint32_t value)
     {
+        // TODO: Use std::bit_cast once supported by our C++20.
         float repr;
         std::memcpy(&repr, &value, sizeof(float));
         return repr;
@@ -194,6 +196,7 @@ public:
 
     static std::uint64_t doubleToRawLongBits(VirtualMachine&, GCRootRef<ClassObject>, double value)
     {
+        // TODO: Use std::bit_cast once supported by our C++20.
         std::uint64_t repr;
         std::memcpy(&repr, &value, sizeof(double));
         return repr;
@@ -201,6 +204,7 @@ public:
 
     static double longBitsToDouble(VirtualMachine&, GCRootRef<ClassObject>, std::uint64_t value)
     {
+        // TODO: Use std::bit_cast once supported by our C++20.
         double repr;
         std::memcpy(&repr, &value, sizeof(double));
         return repr;
