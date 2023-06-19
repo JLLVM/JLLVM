@@ -10,18 +10,22 @@ namespace jllvm
 class ByteCodeMaterializationUnit : public llvm::orc::MaterializationUnit
 {
     jllvm::ByteCodeLayer& m_layer;
-    const jllvm::MethodInfo* m_method;
+    const jllvm::MethodInfo* m_methodInfo;
     const jllvm::ClassFile* m_classFile;
+    const Method* m_method;
+    const ClassObject* m_classObject;
 
 public:
     /// Creates a materialization unit for the method 'methodInfo' of the class 'classFile'.
     /// Compilation is done using 'layer'.
-    ByteCodeMaterializationUnit(jllvm::ByteCodeLayer& layer, const jllvm::MethodInfo* methodInfo,
-                                const jllvm::ClassFile* classFile)
+    ByteCodeMaterializationUnit(jllvm::ByteCodeLayer& layer, const MethodInfo* methodInfo, const ClassFile* classFile,
+                                const Method* method, const ClassObject* classObject)
         : llvm::orc::MaterializationUnit(layer.getSymbolsProvided(methodInfo, classFile)),
           m_layer(layer),
-          m_method(methodInfo),
-          m_classFile(classFile)
+          m_methodInfo(methodInfo),
+          m_classFile(classFile),
+          m_method(method),
+          m_classObject(classObject)
     {
     }
 

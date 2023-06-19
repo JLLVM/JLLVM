@@ -49,7 +49,8 @@ std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef 
 }
 
 void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                         const jllvm::MethodInfo* methodInfo, const jllvm::ClassFile* classFile)
+                                         const jllvm::MethodInfo* methodInfo, const jllvm::ClassFile* classFile,
+                                         const Method* method, const ClassObject* classObject)
 {
     // Things that should happen here:
     // 1. Materialize a stub calling a compile callback to be called when the native method is called.
@@ -109,6 +110,26 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 function->setSubprogram(subprogram);
                 function->addFnAttr(llvm::Attribute::UWTable);
 
+                std::string sectionName = "java";
+                if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+                {
+                    sectionName = "__TEXT," + sectionName;
+                }
+
+                llvm::Constant* classObjectLLVMConstant = llvm::ConstantExpr::getIntToPtr(
+                    llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context),
+                                           reinterpret_cast<std::uintptr_t>(classObject)),
+                    referenceType(*context));
+
+                auto* ptrType = llvm::PointerType::get(*context, 0);
+                function->setPrefixData(llvm::ConstantStruct::get(
+                    llvm::StructType::get(*context, {referenceType(*context), ptrType}),
+                    {classObjectLLVMConstant,
+                     llvm::ConstantExpr::getIntToPtr(llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context),
+                                                                            reinterpret_cast<std::uintptr_t>(method)),
+                                                     ptrType)}));
+                function->setSection(sectionName);
+
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
                 llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
@@ -120,8 +141,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 llvm::SmallVector<llvm::Value*> args{environment};
                 if (methodInfo->isStatic())
                 {
-                    // TODO: get class object and insert here.
-                    args.push_back(llvm::ConstantPointerNull::get(referenceType(*context)));
+                    args.push_back(classObjectLLVMConstant);
                 }
                 for (llvm::Argument& arg : function->args())
                 {

@@ -2,7 +2,8 @@
 
 #include <llvm/ExecutionEngine/Orc/Mangling.h>
 
-#include "jllvm/class/ClassFile.hpp"
+#include <jllvm/class/ClassFile.hpp>
+#include <jllvm/object/ClassObject.hpp>
 
 namespace jllvm
 {
@@ -27,10 +28,11 @@ public:
 
     /// Method called by the JIT to emit the requested symbols.
     virtual void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const MethodInfo* methodInfo,
-                      const ClassFile* classFile) = 0;
+                      const ClassFile* classFile, const Method* method, const ClassObject* classObject) = 0;
 
     /// Adds a materialization unit for the given method and class file to 'dylib'.
-    llvm::Error add(llvm::orc::JITDylib& dylib, const MethodInfo* method, const ClassFile* classFile);
+    llvm::Error add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo, const ClassFile* classFile,
+                    const Method* method, const ClassObject* classObject);
 
     /// Returns the map of symbols provided by the method and class file.
     llvm::orc::MaterializationUnit::Interface getSymbolsProvided(const MethodInfo* methodInfo,

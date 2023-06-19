@@ -8,7 +8,8 @@
 #define DEBUG_TYPE "jvm"
 
 void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                       const MethodInfo* methodInfo, const ClassFile* classFile)
+                                       const MethodInfo* methodInfo, const ClassFile* classFile, const Method* method,
+                                       const ClassObject* classObject)
 {
     std::string methodName = mangleMethod(*methodInfo, *classFile);
     LLVM_DEBUG({ llvm::dbgs() << "Emitting LLVM IR for " << methodName << '\n'; });
@@ -22,6 +23,23 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
         llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
                                llvm::GlobalValue::ExternalLinkage, mangleMethod(*methodInfo, *classFile), module.get());
     function->setGC("coreclr");
+
+    std::string sectionName = "java";
+    if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+    {
+        sectionName = "__TEXT," + sectionName;
+    }
+
+    auto* ptrType = llvm::PointerType::get(*context, 0);
+    function->setPrefixData(llvm::ConstantStruct::get(
+        llvm::StructType::get(*context, {referenceType(*context), ptrType}),
+        {llvm::ConstantExpr::getIntToPtr(llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context),
+                                                                reinterpret_cast<std::uintptr_t>(classObject)),
+                                         referenceType(*context)),
+         llvm::ConstantExpr::getIntToPtr(
+             llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context), reinterpret_cast<std::uintptr_t>(method)),
+             ptrType)}));
+    function->setSection(sectionName);
     function->addFnAttr(llvm::Attribute::UWTable);
 #ifdef LLVM_ADDRESS_SANITIZER_BUILD
     function->addFnAttr(llvm::Attribute::SanitizeAddress);

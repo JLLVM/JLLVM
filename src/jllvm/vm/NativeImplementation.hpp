@@ -252,6 +252,51 @@ public:
                                                     addMember<&SystemModel::nanoTime>());
 };
 
+class ReflectionModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static const ClassObject* getCallerClass(VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject);
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/reflect/Reflection";
+    constexpr static auto methods = std::make_tuple(addMember<&ReflectionModel::getCallerClass>());
+};
+
+class CDSModel : public ModelBase<Object>
+{
+public:
+    using Base::Base;
+
+    static bool isDumpingClassList0(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        return false;
+    }
+
+    static bool isDumpingArchive0(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        return false;
+    }
+
+    static bool isSharingEnabled0(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        return false;
+    }
+
+    static std::int64_t getRandomSeedForDumping(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        return 0;
+    }
+
+    static void initializeFromArchive(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<ClassObject>) {}
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/misc/CDS";
+    constexpr static auto methods =
+        std::make_tuple(addMember<&CDSModel::isDumpingClassList0>(), addMember<&CDSModel::isDumpingArchive0>(),
+                        addMember<&CDSModel::isSharingEnabled0>(), addMember<&CDSModel::getRandomSeedForDumping>(),
+                        addMember<&CDSModel::initializeFromArchive>());
+};
+
 /// Register any models for builtin Java classes in the VM.
 void registerJavaClasses(VirtualMachine& virtualMachine);
 

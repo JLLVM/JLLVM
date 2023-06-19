@@ -120,7 +120,6 @@ class LazyClassLoaderHelper
     llvm::orc::IRLayer& m_baseLayer;
     llvm::orc::MangleAndInterner& m_interner;
     llvm::DataLayout m_dataLayout;
-    llvm::Triple m_triple;
 
     static void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject);
 
