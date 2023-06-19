@@ -78,7 +78,7 @@ public:
     }
 };
 
-inline bool isCategoryTwo(llvm::Type* type)
+bool isCategoryTwo(llvm::Type* type)
 {
     return type->isIntegerTy(64) || type->isDoubleTy();
 }
@@ -171,37 +171,37 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uin
             [&](Dup) { typeStack.push_back(typeStack.back()); },
             [&](DupX1)
             {
-                auto iter = typeStack.end();
-                llvm::Type* type1 = *--iter;
-                llvm::Type* type2 = *--iter;
+                auto iter = typeStack.rbegin();
+                llvm::Type* type1 = *iter++;
+                llvm::Type* type2 = *iter++;
 
                 assert(!isCategoryTwo(type1) && !isCategoryTwo(type2));
 
-                typeStack.insert(iter, type1);
+                typeStack.insert(iter.base(), type1);
             },
             [&](DupX2)
             {
-                auto iter = typeStack.end();
-                llvm::Type* type1 = *--iter;
-                llvm::Type* type2 = *--iter;
+                auto iter = typeStack.rbegin();
+                llvm::Type* type1 = *iter++;
+                llvm::Type* type2 = *iter++;
 
                 if (!isCategoryTwo(type2))
                 {
                     // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
-                    llvm::Type* type3 = *--iter;
+                    ++iter;
                 }
 
-                typeStack.insert(iter, type1);
+                typeStack.insert(iter.base(), type1);
             },
             [&](Dup2)
             {
-                auto iter = typeStack.end();
-                llvm::Type* type = *--iter;
+                auto iter = typeStack.rbegin();
+                llvm::Type* type = *iter++;
 
                 if (!isCategoryTwo(type))
                 {
                     // Form 1: where both value1 and value2 are values of a category 1 computational type
-                    llvm::Type* type2 = *--iter;
+                    llvm::Type* type2 = *iter++;
 
                     typeStack.push_back(type2);
                 }
@@ -210,41 +210,41 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uin
             },
             [&](Dup2X1)
             {
-                auto iter = typeStack.end();
-                llvm::Type* type1 = *--iter;
-                llvm::Type* type2 = *--iter;
+                auto iter = typeStack.rbegin();
+                llvm::Type* type1 = *iter++;
+                llvm::Type* type2 = *iter++;
 
                 if (!isCategoryTwo(type1))
                 {
                     // Form 1: where value1, value2, and value3 are all values of a category 1 computational type
 
-                    typeStack.insert(--iter, {type2, type1});
+                    typeStack.insert((++iter).base(), {type2, type1});
                 }
                 else
                 {
                     // Form 2: where value1 is a value of a category 2 computational type and value2 is a value of a
                     // category 1 computational type
-                    typeStack.insert(iter, type1);
+                    typeStack.insert(iter.base(), type1);
                 }
             },
             [&](Dup2X2)
             {
-                auto iter = typeStack.end();
-                llvm::Type* type1 = *--iter;
-                llvm::Type* type2 = *--iter;
+                auto iter = typeStack.rbegin();
+                llvm::Type* type1 = *iter++;
+                llvm::Type* type2 = *iter++;
 
                 if (!isCategoryTwo(type1))
                 {
-                    llvm::Type* type3 = *--iter;
+                    llvm::Type* type3 = *iter++;
 
                     if (!isCategoryTwo(type3))
                     {
                         // Form 1: where value1, value2, value3, and value4 are all values of a category 1 computational
                         // type
-                        --iter;
+                        ++iter;
                     }
 
-                    typeStack.insert(iter, {type2, type1});
+                    typeStack.insert(iter.base(), {type2, type1});
                 }
                 else
                 {
@@ -252,10 +252,10 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uin
                     {
                         // Form 2: where value1 is a value of a category 2 computational type and value2 and value3 are
                         // both values of a category 1 computational type
-                        --iter;
+                        ++iter;
                     }
 
-                    typeStack.insert(iter, type1);
+                    typeStack.insert(iter.base(), type1);
                 }
             },
             [&](OneOfBase<FConst0, FConst1, FConst2, FLoad, FLoad0, FLoad1, FLoad2, FLoad3>)
@@ -388,7 +388,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uin
                 typeStack.pop_back();
             },
             // TODO Ret
-            [&](Swap) { std::swap(typeStack.back(), *(typeStack.end() - 2)); },
+            [&](Swap) { std::swap(typeStack.back(), *std::next(typeStack.rbegin())); },
             [&](Wide wide)
             {
                 llvm::Type* type;

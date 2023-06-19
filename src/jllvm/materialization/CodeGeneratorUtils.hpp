@@ -92,7 +92,7 @@ public:
         m_builder.CreateStore(value, alloc);
     }
 
-    void restoreState(const State& state)
+    void setState(const State& state)
     {
         llvm::copy(state, m_types.begin());
         m_topOfStack = state.size();

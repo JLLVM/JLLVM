@@ -242,10 +242,10 @@ void CodeGenerator::generateCodeBody(const Code& code)
             // bytecode.
             if (m_builder.GetInsertBlock()->getTerminator() == nullptr)
             {
-                m_builder.CreateBr(result->second.first);
+                m_builder.CreateBr(result->second.block);
             }
-            m_builder.SetInsertPoint(result->second.first);
-            m_operandStack.restoreState(result->second.second);
+            m_builder.SetInsertPoint(result->second.block);
+            m_operandStack.setState(result->second.state);
         }
 
         generateInstruction(std::move(operation));
@@ -807,7 +807,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](OneOf<Goto, GotoW> gotoOp)
         {
             auto index = gotoOp.target + gotoOp.offset;
-            m_builder.CreateBr(m_basicBlocks[index].first);
+            m_builder.CreateBr(m_basicBlocks[index].block);
         },
         [&](I2B)
         {
@@ -852,8 +852,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                   IfGe, IfGt, IfLe, IfNonNull, IfNull>
                 cmpOp)
         {
-            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset].first;
-            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].first;
+            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset].block;
+            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].block;
 
             llvm::Value* rhs;
             llvm::Value* lhs;
@@ -1036,13 +1036,13 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* key = m_operandStack.pop_back();
 
-            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset].first;
+            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset].block;
 
             auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
 
             for (auto [match, target] : switchOp.matchOffsetsPairs)
             {
-                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target].first;
+                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target].block;
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
@@ -1391,7 +1391,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
 
     for (auto [handlerPC, catchType] : m_activeHandlers)
     {
-        llvm::BasicBlock* handlerBB = m_basicBlocks[handlerPC].first;
+        llvm::BasicBlock* handlerBB = m_basicBlocks[handlerPC].block;
 
         llvm::PointerType* ty = referenceType(m_builder.getContext());
 
