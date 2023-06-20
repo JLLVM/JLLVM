@@ -192,26 +192,37 @@ template <class F>
 void introspectObject(ObjectRepr* object, F&& f)
 {
     jllvm::ClassObject* classObject = object->getClass();
-    for (const jllvm::Field& iter : classObject->getFields())
+    if (const jllvm::ClassObject* componentType = classObject->getComponentType())
     {
-        if (iter.isStatic())
+        // Array of references.
+        if (!componentType->isPrimitive())
         {
-            continue;
+            auto* array = reinterpret_cast<jllvm::Array<ObjectRepr*>*>(object);
+            for (ObjectRepr** iter = array->begin(); iter != array->end(); iter++)
+            {
+                f(iter);
+            }
         }
-        if (!jllvm::isReferenceDescriptor(iter.getType()))
-        {
-            continue;
-        }
-        f(reinterpret_cast<ObjectRepr**>(reinterpret_cast<char*>(object) + iter.getOffset()));
+        return;
     }
-    // Array of references.
-    if (const jllvm::ClassObject* componentType = classObject->getComponentType();
-        componentType && !componentType->isPrimitive())
+
+    // TODO: This traversal is a lot more expensive than it has to be, especially for classes with lots of static
+    //       fields.
+    //       We should generate some kind of "mask" for every class object that can be applied to instances to get all
+    //       contained references in O(instanceSize).
+    for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
     {
-        auto* array = reinterpret_cast<jllvm::Array<ObjectRepr*>*>(object);
-        for (ObjectRepr** iter = array->begin(); iter != array->end(); iter++)
+        for (const jllvm::Field& iter : curr->getFields())
         {
-            f(iter);
+            if (iter.isStatic())
+            {
+                continue;
+            }
+            if (!jllvm::isReferenceDescriptor(iter.getType()))
+            {
+                continue;
+            }
+            f(reinterpret_cast<ObjectRepr**>(reinterpret_cast<char*>(object) + iter.getOffset()));
         }
     }
 }
