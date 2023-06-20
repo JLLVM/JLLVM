@@ -55,7 +55,6 @@ public:
                 if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
                 {
                     sectionName = "__TEXT," + sectionName;
-                    sectionName += ",regular,pure_instructions";
                 }
 
                 llvm::jitlink::Section* section = g.findSectionByName(sectionName);
