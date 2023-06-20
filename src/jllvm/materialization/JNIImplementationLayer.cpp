@@ -114,6 +114,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
                 {
                     sectionName = "__TEXT," + sectionName;
+                    sectionName += ",regular,pure_instructions";
                 }
 
                 llvm::Constant* classObjectLLVMConstant = llvm::ConstantExpr::getIntToPtr(

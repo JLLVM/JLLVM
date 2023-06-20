@@ -28,6 +28,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
     {
         sectionName = "__TEXT," + sectionName;
+        sectionName += ",regular,pure_instructions";
     }
 
     auto* ptrType = llvm::PointerType::get(*context, 0);

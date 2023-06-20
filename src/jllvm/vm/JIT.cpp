@@ -51,15 +51,11 @@ public:
         config.PostAllocationPasses.emplace_back(
             [&](llvm::jitlink::LinkGraph& g)
             {
-                for (auto iter : g.defined_symbols())
-                {
-                    llvm::dbgs() << *iter << '\n';
-                }
-
                 std::string sectionName = "java";
                 if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
                 {
                     sectionName = "__TEXT," + sectionName;
+                    sectionName += ",regular,pure_instructions";
                 }
 
                 llvm::jitlink::Section* section = g.findSectionByName(sectionName);
