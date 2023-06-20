@@ -168,6 +168,11 @@ void CodeGenerator::generateCode(const Code& code)
                                       llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
     m_function->setSubprogram(subprogram);
 
+    // Dummy debug location until we generate proper debug location. This is required by LLVM as it requires any call
+    // to a function that has debug info and is eligible to be inlined to have debug locations on the call.
+    // This is currently the case for self-recursive functions.
+    m_builder.SetCurrentDebugLocation(llvm::DILocation::get(m_builder.getContext(), 1, 1, subprogram));
+
     // We need pointer size bytes, since that is the largest type we may store in a local.
     std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
 
