@@ -10,6 +10,9 @@
     return
 .end method
 
+.method public static native print(Ljava/lang/String;)V
+.end method
+
 .method public static oneCall()V
     .limit stack 2
     ldc "Test 0"
@@ -19,12 +22,7 @@
     return
 Print:
     astore_0
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     ret 0
 .end method
 
@@ -45,12 +43,7 @@ Print:
     return
 Print:
     astore_0
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     ret 0
 .end method
 
@@ -64,12 +57,7 @@ Print:
 Print:
     astore_0
     jsr Load
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     ret 0
 Load:
     astore_1
@@ -88,12 +76,7 @@ Ret:
     ret 0
 Print:
     astore_0
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     goto Ret
 .end method
 
@@ -120,23 +103,15 @@ PrintIf:
     ifeq Print
     return
 Print:
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     ret 0
 .end method
 
 .method public static subroutineReturning()V
     .limit stack 2
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-
     ; CHECK: "Test 7"
     jsr Load
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
+    invokestatic Test/print(Ljava/lang/String;)V
 
     return
 Load:
@@ -155,13 +130,29 @@ Load:
     return
 Print:
     astore 280
-
-    ; call System.out.println()
-    getstatic java/lang/System/out Ljava/io/PrintStream;
-    swap
-    invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V
-
+    invokestatic Test/print(Ljava/lang/String;)V
     ret_w 280
+.end method
+
+.method public static retFromParentSubroutine()V
+    .limit stack 2
+    .limit locals 2
+    ; CHECK: "Test 9"
+    ; CHECK-NOT: Test X2
+    jsr SR0
+
+    return
+SR0:
+    astore_0
+    jsr SR1
+    ldc "Test X2"
+    invokestatic Test/print(Ljava/lang/String;)V
+    ret 0
+SR1:
+    pop
+    ldc "Test 9"
+    invokestatic Test/print(Ljava/lang/String;)V
+    ret 0
 .end method
 
 .method public static main([Ljava/lang/String;)V
@@ -172,5 +163,5 @@ Print:
     invokestatic  Test/branchInSubroutine()V
     invokestatic  Test/subroutineReturning()V
     invokestatic  Test/wideSubroutine()V
-    return
+    invokestatic  Test/retFromParentSubroutine()V
 .end method

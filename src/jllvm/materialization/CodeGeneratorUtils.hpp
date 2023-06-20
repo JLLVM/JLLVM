@@ -25,6 +25,7 @@ class ByteCodeTypeChecker
     llvm::LLVMContext& m_context;
     const ClassFile& m_classFile;
     std::vector<std::uint16_t> m_offsetStack;
+    std::vector<std::uint16_t> m_subroutineStack;
     BasicBlockMap m_basicBlocks;
     llvm::Type* m_addressType;
     llvm::Type* m_doubleType;
@@ -46,8 +47,8 @@ public:
     {
     }
 
-    /// Returns the map of basic blocks from their starting offset inside the bytecode to the starting state of their stack
-    /// It consumes 'this' in the process leaving it in an invalid state
+    /// Returns the map of basic blocks from their starting offset inside the bytecode to the starting state of their
+    /// stack It consumes 'this' in the process leaving it in an invalid state
     BasicBlockMap check(const Code& code);
 };
 

@@ -333,8 +333,17 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                     typeStack.push_back(type);
                 }
             },
-            // TODO JSR
-            // TODO JSRw
+            [&](OneOf<JSR, JSRw> jsr)
+            {
+                typeStack.push_back(m_addressType);
+
+                m_subroutineStack.push_back(
+                    jsr.offset + sizeof(OpCodes)
+                    + (holds_alternative<JSRw>(operation) ? sizeof(std::int32_t) : sizeof(std::int16_t)));
+
+                pushNext(jsr.offset + jsr.target);
+                done = true;
+            },
             [&](OneOfBase<LConst0, LConst1, LLoad, LLoad0, LLoad1, LLoad2, LLoad3>)
             { typeStack.push_back(m_longType); },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
@@ -387,7 +396,16 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                 typeStack.pop_back();
                 typeStack.pop_back();
             },
-            // TODO Ret
+            [&](Ret)
+            {
+                assert(!m_subroutineStack.empty());
+
+                std::uint16_t retAddress = m_subroutineStack.back(); // TODO check ret location
+                m_subroutineStack.pop_back();
+
+                pushNext(retAddress);
+                done = true;
+            },
             [&](Swap) { std::swap(typeStack.back(), *std::next(typeStack.rbegin())); },
             [&](Wide wide)
             {
