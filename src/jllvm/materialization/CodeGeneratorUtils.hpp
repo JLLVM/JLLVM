@@ -6,12 +6,51 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 
+#include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/ClassLoader.hpp>
 
 #include "ByteCodeCompileUtils.hpp"
 
 namespace jllvm
 {
+
+/// Class for Java bytecode typechecking
+/// This works by iterating over the bytecode of a Java method extracting its basic block
+/// and the types on the stack at the start of the block
+class ByteCodeTypeChecker
+{
+    using TypeStack = std::vector<llvm::Type*>;
+    using BasicBlockMap = llvm::DenseMap<std::uint16_t, TypeStack>;
+
+    llvm::LLVMContext& m_context;
+    const ClassFile& m_classFile;
+    std::vector<std::uint16_t> m_offsetStack;
+    BasicBlockMap m_basicBlocks;
+    llvm::Type* m_addressType;
+    llvm::Type* m_doubleType;
+    llvm::Type* m_floatType;
+    llvm::Type* m_intType;
+    llvm::Type* m_longType;
+
+    void checkBasicBlock(llvm::ArrayRef<char> section, std::uint16_t offset, TypeStack typeStack);
+
+public:
+    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile)
+        : m_context{context},
+          m_classFile{classFile},
+          m_addressType{referenceType(m_context)},
+          m_doubleType{llvm::Type::getDoubleTy(m_context)},
+          m_floatType{llvm::Type::getFloatTy(m_context)},
+          m_intType{llvm::Type::getInt32Ty(m_context)},
+          m_longType{llvm::Type::getInt64Ty(m_context)}
+    {
+    }
+
+    /// Returns the map of basic blocks from their starting offset inside the bytecode to the starting state of their stack
+    /// It consumes 'this' in the process leaving it in an invalid state
+    BasicBlockMap check(const Code& code);
+};
+
 /// Class for JVM operand stack
 /// This class also offers method to save and restore the current state of the stack in order to consider the control
 /// flow path
@@ -22,21 +61,8 @@ class OperandStack
     llvm::IRBuilder<>& m_builder;
     std::size_t m_topOfStack{};
 
-    class StackState
-    {
-        std::vector<llvm::Type*> m_types;
-        std::size_t m_topOfStack{};
-
-        StackState(std::vector<llvm::Type*> type, std::size_t topOfStack)
-            : m_types{std::move(type)}, m_topOfStack{topOfStack}
-        {
-        }
-
-        friend class OperandStack;
-    };
-
 public:
-    using State = StackState;
+    using State = std::vector<llvm::Type*>;
 
     OperandStack(llvm::IRBuilder<>& builder, std::uint16_t maxStack)
         : m_builder(builder), m_values{maxStack}, m_types{maxStack}
@@ -66,20 +92,10 @@ public:
         m_builder.CreateStore(value, alloc);
     }
 
-    StackState saveState() const
+    void setState(const State& state)
     {
-        return {m_types, m_topOfStack};
-    }
-
-    void restoreState(StackState state)
-    {
-        m_types = std::move(state.m_types);
-        m_topOfStack = state.m_topOfStack;
-    }
-
-    State getHandlerState() const
-    {
-        return {{referenceType(m_builder.getContext())}, 1};
+        llvm::copy(state, m_types.begin());
+        m_topOfStack = state.size();
     }
 
     void setHandlerStack(llvm::Value* value)

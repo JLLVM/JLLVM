@@ -13,6 +13,12 @@ namespace jllvm
 /// This class should ideally be used to generate code for a single method
 class CodeGenerator
 {
+    struct BasicBlockData
+    {
+        llvm::BasicBlock* block;
+        OperandStack::State state;
+    };
+
     llvm::Function* m_function;
     const ClassFile& m_classFile;
     LazyClassLoaderHelper m_helper;
@@ -22,8 +28,7 @@ class CodeGenerator
     llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
     std::vector<llvm::AllocaInst*> m_locals;
-    llvm::DenseMap<std::uint16_t, llvm::BasicBlock*> m_basicBlocks;
-    llvm::DenseMap<llvm::BasicBlock*, OperandStack::State> m_basicBlockStackStates;
+    llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
@@ -32,7 +37,7 @@ class CodeGenerator
     // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
 
-    void calculateBasicBlocks(const Code& code);
+    void createBasicBlocks(const Code& code);
 
     void generateCodeBody(const Code& code);
 
