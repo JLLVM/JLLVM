@@ -132,15 +132,6 @@ public:
         return m_javaFrames;
     }
 
-    /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
-    struct JavaMethodMetadata
-    {
-        /// Class object of the enclosing class of the method.
-        ClassObject* classObject;
-        /// Method meta-object of the compiled method.
-        Method* method;
-    };
-
     /// Returns the metadata associated with any compiled Java method.
     /// Returns an empty optional if the function pointer is not a Java method.
     std::optional<JavaMethodMetadata> getJavaMethodMetadata(std::uintptr_t functionPointer)

@@ -16,12 +16,12 @@ void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
 const jllvm::ClassObject* jllvm::ReflectionModel::getCallerClass(VirtualMachine& virtualMachine,
                                                                  GCRootRef<ClassObject> classObject)
 {
-    ClassObject* result = nullptr;
+    const ClassObject* result = nullptr;
     unwindStack(
         [&](UnwindFrame frame)
         {
             std::uintptr_t fp = frame.getFunctionPointer();
-            std::optional<JIT::JavaMethodMetadata> data = virtualMachine.getJIT().getJavaMethodMetadata(fp);
+            std::optional<JavaMethodMetadata> data = virtualMachine.getJIT().getJavaMethodMetadata(fp);
             if (!data)
             {
                 return UnwindAction::ContinueUnwinding;

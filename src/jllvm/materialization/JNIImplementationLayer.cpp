@@ -110,26 +110,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 function->setSubprogram(subprogram);
                 function->addFnAttr(llvm::Attribute::UWTable);
 
-                std::string sectionName = "java";
-                if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
-                {
-                    sectionName = "__TEXT," + sectionName;
-                    sectionName += ",regular,pure_instructions";
-                }
-
-                llvm::Constant* classObjectLLVMConstant = llvm::ConstantExpr::getIntToPtr(
-                    llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context),
-                                           reinterpret_cast<std::uintptr_t>(classObject)),
-                    referenceType(*context));
-
-                auto* ptrType = llvm::PointerType::get(*context, 0);
-                function->setPrefixData(llvm::ConstantStruct::get(
-                    llvm::StructType::get(*context, {referenceType(*context), ptrType}),
-                    {classObjectLLVMConstant,
-                     llvm::ConstantExpr::getIntToPtr(llvm::ConstantInt::get(m_dataLayout.getIntPtrType(*context),
-                                                                            reinterpret_cast<std::uintptr_t>(method)),
-                                                     ptrType)}));
-                function->setSection(sectionName);
+                applyJavaMethodAttributes(function, {classObject, method});
 
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
@@ -142,7 +123,9 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 llvm::SmallVector<llvm::Value*> args{environment};
                 if (methodInfo->isStatic())
                 {
-                    args.push_back(classObjectLLVMConstant);
+                    args.push_back(
+                        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
+                                               referenceType(*context)));
                 }
                 for (llvm::Argument& arg : function->args())
                 {

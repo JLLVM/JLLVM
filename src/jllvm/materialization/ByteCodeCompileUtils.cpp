@@ -1,5 +1,9 @@
 #include "ByteCodeCompileUtils.hpp"
 
+#include <llvm/ADT/Triple.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
+
 #include <jllvm/support/Variant.hpp>
 
 llvm::Type* jllvm::arrayRefType(llvm::LLVMContext& context)
@@ -65,4 +69,27 @@ llvm::FunctionType* jllvm::descriptorToType(const MethodType& type, bool isStati
         args.insert(args.begin(), referenceType(context));
     }
     return llvm::FunctionType::get(descriptorToType(type.returnType, context), args, false);
+}
+
+void jllvm::applyJavaMethodAttributes(llvm::Function* function, const jllvm::JavaMethodMetadata& metadata)
+{
+    std::string sectionName = "java";
+    if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+    {
+        sectionName = "__TEXT," + sectionName;
+        sectionName += ",regular,pure_instructions";
+    }
+
+    auto* ptrType = llvm::PointerType::get(function->getContext(), 0);
+    function->setPrefixData(llvm::ConstantStruct::get(
+        llvm::StructType::get(function->getContext(), {referenceType(function->getContext()), ptrType}),
+        {llvm::ConstantExpr::getIntToPtr(
+             llvm::ConstantInt::get(llvm::IntegerType::get(function->getContext(), 8 * sizeof(std::uintptr_t)),
+                                    reinterpret_cast<std::uintptr_t>(metadata.classObject)),
+             referenceType(function->getContext())),
+         llvm::ConstantExpr::getIntToPtr(
+             llvm::ConstantInt::get(llvm::IntegerType::get(function->getContext(), 8 * sizeof(std::uintptr_t)),
+                                    reinterpret_cast<std::uintptr_t>(metadata.method)),
+             ptrType)}));
+    function->setSection(sectionName);
 }
