@@ -202,63 +202,87 @@ void CodeGenerator::createBasicBlocks(const Code& code)
 
     for (auto& [offset, state] : sectionMap)
     {
-        m_basicBlocks.insert(
-            {offset, {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(state)}});
+        llvm::BasicBlock* block =
+            offset == 0 ? m_builder.GetInsertBlock() :
+                          llvm::BasicBlock::Create(m_builder.getContext(), std::to_string(offset), m_function);
+        m_basicBlocks.insert({offset, {block, std::move(state)}});
     }
 }
 
 void CodeGenerator::generateCodeBody(const Code& code)
 {
-    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
-    for (const auto& iter : code.getExceptionTable())
+    llvm::ArrayRef<char> byteCode = code.getCode();
+
+    llvm::DenseSet<std::uint16_t> queuedHandlers;
+    for (const auto& exception : code.getExceptionTable())
     {
-        startHandlers[iter.startPc].push_back(iter);
+        m_startHandlers[exception.startPc].push_back(exception);
+        if (queuedHandlers.insert(exception.handlerPc).second)
+        {
+            m_blockStartStack.push_back(exception.handlerPc);
+        }
     }
 
-    llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
+    m_blockStartStack.push_back(0);
+
+    while (!m_blockStartStack.empty())
     {
-        std::size_t offset = getOffset(operation);
-        if (auto result = endHandlers.find(offset); result != endHandlers.end())
+        std::uint16_t startOffset = m_blockStartStack.back();
+        m_blockStartStack.pop_back();
+
+        generateBasicBlock(byteCode.drop_front(startOffset), startOffset);
+    }
+}
+
+void CodeGenerator::generateBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset)
+{
+    auto& [basicBlock, state] = m_basicBlocks[offset];
+    m_builder.SetInsertPoint(basicBlock);
+    m_operandStack.setState(state);
+
+    for (ByteCodeOp operation : byteCodeRange(block, offset))
+    {
+        offset = getOffset(operation);
+        if (auto result = m_endHandlers.find(offset); result != m_endHandlers.end())
         {
             for (auto iter : result->second)
             {
                 m_activeHandlers.erase(iter);
             }
             // No longer needed.
-            endHandlers.erase(result);
+            m_endHandlers.erase(result);
         }
 
-        if (auto result = startHandlers.find(offset); result != startHandlers.end())
+        if (auto result = m_startHandlers.find(offset); result != m_startHandlers.end())
         {
-            for (const Code::ExceptionTable& iter : result->second)
+            for (const Code::ExceptionTable& exception : result->second)
             {
-                m_activeHandlers.emplace_back(iter.handlerPc, iter.catchType);
-                endHandlers[iter.endPc].push_back(std::prev(m_activeHandlers.end()));
+                m_activeHandlers.emplace_back(exception.handlerPc, exception.catchType);
+                m_endHandlers[exception.endPc].push_back(std::prev(m_activeHandlers.end()));
             }
             // No longer needed.
-            startHandlers.erase(result);
+            m_startHandlers.erase(result);
         }
 
-        if (auto result = m_basicBlocks.find(offset); result != m_basicBlocks.end())
+        if (generateInstruction(std::move(operation)))
         {
-            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
-            // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
-            // bytecode.
-            if (m_builder.GetInsertBlock()->getTerminator() == nullptr)
-            {
-                m_builder.CreateBr(result->second.block);
-            }
-            m_builder.SetInsertPoint(result->second.block);
-            m_operandStack.setState(result->second.state);
+            break;
         }
-
-        generateInstruction(std::move(operation));
     }
 }
 
-void CodeGenerator::generateInstruction(ByteCodeOp operation)
+bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
+    bool end = false;
+
+    auto pushNext = [&](std::uint16_t next)
+    {
+        if (m_visitedBlocks.insert(next).second)
+        {
+            m_blockStartStack.push_back(next);
+        }
+    };
+
     match(
         operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
         [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
@@ -391,6 +415,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 });
 
             m_builder.CreateRet(value);
+            end = true;
         },
         [&](ArrayLength)
         {
@@ -422,6 +447,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
             m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+            end = true;
         },
         [&](BIPush biPush)
         {
@@ -811,8 +837,10 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
-            auto index = gotoOp.target + gotoOp.offset;
-            m_builder.CreateBr(m_basicBlocks[index].block);
+            std::uint16_t target = gotoOp.offset + gotoOp.target;
+            m_builder.CreateBr(m_basicBlocks[target].block);
+            pushNext(target);
+            end = true;
         },
         [&](I2B)
         {
@@ -857,8 +885,10 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                   IfGe, IfGt, IfLe, IfNonNull, IfNull>
                 cmpOp)
         {
-            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset].block;
-            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].block;
+            std::uint16_t target = cmpOp.offset + cmpOp.target;
+            std::uint16_t next = cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t);
+            llvm::BasicBlock* targetBlock = m_basicBlocks[target].block;
+            llvm::BasicBlock* nextBlock = m_basicBlocks[next].block;
 
             llvm::Value* rhs;
             llvm::Value* lhs;
@@ -892,7 +922,10 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = m_builder.CreateICmp(predicate, lhs, rhs);
-            m_builder.CreateCondBr(cond, basicBlock, next);
+            m_builder.CreateCondBr(cond, targetBlock, nextBlock);
+            pushNext(target);
+            pushNext(next);
+            end = true;
         },
         [&](IInc iInc)
         {
@@ -1041,16 +1074,21 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* key = m_operandStack.pop_back();
 
-            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset].block;
+            std::uint16_t defaultOffset = switchOp.offset + switchOp.defaultOffset;
+            llvm::BasicBlock* defaultBlock = m_basicBlocks[defaultOffset].block;
 
             auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
 
             for (auto [match, target] : switchOp.matchOffsetsPairs)
             {
-                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target].block;
+                target = switchOp.offset + target;
+                llvm::BasicBlock* targetBlock = m_basicBlocks[target].block;
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
+                pushNext(target);
             }
+            pushNext(defaultOffset);
+            end = true;
         },
         [&](OneOf<LShl, LShr, LUShr>)
         {
@@ -1298,7 +1336,11 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(value, fieldPtr);
         },
         // TODO: Ret
-        [&](Return) { m_builder.CreateRetVoid(); },
+        [&](Return)
+        {
+            m_builder.CreateRetVoid();
+            end = true;
+        },
         [&](SIPush siPush) { m_operandStack.push_back(m_builder.getInt32(siPush.value)); },
         [&](Swap)
         {
@@ -1360,6 +1402,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[wide.index]));
         });
+
+    return end;
 }
 
 void CodeGenerator::generateEHDispatch()

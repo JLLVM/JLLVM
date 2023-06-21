@@ -93,7 +93,7 @@ struct OneOfBase : ByteCodeBase
 };
 } // namespace
 
-void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uint16_t offset, TypeStack typeStack)
+void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset, TypeStack typeStack)
 {
     bool done = false;
 
@@ -105,7 +105,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> section, std::uin
         }
     };
 
-    for (ByteCodeOp operation : byteCodeRange(section, offset))
+    for (ByteCodeOp operation : byteCodeRange(block, offset))
     {
         if (done)
         {
@@ -447,8 +447,10 @@ ByteCodeTypeChecker::BasicBlockMap ByteCodeTypeChecker::check(const Code& code)
 
     for (const auto& exception : code.getExceptionTable())
     {
-        m_basicBlocks.insert({exception.handlerPc, {m_addressType}});
-        m_offsetStack.push_back(exception.handlerPc);
+        if (m_basicBlocks.insert({exception.handlerPc, {m_addressType}}).second)
+        {
+            m_offsetStack.push_back(exception.handlerPc);
+        }
     }
 
     m_basicBlocks.insert({0, {}});
