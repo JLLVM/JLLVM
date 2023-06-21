@@ -20,9 +20,11 @@ std::string jllvm::mangleMethod(const MethodInfo& methodInfo, const ClassFile& c
     return mangleMethod(className, methodName, descriptor);
 }
 
-llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* method, const ClassFile* classFile)
+llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo,
+                                      const ClassFile* classFile, const Method* method, const ClassObject* classObject)
 {
-    return dylib.define(std::make_unique<ByteCodeMaterializationUnit>(*this, method, classFile));
+    return dylib.define(
+        std::make_unique<ByteCodeMaterializationUnit>(*this, methodInfo, classFile, method, classObject));
 }
 
 llvm::orc::MaterializationUnit::Interface jllvm::ByteCodeLayer::getSymbolsProvided(const MethodInfo* methodInfo,

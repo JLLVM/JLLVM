@@ -45,6 +45,8 @@ class JIT
     ByteCodeOnDemandLayer m_byteCodeOnDemandLayer;
     JNIImplementationLayer m_jniLayer;
 
+    llvm::DenseSet<void*> m_javaFrames;
+
     void optimize(llvm::Module& module);
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
@@ -116,12 +118,29 @@ public:
 
     /// Adds and registers a class file in the JIT. This has to be done prior to being able to lookup and execute
     /// any methods defined within the class file.
-    void add(const ClassFile* classFile);
+    void add(const ClassFile* classFile, const ClassObject* classObject);
 
     /// Returns the interner used by the JIT.
     llvm::orc::MangleAndInterner& getInterner()
     {
         return m_interner;
+    }
+
+    /// Returns the set of all function pointers that are compiled Java methods.
+    const llvm::DenseSet<void*>& getJavaFrames() const
+    {
+        return m_javaFrames;
+    }
+
+    /// Returns the metadata associated with any compiled Java method.
+    /// Returns an empty optional if the function pointer is not a Java method.
+    std::optional<JavaMethodMetadata> getJavaMethodMetadata(std::uintptr_t functionPointer)
+    {
+        if (!m_javaFrames.contains(reinterpret_cast<void*>(functionPointer)))
+        {
+            return std::nullopt;
+        }
+        return reinterpret_cast<const JavaMethodMetadata*>(functionPointer)[-1];
     }
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'

@@ -526,7 +526,7 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
                     auto module = std::make_unique<llvm::Module>(stubSymbol, *context);
 
                     module->setDataLayout(m_dataLayout);
-                    module->setTargetTriple(m_triple.str());
+                    module->setTargetTriple(LLVM_HOST_TRIPLE);
 
                     auto* functionType = llvm::FunctionType::get(
                         CppToLLVMType<typename llvm::function_traits<std::decay_t<F>>::result_t>::get(context.get()),
@@ -605,7 +605,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
                     auto module = std::make_unique<llvm::Module>(stubName, *context);
 
                     module->setDataLayout(m_dataLayout);
-                    module->setTargetTriple(m_triple.str());
+                    module->setTargetTriple(LLVM_HOST_TRIPLE);
 
                     auto* functionType = descriptorToType(*desc, isStatic, *context);
 

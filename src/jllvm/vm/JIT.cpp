@@ -24,6 +24,55 @@
 
 #define DEBUG_TYPE "jvm"
 
+namespace
+{
+class JavaFrameRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
+{
+    llvm::DenseSet<void*>& m_javaFrameSet;
+
+public:
+    explicit JavaFrameRegistrationPlugin(llvm::DenseSet<void*>& javaFrameSet) : m_javaFrameSet(javaFrameSet) {}
+
+    llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility&) override
+    {
+        return llvm::Error::success();
+    }
+
+    llvm::Error notifyRemovingResources(llvm::orc::JITDylib&, llvm::orc::ResourceKey) override
+    {
+        return llvm::Error::success();
+    }
+
+    void notifyTransferringResources(llvm::orc::JITDylib&, llvm::orc::ResourceKey, llvm::orc::ResourceKey) override {}
+
+    void modifyPassConfig(llvm::orc::MaterializationResponsibility&, llvm::jitlink::LinkGraph&,
+                          llvm::jitlink::PassConfiguration& config) override
+    {
+        config.PostAllocationPasses.emplace_back(
+            [&](llvm::jitlink::LinkGraph& g)
+            {
+                std::string sectionName = "java";
+                if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+                {
+                    sectionName = "__TEXT," + sectionName;
+                }
+
+                llvm::jitlink::Section* section = g.findSectionByName(sectionName);
+                if (!section)
+                {
+                    return llvm::Error::success();
+                }
+                for (llvm::jitlink::Symbol* iter : section->symbols())
+                {
+                    m_javaFrameSet.insert(iter->getAddress().toPtr<void*>());
+                }
+
+                return llvm::Error::success();
+            });
+    }
+};
+} // namespace
+
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
                 llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
@@ -62,6 +111,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
         *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
     m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc));
+    m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
     m_implementation.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
@@ -106,24 +156,24 @@ jllvm::JIT::~JIT()
     llvm::cantFail(m_epciu->cleanup());
 }
 
-void jllvm::JIT::add(const jllvm::ClassFile* classFile)
+void jllvm::JIT::add(const jllvm::ClassFile* classFile, const ClassObject* classObject)
 {
-    for (const MethodInfo& iter : classFile->getMethods())
+    for (auto&& [info, method] : llvm::zip(classFile->getMethods(), classObject->getMethods()))
     {
-        if (iter.isAbstract())
+        if (info.isAbstract())
         {
             continue;
         }
 
-        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleMethod(iter, *classFile) << " to JIT Link graph\n"; });
+        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleMethod(info, *classFile) << " to JIT Link graph\n"; });
 
-        if (iter.isNative())
+        if (info.isNative())
         {
-            llvm::cantFail(m_jniLayer.add(m_main, &iter, classFile));
+            llvm::cantFail(m_jniLayer.add(m_main, &info, classFile, &method, classObject));
             continue;
         }
 
-        llvm::cantFail(m_byteCodeOnDemandLayer.add(m_main, &iter, classFile));
+        llvm::cantFail(m_byteCodeOnDemandLayer.add(m_main, &info, classFile, &method, classObject));
     }
 }
 

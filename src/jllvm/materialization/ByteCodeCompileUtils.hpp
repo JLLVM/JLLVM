@@ -4,6 +4,7 @@
 #include <llvm/IR/LLVMContext.h>
 
 #include <jllvm/class/Descriptors.hpp>
+#include <jllvm/object/ClassObject.hpp>
 
 namespace jllvm
 {
@@ -28,4 +29,15 @@ llvm::Type* descriptorToType(const FieldType& type, llvm::LLVMContext& context);
 
 /// Returns the corresponding LLVM function type for a given, possible static, Java method descriptor.
 llvm::FunctionType* descriptorToType(const MethodType& type, bool isStatic, llvm::LLVMContext& context);
+
+/// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
+struct JavaMethodMetadata
+{
+    /// Class object of the enclosing class of the method.
+    const ClassObject* classObject;
+    /// Method meta-object of the compiled method.
+    const Method* method;
+};
+
+void applyJavaMethodAttributes(llvm::Function* function, const JavaMethodMetadata& metadata);
 } // namespace jllvm

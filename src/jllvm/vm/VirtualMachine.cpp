@@ -118,7 +118,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
         std::move(classPath),
         [this](const ClassFile* classFile, ClassObject& classObject)
         {
-            m_jit.add(classFile);
+            m_jit.add(classFile, &classObject);
             if (classObject.isInterface() || classObject.isAbstract())
             {
                 return;

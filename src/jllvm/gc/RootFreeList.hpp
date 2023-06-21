@@ -83,7 +83,7 @@ public:
     }
 
     /// Returns true if 'lhs' and 'rhs' refer to the same object.
-    friend bool operator==(GCRootRef<T> lhs, T* object)
+    friend bool operator==(GCRootRef<T> lhs, const T* object)
     {
         return lhs.get() == object;
     }
