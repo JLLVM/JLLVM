@@ -123,9 +123,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 llvm::SmallVector<llvm::Value*> args{environment};
                 if (methodInfo->isStatic())
                 {
-                    args.push_back(
-                        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
-                                               referenceType(*context)));
+                    args.push_back(builder.CreateIntToPtr(
+                        builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), referenceType(*context)));
                 }
                 for (llvm::Argument& arg : function->args())
                 {
