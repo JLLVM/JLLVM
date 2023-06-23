@@ -12,31 +12,6 @@
 
 namespace jllvm
 {
-/// Method used to add a (possibly static) member function to the 'method' tuple of a 'ModelBase' instance.
-/// This uses an implementation defined trick to get the name of the member function and returns it together with the
-/// function pointer.
-template <auto fnPtr>
-constexpr auto addMember()
-{
-    // GCC and Clang encode the typename here by appending at the back something similar to [fnPtr = Class::name]
-    std::string_view demangledName = __PRETTY_FUNCTION__;
-    std::size_t rstart = demangledName.rfind(']');
-    assert(rstart != std::string_view::npos);
-    // Skip over possible whitespace.
-    while (rstart > 0 && demangledName[rstart - 1] == ' ')
-    {
-        rstart--;
-    }
-
-    // Last namespace qualifier from the back.
-    constexpr std::string_view namespaceQual = "::";
-    std::size_t lastNamespaceQual = demangledName.rfind(namespaceQual, rstart);
-    assert(lastNamespaceQual != std::string_view::npos);
-
-    demangledName = demangledName.substr(lastNamespaceQual + namespaceQual.size(),
-                                         rstart - (lastNamespaceQual + namespaceQual.size()));
-    return std::pair{fnPtr, demangledName};
-}
 
 /// Base class for any Models used as our high level API for implementing native methods of Java.
 /// This high level API builds on top of the JNI and translates the JNIs general and JVM agnostic C interface to
@@ -63,8 +38,8 @@ constexpr auto addMember()
 /// As a final step, 'ModelBase' subclasses must add the following 'constexpr static' fields:
 /// * 'llvm::StringLiteral className' which should contain the fully qualified name (i.e. with slashes) of the class
 ///    being modelled
-/// *  'auto methods = std::make_tuple(addMember<&ModelClass::aNativeMethod>(), ...)' which is a tuple using
-///    'addMember' that should list ALL implementations of 'native' methods that should be registered in the VM.
+/// *  'auto methods = std::make_tuple(&ModelClass::aNativeMethod, ...)' which is a tuple that should list ALL
+///    implementations of 'native' methods that should be registered in the VM.
 template <class JavaObject = Object>
 class ModelBase
 {
@@ -114,8 +89,7 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Object";
-    constexpr static auto methods =
-        std::make_tuple(addMember<&ObjectModel::hashCode>(), addMember<&ObjectModel::getClass>());
+    constexpr static auto methods = std::make_tuple(&ObjectModel::hashCode, &ObjectModel::getClass);
 };
 
 /// Model implementation for the native methods of Javas 'Class' class.
@@ -160,8 +134,8 @@ public:
 
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
-        std::make_tuple(addMember<&ClassModel::registerNatives>(), addMember<&ClassModel::isArray>(),
-                        addMember<&ClassModel::desiredAssertionStatus0>(), addMember<&ClassModel::getPrimitiveClass>());
+        std::make_tuple(&ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
+                        &ClassModel::getPrimitiveClass);
 };
 
 class FloatModel : public ModelBase<>
@@ -186,7 +160,7 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Float";
-    constexpr static auto methods = std::make_tuple(addMember<&floatToRawIntBits>(), addMember<&intBitsToFloat>());
+    constexpr static auto methods = std::make_tuple(&floatToRawIntBits, &intBitsToFloat);
 };
 
 class DoubleModel : public ModelBase<>
@@ -211,7 +185,7 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Double";
-    constexpr static auto methods = std::make_tuple(addMember<&doubleToRawLongBits>(), addMember<&longBitsToDouble>());
+    constexpr static auto methods = std::make_tuple(&doubleToRawLongBits, &longBitsToDouble);
 };
 
 /// Model implementation for the native methods of Javas 'Thowable' class.
@@ -228,7 +202,7 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Throwable";
-    constexpr static auto methods = std::make_tuple(addMember<&ThrowableModel::fillInStackTrace>());
+    constexpr static auto methods = std::make_tuple(&ThrowableModel::fillInStackTrace);
 };
 
 class SystemModel : public ModelBase<Object>
@@ -248,8 +222,7 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/System";
-    constexpr static auto methods = std::make_tuple(addMember<&SystemModel::registerNatives>(),
-                                                    addMember<&SystemModel::nanoTime>());
+    constexpr static auto methods = std::make_tuple(&SystemModel::registerNatives, &SystemModel::nanoTime);
 };
 
 class ReflectionModel : public ModelBase<>
@@ -260,7 +233,7 @@ public:
     static const ClassObject* getCallerClass(VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject);
 
     constexpr static llvm::StringLiteral className = "jdk/internal/reflect/Reflection";
-    constexpr static auto methods = std::make_tuple(addMember<&ReflectionModel::getCallerClass>());
+    constexpr static auto methods = std::make_tuple(&ReflectionModel::getCallerClass);
 };
 
 class CDSModel : public ModelBase<Object>
@@ -292,9 +265,8 @@ public:
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/CDS";
     constexpr static auto methods =
-        std::make_tuple(addMember<&CDSModel::isDumpingClassList0>(), addMember<&CDSModel::isDumpingArchive0>(),
-                        addMember<&CDSModel::isSharingEnabled0>(), addMember<&CDSModel::getRandomSeedForDumping>(),
-                        addMember<&CDSModel::initializeFromArchive>());
+        std::make_tuple(&CDSModel::isDumpingClassList0, &CDSModel::isDumpingArchive0, &CDSModel::isSharingEnabled0,
+                        &CDSModel::getRandomSeedForDumping, &CDSModel::initializeFromArchive);
 };
 
 class UnsafeModel : public ModelBase<>
@@ -453,16 +425,13 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/Unsafe";
-    constexpr static auto methods =
-        std::make_tuple(addMember<&UnsafeModel::registerNatives>(), addMember<&UnsafeModel::arrayBaseOffset0>(),
-                        addMember<&UnsafeModel::arrayIndexScale0>(), addMember<&UnsafeModel::objectFieldOffset1>(),
-                        addMember<&UnsafeModel::storeFence>(), addMember<&UnsafeModel::loadFence>(),
-                        addMember<&UnsafeModel::fullFence>(), addMember<&UnsafeModel::compareAndSetByte>(),
-                        addMember<&UnsafeModel::compareAndSetShort>(), addMember<&UnsafeModel::compareAndSetChar>(),
-                        addMember<&UnsafeModel::compareAndSetBoolean>(), addMember<&UnsafeModel::compareAndSetInt>(),
-                        addMember<&UnsafeModel::compareAndSetLong>(), addMember<&UnsafeModel::compareAndSetReference>(),
-                        addMember<&UnsafeModel::getIntVolatile>(), addMember<&UnsafeModel::getReferenceVolatile>(),
-                        addMember<&UnsafeModel::putIntVolatile>(), addMember<&UnsafeModel::putReferenceVolatile>());
+    constexpr static auto methods = std::make_tuple(
+        &UnsafeModel::registerNatives, &UnsafeModel::arrayBaseOffset0, &UnsafeModel::arrayIndexScale0,
+        &UnsafeModel::objectFieldOffset1, &UnsafeModel::storeFence, &UnsafeModel::loadFence, &UnsafeModel::fullFence,
+        &UnsafeModel::compareAndSetByte, &UnsafeModel::compareAndSetShort, &UnsafeModel::compareAndSetChar,
+        &UnsafeModel::compareAndSetBoolean, &UnsafeModel::compareAndSetInt, &UnsafeModel::compareAndSetLong,
+        &UnsafeModel::compareAndSetReference, &UnsafeModel::getIntVolatile, &UnsafeModel::getReferenceVolatile,
+        &UnsafeModel::putIntVolatile, &UnsafeModel::putReferenceVolatile);
 };
 
 /// Register any models for builtin Java classes in the VM.
@@ -531,11 +500,36 @@ using hasClassName = decltype(Model::className);
 template <class Model>
 using hasMethods = decltype(Model::methods);
 
+// WARNING: fnPtr even if unused is required to be named for clang to include it in the __PRETTY_FUNCTION__ output
+// below. Massive hack, I know.
+template <auto fnPtr>
+constexpr auto functionName()
+{
+    // GCC and Clang encode the typename here by appending at the back something similar to [fnPtr = Class::name]
+    std::string_view demangledName = __PRETTY_FUNCTION__;
+    std::size_t rstart = demangledName.rfind(']');
+    assert(rstart != std::string_view::npos);
+    // Skip over possible whitespace.
+    while (rstart > 0 && demangledName[rstart - 1] == ' ')
+    {
+        rstart--;
+    }
+
+    // Last namespace qualifier from the back.
+    constexpr std::string_view namespaceQual = "::";
+    std::size_t lastNamespaceQual = demangledName.rfind(namespaceQual, rstart);
+    assert(lastNamespaceQual != std::string_view::npos);
+
+    demangledName = demangledName.substr(lastNamespaceQual + namespaceQual.size(),
+                                         rstart - (lastNamespaceQual + namespaceQual.size()));
+    return demangledName;
+}
+
 } // namespace detail
 
 /// Registers all methods of a model 'Model' within 'virtualMachine'.
 template <class Model>
-void addModel(jllvm::VirtualMachine& virtualMachine)
+void addModel(VirtualMachine& virtualMachine)
 {
     static_assert(
         llvm::is_detected<detail::hasClassName, Model>{},
@@ -544,19 +538,20 @@ void addModel(jllvm::VirtualMachine& virtualMachine)
         llvm::is_detected<detail::hasMethods, Model>{},
         "'Model' must have a 'constexpr static' tuple called 'methods' listing all 'native' methods implemented");
 
-    std::apply(
-        [&](const auto&... subTuples)
-        {
-            (
-                [&](const auto& subTuple)
-                {
-                    auto [ptr, methodName] = subTuple;
-                    virtualMachine.getJIT().addJNISymbol(jllvm::formJNIMethodName(Model::className, methodName),
-                                                         detail::createMethodBridge<Model>(ptr));
-                }(subTuples),
-                ...);
-        },
-        Model::methods);
+    constexpr auto methods = Model::methods;
+
+    [&]<std::size_t... idxs>(std::index_sequence<idxs...>)
+    {
+        (
+            [&]
+            {
+                constexpr auto fn = std::get<idxs>(methods);
+                constexpr std::string_view methodName = detail::functionName<fn>();
+                virtualMachine.getJIT().addJNISymbol(formJNIMethodName(Model::className, methodName),
+                                                     detail::createMethodBridge<Model>(fn));
+            }(),
+            ...);
+    }(std::make_index_sequence<std::tuple_size_v<decltype(methods)>>{});
 }
 
 template <class... Models>
