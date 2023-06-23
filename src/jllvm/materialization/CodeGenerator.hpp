@@ -29,6 +29,7 @@ class CodeGenerator
     OperandStack m_operandStack;
     std::vector<llvm::AllocaInst*> m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
+    ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
@@ -41,7 +42,8 @@ class CodeGenerator
 
     void generateCodeBody(const Code& code);
 
-    /// Generated LLVM IR instructions for a JVM bytecode instruction, returns whether the instruction indicated the end of a basic block
+    /// Generate LLVM IR instructions for a JVM bytecode instruction, returns whether the instruction indicated the end
+    /// of a basic block
     bool generateInstruction(ByteCodeOp operation);
 
     void generateEHDispatch();

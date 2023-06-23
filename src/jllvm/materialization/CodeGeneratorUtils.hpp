@@ -15,16 +15,32 @@ namespace jllvm
 {
 
 /// Class for Java bytecode typechecking
-/// This works by iterating over the bytecode of a Java method extracting its basic block
-/// and the types on the stack at the start of the block
+/// This works by iterating over the bytecode of a Java method extracting the basic blocks
+/// and the types on the stack at the start of the block then constructing a map of basic block starting
+/// offsets to starting state of their stack.
 class ByteCodeTypeChecker
 {
-    using TypeStack = std::vector<llvm::Type*>;
-    using BasicBlockMap = llvm::DenseMap<std::uint16_t, TypeStack>;
+    struct ReturnInfo
+    {
+        std::uint16_t retOffset;
+        std::uint16_t returnAddress;
+    };
 
+public:
+    using RetAddrType = llvm::PointerEmbeddedInt<std::uint16_t>;
+    using JVMType = llvm::PointerUnion<llvm::Type*, RetAddrType>;
+    using TypeStack = std::vector<JVMType>;
+    using BasicBlockMap = llvm::DenseMap<std::uint16_t, TypeStack>;
+    using PossibleRetsMap = llvm::DenseMap<std::uint16_t, llvm::DenseSet<std::uint16_t>>;
+
+private:
     llvm::LLVMContext& m_context;
     const ClassFile& m_classFile;
+    const Code& m_code;
     std::vector<std::uint16_t> m_offsetStack;
+    llvm::DenseMap<std::uint16_t, std::uint16_t> m_localRetMap;
+    llvm::DenseMap<std::uint16_t, std::uint16_t> m_returnAddressToSubroutineMap;
+    llvm::DenseMap<std::uint16_t, ReturnInfo> m_subroutineToReturnInfoMap;
     BasicBlockMap m_basicBlocks;
     llvm::Type* m_addressType;
     llvm::Type* m_doubleType;
@@ -34,21 +50,29 @@ class ByteCodeTypeChecker
 
     void checkBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset, TypeStack typeStack);
 
+    void check();
+
 public:
-    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile)
+    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile, const Code& code)
         : m_context{context},
           m_classFile{classFile},
+          m_code{code},
           m_addressType{referenceType(m_context)},
           m_doubleType{llvm::Type::getDoubleTy(m_context)},
           m_floatType{llvm::Type::getFloatTy(m_context)},
           m_intType{llvm::Type::getInt32Ty(m_context)},
           m_longType{llvm::Type::getInt64Ty(m_context)}
     {
+        check();
     }
 
-    /// Returns the map of basic blocks from their starting offset inside the bytecode to the starting state of their stack
-    /// It consumes 'this' in the process leaving it in an invalid state
-    BasicBlockMap check(const Code& code);
+    /// Creates a mapping between each 'ret' instruction and the offsets inside the bytecode where it could return to.
+    PossibleRetsMap makeRetToMap();
+
+    const BasicBlockMap& getBasicBlocks() const
+    {
+        return m_basicBlocks;
+    }
 };
 
 /// Class for JVM operand stack

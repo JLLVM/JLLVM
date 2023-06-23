@@ -198,13 +198,21 @@ void CodeGenerator::generateCode(const Code& code)
 
 void CodeGenerator::createBasicBlocks(const Code& code)
 {
-    auto sectionMap = ByteCodeTypeChecker{m_builder.getContext(), m_classFile}.check(code);
+    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code};
 
-    for (auto& [offset, state] : sectionMap)
+    for (const auto& [offset, state] : checker.getBasicBlocks())
     {
+        OperandStack::State stack{state.size()};
+
+        llvm::transform(state, stack.begin(),
+                        [&](ByteCodeTypeChecker::JVMType type)
+                        { return type.is<llvm::Type*>() ? type.get<llvm::Type*>() : m_builder.getPtrTy(); });
+
         m_basicBlocks.insert(
-            {offset, {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(state)}});
+            {offset, {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(stack)}});
     }
+
+    m_retToMap = checker.makeRetToMap();
 }
 
 void CodeGenerator::generateCodeBody(const Code& code)
@@ -273,6 +281,18 @@ void CodeGenerator::generateCodeBody(const Code& code)
 bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
     bool blockEnd = false;
+
+    auto generateRet = [&](auto& ret)
+    {
+        llvm::Value* retAddress = m_builder.CreateLoad(m_builder.getPtrTy(), m_locals[ret.index]);
+        auto& retLocations = m_retToMap[ret.offset];
+        auto* indirectBr = m_builder.CreateIndirectBr(retAddress, retLocations.size());
+        for (auto location : retLocations)
+        {
+            indirectBr->addDestination(m_basicBlocks[location].block);
+        }
+        blockEnd = true;
+    };
 
     match(
         operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
@@ -828,8 +848,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
-            std::uint16_t target = gotoOp.offset + gotoOp.target;
-            m_builder.CreateBr(m_basicBlocks[target].block);
+            m_builder.CreateBr(m_basicBlocks[gotoOp.offset + gotoOp.target].block);
             blockEnd = true;
         },
         [&](I2B)
@@ -1011,8 +1030,21 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* lhs = m_operandStack.pop_back();
             m_operandStack.push_back(m_builder.CreateXor(lhs, rhs));
         },
-        // TODO: JSR
-        // TODO: JSRw
+        [&](OneOf<JSR, JSRw> jsr)
+        {
+            llvm::BasicBlock* target = m_basicBlocks[jsr.offset + jsr.target].block;
+            std::uint16_t retAddress =
+                jsr.offset + sizeof(OpCodes)
+                + (holds_alternative<JSRw>(operation) ? sizeof(std::int32_t) : sizeof(std::int16_t));
+
+            if (auto iter = m_basicBlocks.find(retAddress); iter != m_basicBlocks.end())
+            {
+                m_operandStack.push_back(llvm::BlockAddress::get(iter->second.block));
+            }
+
+            m_builder.CreateBr(target);
+            blockEnd = true;
+        },
         [&](L2I)
         {
             llvm::Value* value = m_operandStack.pop_back();
@@ -1317,7 +1349,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_builder.CreateStore(value, fieldPtr);
         },
-        // TODO: Ret
+        [&](Ret ret) { generateRet(ret); },
         [&](Return)
         {
             m_builder.CreateRetVoid();
@@ -1347,7 +1379,11 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                     m_builder.CreateStore(m_operandStack.pop_back(), m_locals[wide.index]);
                     return;
                 }
-                case OpCodes::Ret: llvm_unreachable("NOT YET IMPLEMENTED");
+                case OpCodes::Ret:
+                {
+                    generateRet(wide);
+                    return;
+                }
                 case OpCodes::IInc:
                 {
                     llvm::Value* local = m_builder.CreateLoad(m_builder.getInt32Ty(), m_locals[wide.index]);
