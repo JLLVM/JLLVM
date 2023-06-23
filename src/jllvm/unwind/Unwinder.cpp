@@ -1,5 +1,7 @@
 #include "Unwinder.hpp"
 
+#include <llvm/Support/ErrorHandling.h>
+
 #include <utility>
 
 #include <unwind.h>
@@ -15,6 +17,7 @@ bool jllvm::detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, U
             {
                 case UnwindAction::ContinueUnwinding: return _URC_NO_REASON;
                 case UnwindAction::StopUnwinding: return _URC_END_OF_STACK;
+                default: llvm_unreachable("Invalid unwind action");
             }
         },
         &data);

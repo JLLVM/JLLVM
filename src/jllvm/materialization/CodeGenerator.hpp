@@ -34,18 +34,12 @@ class CodeGenerator
 
     // std::list because we want the iterator stability when deleting handlers (requires random access).
     std::list<HandlerInfo> m_activeHandlers;
-    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> m_startHandlers;
-    llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> m_endHandlers;
     // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
-    std::vector<std::uint16_t> m_blockStartStack;
-    llvm::DenseSet<std::uint16_t> m_visitedBlocks;
 
     void createBasicBlocks(const Code& code);
 
     void generateCodeBody(const Code& code);
-
-    void generateBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset);
 
     bool generateInstruction(ByteCodeOp operation);
 
