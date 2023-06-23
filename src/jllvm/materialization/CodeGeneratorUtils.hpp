@@ -15,10 +15,9 @@ namespace jllvm
 {
 
 /// Class for Java bytecode typechecking
-/// This works by iterating over the bytecode of a Java method extracting its basic block
-/// and the types on the stack at the start of the block.
-/// It constructs the map of basic blocks from their starting offset inside the bytecode to the starting state of their
-/// stack.
+/// This works by iterating over the bytecode of a Java method extracting the basic blocks
+/// and the types on the stack at the start of the block then constructing a map of basic block starting
+/// offsets to starting state of their stack.
 class ByteCodeTypeChecker
 {
     struct ReturnInfo
