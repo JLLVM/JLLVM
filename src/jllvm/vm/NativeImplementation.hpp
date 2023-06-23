@@ -503,7 +503,9 @@ using hasClassName = decltype(Model::className);
 template <class Model>
 using hasMethods = decltype(Model::methods);
 
-template <auto>
+// WARNING: fnPtr even if unused is required to be named for clang to include it in the __PRETTY_FUNCTION__ output
+// below. Massive hack, I know.
+template <auto fnPtr>
 constexpr auto functionName()
 {
     // GCC and Clang encode the typename here by appending at the back something similar to [fnPtr = Class::name]
@@ -547,7 +549,7 @@ void addModel(VirtualMachine& virtualMachine)
             [&]
             {
                 constexpr auto fn = std::get<idxs>(methods);
-                std::string_view methodName = detail::functionName<fn>();
+                constexpr std::string_view methodName = detail::functionName<fn>();
                 virtualMachine.getJIT().addJNISymbol(formJNIMethodName(Model::className, methodName),
                                                      detail::createMethodBridge<Model>(fn));
             }(),
