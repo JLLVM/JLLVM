@@ -272,7 +272,7 @@ void CodeGenerator::generateCodeBody(const Code& code)
 
 bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
-    bool end = false;
+    bool blockEnd = false;
 
     match(
         operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
@@ -406,7 +406,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 });
 
             m_builder.CreateRet(value);
-            end = true;
+            blockEnd = true;
         },
         [&](ArrayLength)
         {
@@ -438,7 +438,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
             m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
-            end = true;
+            blockEnd = true;
         },
         [&](BIPush biPush)
         {
@@ -830,7 +830,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             std::uint16_t target = gotoOp.offset + gotoOp.target;
             m_builder.CreateBr(m_basicBlocks[target].block);
-            end = true;
+            blockEnd = true;
         },
         [&](I2B)
         {
@@ -911,7 +911,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* cond = m_builder.CreateICmp(predicate, lhs, rhs);
             m_builder.CreateCondBr(cond, target, next);
-            end = true;
+            blockEnd = true;
         },
         [&](IInc iInc)
         {
@@ -1070,7 +1070,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
-            end = true;
+            blockEnd = true;
         },
         [&](OneOf<LShl, LShr, LUShr>)
         {
@@ -1321,7 +1321,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](Return)
         {
             m_builder.CreateRetVoid();
-            end = true;
+            blockEnd = true;
         },
         [&](SIPush siPush) { m_operandStack.push_back(m_builder.getInt32(siPush.value)); },
         [&](Swap)
@@ -1385,7 +1385,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[wide.index]));
         });
 
-    return end;
+    return blockEnd;
 }
 
 void CodeGenerator::generateEHDispatch()
