@@ -32,7 +32,7 @@ class ByteCodeTypeChecker
     llvm::Type* m_intType;
     llvm::Type* m_longType;
 
-    void checkBasicBlock(llvm::ArrayRef<char> section, std::uint16_t offset, TypeStack typeStack);
+    void checkBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset, TypeStack typeStack);
 
 public:
     ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile)

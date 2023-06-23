@@ -215,6 +215,8 @@ void CodeGenerator::generateCodeBody(const Code& code)
         startHandlers[iter.startPc].push_back(iter);
     }
 
+    bool isReachable = false;
+
     llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
     for (ByteCodeOp operation : byteCodeRange(code.getCode()))
     {
@@ -251,14 +253,27 @@ void CodeGenerator::generateCodeBody(const Code& code)
             }
             m_builder.SetInsertPoint(result->second.block);
             m_operandStack.setState(result->second.state);
+            isReachable = true;
         }
 
-        generateInstruction(std::move(operation));
+        if (isReachable)
+        {
+            if (generateInstruction(std::move(operation)))
+            {
+                isReachable = false;
+            }
+        }
+        else
+        {
+            continue;
+        }
     }
 }
 
-void CodeGenerator::generateInstruction(ByteCodeOp operation)
+bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
+    bool blockEnd = false;
+
     match(
         operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
         [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
@@ -391,6 +406,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 });
 
             m_builder.CreateRet(value);
+            blockEnd = true;
         },
         [&](ArrayLength)
         {
@@ -422,6 +438,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
             m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+            blockEnd = true;
         },
         [&](BIPush biPush)
         {
@@ -811,8 +828,9 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
-            auto index = gotoOp.target + gotoOp.offset;
-            m_builder.CreateBr(m_basicBlocks[index].block);
+            std::uint16_t target = gotoOp.offset + gotoOp.target;
+            m_builder.CreateBr(m_basicBlocks[target].block);
+            blockEnd = true;
         },
         [&](I2B)
         {
@@ -857,7 +875,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                   IfGe, IfGt, IfLe, IfNonNull, IfNull>
                 cmpOp)
         {
-            llvm::BasicBlock* basicBlock = m_basicBlocks[cmpOp.target + cmpOp.offset].block;
+            llvm::BasicBlock* target = m_basicBlocks[cmpOp.offset + cmpOp.target].block;
             llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].block;
 
             llvm::Value* rhs;
@@ -892,7 +910,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](OneOf<IfICmpGe, IfGe>) { predicate = llvm::CmpInst::ICMP_SGE; });
 
             llvm::Value* cond = m_builder.CreateICmp(predicate, lhs, rhs);
-            m_builder.CreateCondBr(cond, basicBlock, next);
+            m_builder.CreateCondBr(cond, target, next);
+            blockEnd = true;
         },
         [&](IInc iInc)
         {
@@ -1051,6 +1070,7 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
+            blockEnd = true;
         },
         [&](OneOf<LShl, LShr, LUShr>)
         {
@@ -1298,7 +1318,11 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(value, fieldPtr);
         },
         // TODO: Ret
-        [&](Return) { m_builder.CreateRetVoid(); },
+        [&](Return)
+        {
+            m_builder.CreateRetVoid();
+            blockEnd = true;
+        },
         [&](SIPush siPush) { m_operandStack.push_back(m_builder.getInt32(siPush.value)); },
         [&](Swap)
         {
@@ -1360,6 +1384,8 @@ void CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[wide.index]));
         });
+
+    return blockEnd;
 }
 
 void CodeGenerator::generateEHDispatch()
