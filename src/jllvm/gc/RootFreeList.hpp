@@ -111,6 +111,13 @@ public:
         return *get();
     }
 
+    /// Returns the address of the Java object.
+    /// The address is only valid until the next garbage collection.
+    T* address() const
+    {
+        return get();
+    }
+
     /// Returns the underlying root referred to by this 'GCRootRef'.
     void** data() const
     {

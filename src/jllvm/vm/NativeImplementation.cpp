@@ -9,8 +9,8 @@ jllvm::VirtualMachine& jllvm::detail::virtualMachineFromJNIEnv(JNIEnv* env)
 
 void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
 {
-    addModels<ObjectModel, ClassModel, ThrowableModel, FloatModel, DoubleModel, SystemModel, ReflectionModel, CDSModel>(
-        virtualMachine);
+    addModels<ObjectModel, ClassModel, ThrowableModel, FloatModel, DoubleModel, SystemModel, ReflectionModel, CDSModel,
+              UnsafeModel>(virtualMachine);
 }
 
 const jllvm::ClassObject* jllvm::ReflectionModel::getCallerClass(VirtualMachine& virtualMachine,
