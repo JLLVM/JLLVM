@@ -58,7 +58,19 @@ std::string jllvm::fromJavaCompactEncoding(std::pair<llvm::ArrayRef<std::uint8_t
     auto [buffer, encoding] = compactEncoding;
     if (encoding == CompactEncoding::Latin1)
     {
-        return std::string{buffer.begin(), buffer.end()};
+        std::string result;
+        result.reserve(buffer.size());
+        // First 256 codepoints in Latin1 are identical to unicode. In other words, the compact Latin1 encoding is
+        // just a truncated UTF-32. Have to therefore encode these to UTF-8 explicitly.
+        for (std::uint32_t unicodeCodepoint : buffer)
+        {
+            std::array<char, UNI_MAX_UTF8_BYTES_PER_CODE_POINT> temp{};
+            char* ptr = temp.data();
+            bool success = llvm::ConvertCodePointToUTF8(unicodeCodepoint, ptr);
+            assert(success);
+            result.append(temp.data(), ptr);
+        }
+        return result;
     }
 
     std::vector<char> utf16{buffer.begin(), buffer.end()};
