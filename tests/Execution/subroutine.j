@@ -164,4 +164,5 @@ SR1:
     invokestatic  Test/subroutineReturning()V
     invokestatic  Test/wideSubroutine()V
     invokestatic  Test/retFromParentSubroutine()V
+    return
 .end method
