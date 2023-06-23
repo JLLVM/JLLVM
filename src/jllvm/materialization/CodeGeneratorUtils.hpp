@@ -66,7 +66,7 @@ public:
         check();
     }
 
-    /// Creates a mapping between each 'ret' instruction and the offset inside the bytecode where it could return to.
+    /// Creates a mapping between each 'ret' instruction and the offsets inside the bytecode where it could return to.
     PossibleRetsMap makeRetToMap();
 
     const BasicBlockMap& getBasicBlocks() const

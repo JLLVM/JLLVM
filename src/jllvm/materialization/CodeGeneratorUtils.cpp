@@ -376,6 +376,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
 
                 m_returnAddressToSubroutineMap.insert({retAddress, target});
 
+                // check if the subroutine has already been type-checked. If so use the previously calculated typeStack
                 if (auto iter = m_subroutineToReturnInfoMap.find(target); iter != m_subroutineToReturnInfoMap.end())
                 {
                     typeStack = m_basicBlocks[iter->second.returnAddress];
