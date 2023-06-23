@@ -425,16 +425,13 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/Unsafe";
-    constexpr static auto methods =
-        std::make_tuple(addMember<&UnsafeModel::registerNatives>(), addMember<&UnsafeModel::arrayBaseOffset0>(),
-                        addMember<&UnsafeModel::arrayIndexScale0>(), addMember<&UnsafeModel::objectFieldOffset1>(),
-                        addMember<&UnsafeModel::storeFence>(), addMember<&UnsafeModel::loadFence>(),
-                        addMember<&UnsafeModel::fullFence>(), addMember<&UnsafeModel::compareAndSetByte>(),
-                        addMember<&UnsafeModel::compareAndSetShort>(), addMember<&UnsafeModel::compareAndSetChar>(),
-                        addMember<&UnsafeModel::compareAndSetBoolean>(), addMember<&UnsafeModel::compareAndSetInt>(),
-                        addMember<&UnsafeModel::compareAndSetLong>(), addMember<&UnsafeModel::compareAndSetReference>(),
-                        addMember<&UnsafeModel::getIntVolatile>(), addMember<&UnsafeModel::getReferenceVolatile>(),
-                        addMember<&UnsafeModel::putIntVolatile>(), addMember<&UnsafeModel::putReferenceVolatile>());
+    constexpr static auto methods = std::make_tuple(
+        &UnsafeModel::registerNatives, &UnsafeModel::arrayBaseOffset0, &UnsafeModel::arrayIndexScale0,
+        &UnsafeModel::objectFieldOffset1, &UnsafeModel::storeFence, &UnsafeModel::loadFence, &UnsafeModel::fullFence,
+        &UnsafeModel::compareAndSetByte, &UnsafeModel::compareAndSetShort, &UnsafeModel::compareAndSetChar,
+        &UnsafeModel::compareAndSetBoolean, &UnsafeModel::compareAndSetInt, &UnsafeModel::compareAndSetLong,
+        &UnsafeModel::compareAndSetReference, &UnsafeModel::getIntVolatile, &UnsafeModel::getReferenceVolatile,
+        &UnsafeModel::putIntVolatile, &UnsafeModel::putReferenceVolatile);
 };
 
 /// Register any models for builtin Java classes in the VM.
