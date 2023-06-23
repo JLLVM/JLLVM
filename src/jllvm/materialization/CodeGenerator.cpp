@@ -200,7 +200,7 @@ void CodeGenerator::createBasicBlocks(const Code& code)
 {
     ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code};
 
-    for (auto& [offset, state] : checker.getBasicBlocks())
+    for (const auto& [offset, state] : checker.getBasicBlocks())
     {
         OperandStack::State stack{state.size()};
 
