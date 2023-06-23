@@ -282,6 +282,18 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
     bool blockEnd = false;
 
+    auto generateRet = [&](auto& ret)
+    {
+        llvm::Value* retAddress = m_builder.CreateLoad(m_builder.getPtrTy(), m_locals[ret.index]);
+        auto& retLocations = m_retToMap[ret.offset];
+        auto* indirectBr = m_builder.CreateIndirectBr(retAddress, retLocations.size());
+        for (auto location : retLocations)
+        {
+            indirectBr->addDestination(m_basicBlocks[location].block);
+        }
+        blockEnd = true;
+    };
+
     match(
         operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
         [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
@@ -1337,17 +1349,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_builder.CreateStore(value, fieldPtr);
         },
-        [&](Ret ret)
-        {
-            llvm::Value* retAddress = m_builder.CreateLoad(m_builder.getPtrTy(), m_locals[ret.index]);
-            auto& retLocations = m_retToMap[ret.offset];
-            auto* indirectBr = m_builder.CreateIndirectBr(retAddress, retLocations.size());
-            for (auto location : retLocations)
-            {
-                indirectBr->addDestination(m_basicBlocks[location].block);
-            }
-            blockEnd = true;
-        },
+        [&](Ret ret) { generateRet(ret); },
         [&](Return)
         {
             m_builder.CreateRetVoid();
@@ -1379,14 +1381,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 }
                 case OpCodes::Ret:
                 {
-                    llvm::Value* retAddress = m_builder.CreateLoad(m_builder.getPtrTy(), m_locals[wide.index]);
-                    auto& retLocations = m_retToMap[wide.offset];
-                    auto* indirectBr = m_builder.CreateIndirectBr(retAddress, retLocations.size());
-                    for (auto location : retLocations)
-                    {
-                        indirectBr->addDestination(m_basicBlocks[location].block);
-                    }
-                    blockEnd = true;
+                    generateRet(wide);
                     return;
                 }
                 case OpCodes::IInc:
