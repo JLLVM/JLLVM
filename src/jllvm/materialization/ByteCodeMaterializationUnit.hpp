@@ -21,11 +21,11 @@ public:
     ByteCodeMaterializationUnit(jllvm::ByteCodeLayer& layer, const MethodInfo* methodInfo, const ClassFile* classFile,
                                 const Method* method, const ClassObject* classObject)
         : llvm::orc::MaterializationUnit(layer.getSymbolsProvided(methodInfo, classFile)),
-          m_layer(layer),
-          m_methodInfo(methodInfo),
-          m_classFile(classFile),
-          m_method(method),
-          m_classObject(classObject)
+          m_layer{layer},
+          m_methodInfo{methodInfo},
+          m_classFile{classFile},
+          m_method{method},
+          m_classObject{classObject}
     {
     }
 

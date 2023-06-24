@@ -59,7 +59,7 @@ public:
     /// Constructor required to be implemented by any subclasses. Simply adding 'using Base::Base' to subclasses will
     /// make them inherit this constructor.
     ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine)
-        : javaThis(javaThis), virtualMachine(virtualMachine)
+        : javaThis{javaThis}, virtualMachine{virtualMachine}
     {
     }
 

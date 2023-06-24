@@ -33,5 +33,5 @@ llvm::orc::MaterializationUnit::Interface jllvm::ByteCodeLayer::getSymbolsProvid
     llvm::orc::SymbolFlagsMap result;
     auto name = mangleMethod(*methodInfo, *classFile);
     result[m_interner(name)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
-    return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
+    return llvm::orc::MaterializationUnit::Interface{std::move(result), nullptr};
 }

@@ -22,10 +22,10 @@ struct ObjectHeader
     /// Cached hash of the object. This has to be stored and lazily calculated on first use. We cannot use an objects
     /// address as we have a relocating garbage collector. It is therefore unstable.
     /// A value of 0 indicates the hashCode of an object has not yet been calculated.
-    std::int32_t hashCode = 0;
+    std::int32_t hashCode{};
 
     /// Initialize an object header with the objects class object.
-    explicit ObjectHeader(const ClassObject* classObject) : classObject(classObject) {}
+    explicit ObjectHeader(const ClassObject* classObject) : classObject{classObject} {}
 };
 
 /// Pure interface class used to implement methods one would commonly associate with 'Object'.
@@ -80,7 +80,7 @@ public:
     static Array* create(llvm::BumpPtrAllocator& allocator, const ClassObject* classObject, std::uint32_t length)
     {
         return new (allocator.Allocate(arrayElementsOffset() + sizeof(T[length]), alignof(Array)))
-            Array(classObject, length);
+            Array{classObject, length};
     }
 
     /// Returns the byte offset from the start of the Array object to the first array element.
@@ -150,7 +150,7 @@ class Object : public ObjectInterface
     ObjectHeader m_header;
 
 public:
-    explicit Object(const ClassObject* classObject) : m_header(classObject) {}
+    explicit Object(const ClassObject* classObject) : m_header{classObject} {}
 };
 
 static_assert(std::is_standard_layout_v<Object>);
@@ -188,12 +188,12 @@ struct Throwable : ObjectInterface
 {
     ObjectHeader header;
 
-    Object* backtrace = nullptr;
-    String* detailMessage = nullptr;
-    Throwable* cause = nullptr;
-    Array<Object*>* stackTrace = nullptr;
+    Object* backtrace{};
+    String* detailMessage{};
+    Throwable* cause{};
+    Array<Object*>* stackTrace{};
     std::int32_t depth{};
-    Object* suppressedExceptions = nullptr;
+    Object* suppressedExceptions{};
 };
 
 static_assert(std::is_standard_layout_v<Throwable>);

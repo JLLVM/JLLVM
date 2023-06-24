@@ -114,56 +114,55 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 } // namespace
 
 jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
-    : m_classLoader(
-        std::move(classPath),
-        [this](const ClassFile* classFile, ClassObject& classObject)
-        {
-            m_jit.add(classFile, &classObject);
-            if (classObject.isInterface() || classObject.isAbstract())
-            {
-                return;
-            }
-
-            for (const ClassObject* curr : classObject.getSuperClasses())
-            {
-                for (const Method& iter : curr->getMethods())
-                {
-                    auto slot = iter.getTableSlot();
-                    if (!slot)
+    : m_classLoader{std::move(classPath),
+                    [this](const ClassFile* classFile, ClassObject& classObject)
                     {
-                        continue;
-                    }
-                    classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
-                }
-            }
+                        m_jit.add(classFile, &classObject);
+                        if (classObject.isInterface() || classObject.isAbstract())
+                        {
+                            return;
+                        }
 
-            llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
-            for (const ClassObject* interface : classObject.getAllInterfaces())
-            {
-                idToInterface[interface->getInterfaceId()] = interface;
-            }
+                        for (const ClassObject* curr : classObject.getSuperClasses())
+                        {
+                            for (const Method& iter : curr->getMethods())
+                            {
+                                auto slot = iter.getTableSlot();
+                                if (!slot)
+                                {
+                                    continue;
+                                }
+                                classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
+                            }
+                        }
 
-            for (ITable* iTable : classObject.getITables())
-            {
-                const ClassObject* interface = idToInterface[iTable->getId()];
-                for (const Method& iter : interface->getMethods())
-                {
-                    auto slot = iter.getTableSlot();
-                    if (!slot)
-                    {
-                        continue;
-                    }
-                    iTable->getMethods()[*slot] = methodSelection(m_jit, &classObject, iter, interface);
-                }
-            }
-        },
-        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
-      m_stringInterner(m_classLoader),
-      m_gc(/*small random value for now*/ 4096),
+                        llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
+                        for (const ClassObject* interface : classObject.getAllInterfaces())
+                        {
+                            idToInterface[interface->getInterfaceId()] = interface;
+                        }
+
+                        for (ITable* iTable : classObject.getITables())
+                        {
+                            const ClassObject* interface = idToInterface[iTable->getId()];
+                            for (const Method& iter : interface->getMethods())
+                            {
+                                auto slot = iter.getTableSlot();
+                                if (!slot)
+                                {
+                                    continue;
+                                }
+                                iTable->getMethods()[*slot] = methodSelection(m_jit, &classObject, iter, interface);
+                            }
+                        }
+                    },
+                    [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }},
+      m_stringInterner{m_classLoader},
+      m_gc{/*small random value for now*/ 4096},
       // Seed from the C++ implementations entropy source.
-      m_pseudoGen(std::random_device{}()),
+      m_pseudoGen{std::random_device{}()},
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
-      m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max())
+      m_hashIntDistrib{1, std::numeric_limits<std::uint32_t>::max()}
 {
     m_jit.addImplementationSymbols(
         std::pair{"fmodf", &fmodf},
@@ -174,13 +173,15 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                   { return object->instanceOf(classObject); }},
         std::pair{"activeException", m_activeException.data()},
         std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
-        std::pair{"jllvm_delete_local_root", [&](GCRootRef<Object> root)
+        std::pair{"jllvm_delete_local_root",
+                  [&](GCRootRef<Object> root)
                   {
                       auto* object = static_cast<Object*>(root);
                       m_gc.deleteRoot(root);
                       return object;
                   }},
-        std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
+        std::pair{"jllvm_initialize_class_object",
+                  [&](ClassObject* classObject)
                   {
                       // This should have been checked inline in LLVM IR.
                       assert(!classObject->isInitialized());

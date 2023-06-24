@@ -50,7 +50,7 @@ class GCUniqueRoot : public GCRootRef<T>
 
     GarbageCollector* m_gc = nullptr;
 
-    explicit GCUniqueRoot(GarbageCollector* gc, GCRootRef<T> object) : GCRootRef<T>(object), m_gc(gc) {}
+    explicit GCUniqueRoot(GarbageCollector* gc, GCRootRef<T> object) : GCRootRef<T>{object}, m_gc{gc} {}
 
 public:
     /// Allows assignment from a valid pointer to an object.
@@ -72,7 +72,7 @@ public:
     /// 'rhs' is left in an invalid state on which no methods but the destructor, 'data' and the move assignment
     /// operator are valid.
     GCUniqueRoot(GCUniqueRoot&& rhs) noexcept
-        : GCRootRef<T>(std::exchange(rhs.m_object, nullptr)), m_gc(std::exchange(rhs.m_gc, nullptr))
+        : GCRootRef<T>{std::exchange(rhs.m_object, nullptr)}, m_gc{std::exchange(rhs.m_gc, nullptr)}
     {
     }
 

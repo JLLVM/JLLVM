@@ -13,7 +13,7 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
     jllvm::GarbageCollector& m_gc;
 
 public:
-    explicit StackMapRegistrationPlugin(jllvm::GarbageCollector& gc) : m_gc(gc) {}
+    explicit StackMapRegistrationPlugin(jllvm::GarbageCollector& gc) : m_gc{gc} {}
 
     llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility&) override;
 

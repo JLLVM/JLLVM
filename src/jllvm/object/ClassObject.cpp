@@ -56,15 +56,15 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTab
                                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
                                 llvm::StringRef className, bool isAbstract)
-    : m_objectHeader(metaClass),
-      m_fieldAreaSize(fieldAreaSize),
-      m_tableSize(vTableSlots),
-      m_methods(methods),
-      m_fields(fields),
-      m_bases(bases),
-      m_iTables(iTables),
-      m_className(className),
-      m_isAbstract(isAbstract)
+    : m_objectHeader{metaClass},
+      m_fieldAreaSize{fieldAreaSize},
+      m_tableSize{static_cast<int32_t>(vTableSlots)},
+      m_methods{methods},
+      m_fields{fields},
+      m_bases{bases},
+      m_iTables{iTables},
+      m_className{className},
+      m_isAbstract{isAbstract}
 {
 }
 
@@ -94,7 +94,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, 0, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false)
+    : ClassObject{nullptr, 0, static_cast<int32_t>(instanceSize - sizeof(ObjectHeader)), {}, {}, {}, {}, name, false}
 {
     // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
     m_isPrimitive = true;
@@ -121,14 +121,14 @@ const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces,
                                 llvm::StringRef className)
-    : m_objectHeader(metaClass),
-      m_fieldAreaSize(0),
+    : m_objectHeader{metaClass},
+      m_fieldAreaSize{},
       m_tableSize(llvm::count_if(methods, [](const Method& method) { return method.getTableSlot(); })),
-      m_methods(methods),
-      m_fields(fields),
-      m_bases(interfaces),
-      m_className(className),
-      m_componentTypeOrInterfaceId(interfaceId)
+      m_methods{methods},
+      m_fields{fields},
+      m_bases{interfaces},
+      m_className{className},
+      m_componentTypeOrInterfaceId{interfaceId}
 {
 }
 
@@ -138,9 +138,12 @@ jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& 
                                                         llvm::ArrayRef<ClassObject*> interfaces,
                                                         llvm::StringRef className)
 {
-    return new (allocator.Allocate<ClassObject>())
-        ClassObject(metaClass, interfaceId, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
-                    arrayRefAlloc(allocator, interfaces), className);
+    return new (allocator.Allocate<ClassObject>()) ClassObject{metaClass,
+                                                               interfaceId,
+                                                               arrayRefAlloc(allocator, methods),
+                                                               arrayRefAlloc(allocator, fields),
+                                                               arrayRefAlloc(allocator, interfaces),
+                                                               className};
 }
 
 jllvm::ITable* jllvm::ITable::create(llvm::BumpPtrAllocator& allocator, std::size_t id, std::size_t iTableSlots)

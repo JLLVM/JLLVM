@@ -21,7 +21,7 @@ jllvm::GCRootRef<jllvm::ObjectInterface> jllvm::RootFreeList::allocate()
         m_freeListNext = ++m_freeListEnd;
 
         *result = nullptr;
-        return GCRootRef<ObjectInterface>(result);
+        return GCRootRef<ObjectInterface>{result};
     }
 
     // Remove head form singly linked list.
@@ -31,7 +31,7 @@ jllvm::GCRootRef<jllvm::ObjectInterface> jllvm::RootFreeList::allocate()
     m_freeListNext = reinterpret_cast<void**>(next & ~static_cast<std::uintptr_t>(1));
 
     *result = nullptr;
-    return GCRootRef<ObjectInterface>(result);
+    return GCRootRef<ObjectInterface>{result};
 }
 
 void jllvm::RootFreeList::free(GCRootRef<ObjectInterface> root)

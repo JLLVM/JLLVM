@@ -42,9 +42,9 @@ static constexpr llvm::opt::OptTable::Info INFO_TABLE[] = {
 };
 
 jllvm::CommandLine::CommandLine(llvm::ArrayRef<char*> args)
-    : llvm::opt::PrecomputedOptTable(INFO_TABLE, PREFIX_TABLE),
-      m_stringSaver(m_allocator),
-      m_args(parseArgs(args.size(), args.data(), OPT_UNKNOWN, m_stringSaver,
-                       [](llvm::StringRef error) { llvm::report_fatal_error(error); }))
+    : llvm::opt::PrecomputedOptTable{INFO_TABLE, PREFIX_TABLE},
+      m_stringSaver{m_allocator},
+      m_args{parseArgs(args.size(), args.data(), OPT_UNKNOWN, m_stringSaver,
+                       [](llvm::StringRef error) { llvm::report_fatal_error(error); })}
 {
 }

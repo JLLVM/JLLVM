@@ -30,7 +30,7 @@ class UnwindFrame
 {
     void* m_impl;
 
-    explicit UnwindFrame(void* impl) : m_impl(impl) {}
+    explicit UnwindFrame(void* impl) : m_impl{impl} {}
 
     friend bool detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, UnwindFrame));
 

@@ -18,14 +18,14 @@ static llvm::cl::opt<bool> gcEveryAlloc("jllvm-gc-every-alloc", llvm::cl::Hidden
 static constexpr auto SLAB_SIZE = 4096 / sizeof(void*);
 
 jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
-    : m_heapSize(heapSize),
-      m_spaceOne(std::make_unique<char[]>(heapSize)),
-      m_spaceTwo(std::make_unique<char[]>(heapSize)),
-      m_fromSpace(m_spaceOne.get()),
-      m_toSpace(m_spaceTwo.get()),
-      m_bumpPtr(m_fromSpace),
-      m_staticRoots(SLAB_SIZE),
-      m_localRoots(SLAB_SIZE)
+    : m_heapSize{heapSize},
+      m_spaceOne{std::make_unique<char[]>(heapSize)},
+      m_spaceTwo{std::make_unique<char[]>(heapSize)},
+      m_fromSpace{m_spaceOne.get()},
+      m_toSpace{m_spaceTwo.get()},
+      m_bumpPtr{m_fromSpace},
+      m_staticRoots{SLAB_SIZE},
+      m_localRoots{SLAB_SIZE}
 {
     std::memset(m_bumpPtr, 0, m_heapSize);
     __asan_poison_memory_region(m_toSpace, m_heapSize);
@@ -251,7 +251,7 @@ void mark(std::vector<ObjectRepr*>& workList, ObjectRepr* from, ObjectRepr* to)
 
 jllvm::GCRootRef<jllvm::Object> jllvm::GarbageCollector::allocateStatic()
 {
-    return GCRootRef<Object>(m_staticRoots.allocate());
+    return GCRootRef<Object>{m_staticRoots.allocate()};
 }
 
 void jllvm::GarbageCollector::garbageCollect()

@@ -89,7 +89,7 @@ public:
     using State = std::vector<llvm::Type*>;
 
     OperandStack(llvm::IRBuilder<>& builder, std::uint16_t maxStack)
-        : m_builder(builder), m_values{maxStack}, m_types{maxStack}
+        : m_builder{builder}, m_values{maxStack}, m_types{maxStack}
     {
         std::generate(m_values.begin(), m_values.end(), [&] { return builder.CreateAlloca(builder.getPtrTy()); });
     }
@@ -179,16 +179,16 @@ public:
                           llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
                           llvm::orc::MangleAndInterner& interner, const llvm::DataLayout& dataLayout,
                           const ClassObject* currentClass, const ClassFile* currentClassFile)
-        : m_mainDylib(mainDylib),
-          m_implDylib(implDylib),
-          m_stubsManager(stubsManager),
-          m_callbackManager(callbackManager),
-          m_baseLayer(baseLayer),
-          m_dataLayout(dataLayout),
-          m_classLoader(classLoader),
-          m_interner(interner),
-          m_currentClass(currentClass),
-          m_currentClassFile(currentClassFile)
+        : m_mainDylib{mainDylib},
+          m_implDylib{implDylib},
+          m_stubsManager{stubsManager},
+          m_callbackManager{callbackManager},
+          m_baseLayer{baseLayer},
+          m_dataLayout{dataLayout},
+          m_classLoader{classLoader},
+          m_interner{interner},
+          m_currentClass{currentClass},
+          m_currentClassFile{currentClassFile}
     {
         m_mainDylib.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
                                     { m_implDylib.setLinkOrder(dylibSearchOrder); });

@@ -31,14 +31,14 @@ template <class T = ObjectInterface>
 class GCRootRef
 {
 protected:
-    void** m_object = nullptr;
+    void** m_object{};
 
     friend class RootFreeList;
 
     template <class U>
     friend class GCRootRef;
 
-    explicit GCRootRef(void** object) : m_object(object) {}
+    explicit GCRootRef(void** object) : m_object{object} {}
 
     T* get() const
     {
@@ -46,10 +46,9 @@ protected:
     }
 
 public:
-
     /// Creates a new 'GCRootRef' from a derived 'GCRootRef', referring to the same root.
     template <std::derived_from<T> U>
-    GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_object(rhs.m_object)
+    GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_object{rhs.m_object}
     {
     }
 
@@ -134,22 +133,24 @@ class RootFreeList
 {
     std::size_t m_slabSize;
     std::vector<std::unique_ptr<void*[]>> m_slabs;
-    std::size_t m_currentSlab = 0;
-    void** m_freeListNext = nullptr;
-    void** m_freeListEnd = nullptr;
+    std::size_t m_currentSlab{};
+    void** m_freeListNext{};
+    void** m_freeListEnd{};
 
     class SlotsIterator : public llvm::iterator_facade_base<SlotsIterator, std::forward_iterator_tag, void**,
                                                             std::ptrdiff_t, void***, void**>
     {
-        std::size_t m_slabSize = 0;
-        const std::unique_ptr<void*[]>* m_currentSlab = nullptr;
-        std::size_t m_current = 0;
+        std::size_t m_slabSize{};
+        const std::unique_ptr<void*[]>* m_currentSlab{};
+        std::size_t m_current{};
 
     public:
         SlotsIterator() = default;
 
         SlotsIterator(std::size_t slabSize, const std::unique_ptr<void*[]>* currentSlab, void** current)
-            : m_slabSize(slabSize), m_currentSlab(currentSlab), m_current(current - currentSlab->get())
+            : m_slabSize{slabSize},
+              m_currentSlab{currentSlab},
+              m_current{static_cast<size_t>(current - currentSlab->get())}
         {
             if (m_current == m_slabSize)
             {
@@ -192,9 +193,8 @@ class RootFreeList
     };
 
 public:
-
     /// Creates a new root free list with the given amount of roots per slab.
-    explicit RootFreeList(std::size_t slabSize) : m_slabSize(slabSize)
+    explicit RootFreeList(std::size_t slabSize) : m_slabSize{slabSize}
     {
         m_slabs.push_back(std::make_unique<void*[]>(m_slabSize));
         m_freeListNext = m_freeListEnd = m_slabs[m_currentSlab].get();

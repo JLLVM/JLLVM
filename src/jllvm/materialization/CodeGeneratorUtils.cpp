@@ -14,7 +14,7 @@ namespace
 /// This attribute list can be applied to either a call or a function itself.
 llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodType& methodType, bool isStatic)
 {
-    llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.parameters.size());
+    llvm::SmallVector<llvm::AttributeSet> paramAttrs{methodType.parameters.size()};
     for (auto&& [param, attrs] : llvm::zip(methodType.parameters, paramAttrs))
     {
         const auto* baseType = get_if<BaseType>(&param);
@@ -88,7 +88,7 @@ template <class... Args>
 struct OneOfBase : ByteCodeBase
 {
     template <class T, class = std::enable_if_t<(std::is_same_v<std::decay_t<T>, Args> || ...)>>
-    OneOfBase(T&& value) : ByteCodeBase(std::forward<T>(value))
+    OneOfBase(T&& value) : ByteCodeBase{std::forward<T>(value)}
     {
     }
 };

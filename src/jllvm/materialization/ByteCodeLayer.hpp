@@ -18,7 +18,7 @@ protected:
     llvm::orc::MangleAndInterner& m_interner;
 
 public:
-    explicit ByteCodeLayer(llvm::orc::MangleAndInterner& mangler) : m_interner(mangler) {}
+    explicit ByteCodeLayer(llvm::orc::MangleAndInterner& mangler) : m_interner{mangler} {}
 
     virtual ~ByteCodeLayer() = default;
     ByteCodeLayer(const ByteCodeLayer&) = delete;
