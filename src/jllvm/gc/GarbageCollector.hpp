@@ -138,6 +138,22 @@ public:
 /// It should generally be preferred over 'GCUniqueRoot' when passing around as arguments and not transferring
 /// ownership.
 /// A more useful analogy: 'GCRootRef' is to 'GCUniqueRoot' what 'std::string_view/llvm::StringRef' is to 'std::string'.
+///
+/// Local root frames:
+/// Due to how different access patterns in typical programs are, two different root lists exist which manage the
+/// lifetime of their roots differently:
+/// * Global roots returned by 'allocateStatic'
+/// * Local roots returned by 'root'.
+///
+/// The former has global lifetime while the latter has the concept of 'frames'.
+///
+/// A new local root frame is created by using 'pushLocalFrame'. All subsequent 'root' operations are then allocated
+/// within this frame. Once 'popLocalFrame' is called, all roots that had been allocated in that frame with 'root' are
+/// freed. It is also possible to delete a root early using `deleteRoot' which is used by 'GCUniqueRoot'.
+///
+/// There is always at least one local frame available, making 'root' always safe to use.
+/// A new local frame is pushed for every Java to Native transition by the JNI and popped again when returning to the
+/// Java function.
 class GarbageCollector
 {
     std::size_t m_heapSize;
@@ -151,11 +167,13 @@ class GarbageCollector
 
     llvm::DenseMap<std::uintptr_t, std::vector<StackMapEntry>> m_entries;
 
+    static constexpr auto LOCAL_SLAB_SIZE = 64;
+
     // Roots for static fields of classes.
     RootFreeList m_staticRoots;
     // Local roots for other C++ code. Generally has a very different allocation pattern than static fields, hence kept
     // separate.
-    RootFreeList m_localRoots;
+    std::vector<RootFreeList> m_localRoots;
 
     template <class T>
     struct IsArray : std::false_type
@@ -200,14 +218,42 @@ public:
             T(classObject, length);
     }
 
-    /// Allocates a new root with which references to Java objects can be persisted.
+    /// Pushes a new local frame onto the internal stack, making it the currently active frame.
+    /// All subsequent 'root' operations allocate within this frame.
+    void pushLocalFrame()
+    {
+        m_localRoots.emplace_back(LOCAL_SLAB_SIZE);
+    }
+
+    /// Allocates a new local root in the currently active local frame with which references to Java objects can be
+    /// persisted.
     /// Initializes the root to refer to 'object'.
     template <std::derived_from<ObjectInterface> T>
     GCUniqueRoot<T> root(T* object = nullptr)
     {
-        GCUniqueRoot<T> uniqueRoot(this, static_cast<GCRootRef<T>>(m_localRoots.allocate()));
+        GCUniqueRoot<T> uniqueRoot(this, static_cast<GCRootRef<T>>(m_localRoots.back().allocate()));
         uniqueRoot = object;
         return uniqueRoot;
+    }
+
+    /// Manual deletion method for roots returned by 'root'.
+    /// This method currently requires that the local frame in which the root was created is currently active.
+    /// Calling this method on a root not created by 'root', calling it on a root twice or calling it on a root
+    /// whose frame has already been deleted is undefined behaviour.
+    ///
+    /// NOTE: This should generally not be called by the user, as the 'GCUniqueRoot' returned by 'root' does so
+    /// automatically.
+    void deleteRoot(GCRootRef<ObjectInterface> root)
+    {
+        m_localRoots.back().free(root);
+    }
+
+    /// Pops the currently active local frame from the internal stack, making the previous frame active again.
+    /// Calling this method without a unique corresponding 'pushLocalFrame' operation is undefined behaviour.
+    void popLocalFrame()
+    {
+        assert(m_localRoots.size() > 1 && "Can't pop frame not explicitly pushed");
+        m_localRoots.pop_back();
     }
 
     /// Adds new stack map entries to the garbage collector, allowing the garbage collector to read out any alive
@@ -220,15 +266,6 @@ public:
     GCRootRef<Object> allocateStatic();
 
     void garbageCollect();
-
-    /// Manual deletion method for roots returned by 'root'.
-    /// NOTE: This should generally not be called by the user, as the 'GCUniqueRoot' returned by 'root' does so
-    /// automatically.
-    /// Calling this method on a root not created by 'root' or calling it on a root twice is undefined behaviour.
-    void deleteRoot(GCRootRef<ObjectInterface> root)
-    {
-        m_localRoots.free(root);
-    }
 };
 
 template <class T>

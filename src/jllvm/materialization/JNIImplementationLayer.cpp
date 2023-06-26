@@ -120,6 +120,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                            builder.getPtrTy()),
                     environment);
 
+                builder.CreateCall(module->getOrInsertFunction("jllvm_push_local_frame", builder.getVoidTy()));
+
                 llvm::SmallVector<llvm::Value*> args{environment};
                 if (methodInfo->isStatic())
                 {
@@ -170,23 +172,14 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                          baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
                 }
 
-                if (result->getType() == referenceType(*context))
+                llvm::Value* retValue = result;
+                if (retValue->getType() == referenceType(*context))
                 {
-                    // JNI methods can only ever return a root as well. Delete and unpack it.
-                    result = builder.CreateCall(
-                        module->getOrInsertFunction("jllvm_delete_local_root", result->getType(), result->getType()),
-                        result);
+                    // JNI methods can only ever return a root as well. Unpack it.
+                    retValue = builder.CreateLoad(referenceType(*context), retValue);
                 }
 
-                for (llvm::Value* arg : args)
-                {
-                    if (arg->getType() != referenceType(*context))
-                    {
-                        continue;
-                    }
-                    args.push_back(builder.CreateCall(
-                        module->getOrInsertFunction("jllvm_delete_local_root", arg->getType(), arg->getType()), arg));
-                }
+                builder.CreateCall(module->getOrInsertFunction("jllvm_pop_local_frame", builder.getVoidTy()));
 
                 if (returnType->isVoidTy())
                 {
@@ -194,7 +187,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 }
                 else
                 {
-                    builder.CreateRet(result);
+                    builder.CreateRet(retValue);
                 }
 
                 debugBuilder.finalizeSubprogram(subprogram);
