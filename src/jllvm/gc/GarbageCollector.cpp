@@ -15,7 +15,7 @@
 
 static llvm::cl::opt<bool> gcEveryAlloc("jllvm-gc-every-alloc", llvm::cl::Hidden, llvm::cl::init(false));
 
-static constexpr auto SLAB_SIZE = 4096 / sizeof(void*);
+static constexpr auto STATIC_SLAB_SIZE = 4096 / sizeof(void*);
 
 jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
     : m_heapSize(heapSize),
@@ -24,9 +24,9 @@ jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
       m_fromSpace(m_spaceOne.get()),
       m_toSpace(m_spaceTwo.get()),
       m_bumpPtr(m_fromSpace),
-      m_staticRoots(SLAB_SIZE),
-      m_localRoots(SLAB_SIZE)
+      m_staticRoots(STATIC_SLAB_SIZE)
 {
+    m_localRoots.emplace_back(LOCAL_SLAB_SIZE);
     std::memset(m_bumpPtr, 0, m_heapSize);
     __asan_poison_memory_region(m_toSpace, m_heapSize);
 }
@@ -272,7 +272,10 @@ void jllvm::GarbageCollector::garbageCollect()
         }
     };
     llvm::for_each(llvm::make_pointee_range(m_staticRoots), addToWorkListLambda);
-    llvm::for_each(llvm::make_pointee_range(m_localRoots), addToWorkListLambda);
+    for (RootFreeList& list : m_localRoots)
+    {
+        llvm::for_each(llvm::make_pointee_range(list), addToWorkListLambda);
+    }
 
     mark(roots, from, to);
 
@@ -334,11 +337,15 @@ void jllvm::GarbageCollector::garbageCollect()
             *root = replacement;
         }
     }
-    for (void** root : m_localRoots)
+
+    for (RootFreeList& list : m_localRoots)
     {
-        if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
+        for (void** root : list)
         {
-            *root = replacement;
+            if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
+            {
+                *root = replacement;
+            }
         }
     }
 

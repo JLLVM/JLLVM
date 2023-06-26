@@ -174,12 +174,6 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                   { return object->instanceOf(classObject); }},
         std::pair{"activeException", m_activeException.data()},
         std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
-        std::pair{"jllvm_delete_local_root", [&](GCRootRef<Object> root)
-                  {
-                      auto* object = static_cast<Object*>(root);
-                      m_gc.deleteRoot(root);
-                      return object;
-                  }},
         std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
                   {
                       // This should have been checked inline in LLVM IR.
@@ -206,7 +200,9 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
                           m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/ClassCastException;")));
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
                       return static_cast<Object*>(root);
-                  }});
+                  }},
+        std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
+        std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }});
 
     registerJavaClasses(*this);
 
