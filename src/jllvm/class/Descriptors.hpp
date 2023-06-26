@@ -99,7 +99,7 @@ struct ArrayType
 
     bool operator==(const ArrayType& rhs) const
     {
-        return *componentType == *rhs.componentType;
+        return componentType == rhs.componentType;
     }
 
     bool operator!=(const ArrayType& rhs) const

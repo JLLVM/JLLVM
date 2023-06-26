@@ -44,15 +44,15 @@ class Method
 public:
     Method(llvm::StringRef name, llvm::StringRef type, std::optional<std::uint32_t> vTableSlot, bool isStatic,
            bool isFinal, bool isNative, Visibility visibility, bool isAbstract)
-        : m_name(name),
-          m_type(type),
-          m_tableSlot(vTableSlot.value_or(0)),
-          m_hasTableSlot(vTableSlot.has_value()),
-          m_isStatic(isStatic),
-          m_isFinal(isFinal),
-          m_isNative(isNative),
-          m_visibility(static_cast<std::uint8_t>(visibility)),
-          m_isAbstract(isAbstract)
+        : m_name{name},
+          m_type{type},
+          m_tableSlot{vTableSlot.value_or(0)},
+          m_hasTableSlot{vTableSlot.has_value()},
+          m_isStatic{isStatic},
+          m_isFinal{isFinal},
+          m_isNative{isNative},
+          m_visibility{static_cast<std::uint8_t>(visibility)},
+          m_isAbstract{isAbstract}
     {
     }
 
@@ -131,20 +131,20 @@ class Field
 public:
     /// Creates a new non-static field with the given name, type descriptor and its offset within an instance.
     Field(llvm::StringRef name, llvm::StringRef type, std::uint16_t offset)
-        : m_name(name), m_type(type), m_offset(offset), m_isStatic(false)
+        : m_name{name}, m_type{type}, m_offset{offset}, m_isStatic{false}
     {
     }
 
     /// Creates a new static field of a reference type with the given name, type descriptor and a pointer to where the
     /// static reference is allocated.
     Field(llvm::StringRef name, llvm::StringRef type, void** reference)
-        : m_name(name), m_type(type), m_reference(reference), m_isStatic(true)
+        : m_name{name}, m_type{type}, m_reference{reference}, m_isStatic{true}
     {
     }
 
     /// Creates a new static field of a non-reference with the given name, type descriptor.
     Field(llvm::StringRef name, llvm::StringRef type)
-        : m_name(name), m_type(type), m_primitiveStorage{}, m_isStatic(true)
+        : m_name{name}, m_type{type}, m_primitiveStorage{}, m_isStatic{true}
     {
     }
 
@@ -199,7 +199,7 @@ class ITable final : public llvm::TrailingObjects<ITable, VTableSlot>
 
     std::size_t m_id;
 
-    explicit ITable(std::size_t id) : m_id(id) {}
+    explicit ITable(std::size_t id) : m_id{id} {}
 
 public:
     /// Creates a new ITable by allocating it in 'allocator' with the given ID and enough storage of 'iTableSlots'
@@ -231,22 +231,22 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     using InterfaceId = llvm::PointerEmbeddedInt<std::size_t, std::numeric_limits<std::size_t>::digits - 1>;
 
     // Field layout from Java!
-    Object* m_cachedConstructor = nullptr;
+    Object* m_cachedConstructor{};
     // This is purely used as a cache by the JVM and lazily init.
-    String* m_name = nullptr;
-    Object* m_module = nullptr;
-    Object* m_classLoader = nullptr;
-    Object* m_classData = nullptr;
-    String* m_packageName = nullptr;
+    String* m_name{};
+    Object* m_module{};
+    Object* m_classLoader{};
+    Object* m_classData{};
+    String* m_packageName{};
     llvm::PointerUnion<const ClassObject*, InterfaceId> m_componentTypeOrInterfaceId;
-    Object* m_reflectionData = nullptr;
-    std::int32_t m_classRedefinedCount = 0;
-    Object* m_genericInfo = nullptr;
-    Array<Object*>* m_enumConstants = nullptr;
-    Object* m_enumConstantDirectory = nullptr;
-    Object* m_annotationData = nullptr;
-    Object* m_annotationType = nullptr;
-    Object* m_classValueMap = nullptr;
+    Object* m_reflectionData{};
+    std::int32_t m_classRedefinedCount{};
+    Object* m_genericInfo{};
+    Array<Object*>* m_enumConstants{};
+    Object* m_enumConstantDirectory{};
+    Object* m_annotationData{};
+    Object* m_annotationType{};
+    Object* m_classValueMap{};
 
     // Custom data we add starts here. Since ClassObjects are always created in the class loader heap and never
     // directly form Java code or on the GC we can extend the layout given by the JDK.
@@ -260,9 +260,9 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::ArrayRef<ClassObject*> m_bases;
     llvm::ArrayRef<ITable*> m_iTables;
     llvm::StringRef m_className;
-    bool m_isPrimitive = false;
-    bool m_initialized = false;
-    bool m_isAbstract = false;
+    bool m_isPrimitive{false};
+    bool m_initialized{false};
+    bool m_isAbstract{false};
 
     ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
@@ -275,12 +275,12 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
         : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
                                             std::ptrdiff_t, const ClassObject**, const ClassObject*>
     {
-        const ClassObject* m_curr = nullptr;
+        const ClassObject* m_curr{};
 
     public:
         SuperclassIterator() = default;
 
-        explicit SuperclassIterator(const ClassObject* curr) : m_curr(curr) {}
+        explicit SuperclassIterator(const ClassObject* curr) : m_curr{curr} {}
 
         bool operator==(const SuperclassIterator& rhs) const
         {
@@ -576,7 +576,7 @@ inline auto jllvm::ClassObject::getAllInterfaces() const
 
     public:
         explicit OwningFilterRange(const ClassObject* object)
-            : m_range(llvm::depth_first_ext(ClassGraph{object}, m_set))
+            : m_range{llvm::depth_first_ext(ClassGraph{object}, m_set)}
         {
         }
 
@@ -589,7 +589,7 @@ inline auto jllvm::ClassObject::getAllInterfaces() const
         public:
             explicit iterator(const llvm::df_ext_iterator<ClassGraph>& begin,
                               const llvm::df_ext_iterator<ClassGraph>& end)
-                : m_current(std::find_if(begin, end, std::mem_fn(&ClassObject::isInterface))), m_end(end)
+                : m_current{std::find_if(begin, end, std::mem_fn(&ClassObject::isInterface))}, m_end{end}
             {
             }
 
@@ -615,12 +615,12 @@ inline auto jllvm::ClassObject::getAllInterfaces() const
 
         auto begin() const
         {
-            return iterator(m_range.begin(), m_range.end());
+            return iterator{m_range.begin(), m_range.end()};
         }
 
         auto end() const
         {
-            return iterator(m_range.end(), m_range.end());
+            return iterator{m_range.end(), m_range.end()};
         }
     };
 
@@ -635,20 +635,20 @@ inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
         llvm::ReversePostOrderTraversal<ClassGraph> m_traversal;
 
     public:
-        explicit RPODropFront(const ClassObject* object) : m_traversal(ClassGraph{object}) {}
+        explicit RPODropFront(const ClassObject* object) : m_traversal{ClassGraph{object}} {}
 
         auto begin() const
         {
             return llvm::filter_iterator<decltype(m_traversal)::const_rpo_iterator,
-                                         decltype(std::mem_fn(&ClassObject::isInterface))>(
-                m_traversal.begin(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface));
+                                         decltype(std::mem_fn(&ClassObject::isInterface))>{
+                m_traversal.begin(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface)};
         }
 
         auto end() const
         {
             return llvm::filter_iterator<decltype(m_traversal)::const_rpo_iterator,
-                                         decltype(std::mem_fn(&ClassObject::isInterface))>(
-                m_traversal.end(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface));
+                                         decltype(std::mem_fn(&ClassObject::isInterface))>{
+                m_traversal.end(), m_traversal.end(), std::mem_fn(&ClassObject::isInterface)};
         }
     };
 

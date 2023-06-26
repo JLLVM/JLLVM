@@ -37,7 +37,7 @@ public:
     PoolIndex() = default;
 
     /// Implicit constructor from a pool index.
-    /*implicit*/ PoolIndex(std::uint16_t index) : m_index(index) {}
+    /*implicit*/ PoolIndex(std::uint16_t index) : m_index{index} {}
 
     /// Resolves the entry into 'classFile's constant pool.
     /// If this 'PoolIndex' may only ever point to one single type, it returns a pointer to that type.
@@ -312,10 +312,10 @@ class FieldInfo
 public:
     FieldInfo(AccessFlag accessFlags, PoolIndex<Utf8Info> nameIndex, PoolIndex<Utf8Info> descriptorIndex,
               AttributeMap&& attributes)
-        : m_accessFlags(accessFlags),
-          m_nameIndex(nameIndex),
-          m_descriptorIndex(descriptorIndex),
-          m_attributes(std::move(attributes))
+        : m_accessFlags{accessFlags},
+          m_nameIndex{nameIndex},
+          m_descriptorIndex{descriptorIndex},
+          m_attributes{std::move(attributes)}
     {
     }
 
@@ -349,10 +349,10 @@ class MethodInfo
 public:
     MethodInfo(AccessFlag accessFlags, PoolIndex<Utf8Info> nameIndex, PoolIndex<Utf8Info> descriptorIndex,
                AttributeMap&& attributes)
-        : m_accessFlags(accessFlags),
-          m_nameIndex(nameIndex),
-          m_descriptorIndex(descriptorIndex),
-          m_attributes(std::move(attributes))
+        : m_accessFlags{accessFlags},
+          m_nameIndex{nameIndex},
+          m_descriptorIndex{descriptorIndex},
+          m_attributes{std::move(attributes)}
     {
     }
 

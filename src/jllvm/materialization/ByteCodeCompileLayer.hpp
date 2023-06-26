@@ -29,15 +29,15 @@ public:
                          std::unique_ptr<llvm::orc::IndirectStubsManager>&& stubsManager,
                          llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
                          llvm::orc::MangleAndInterner& mangler, const llvm::DataLayout& dataLayout)
-        : ByteCodeLayer(mangler),
-          m_classLoader(classLoader),
-          m_stringInterner(stringInterner),
-          m_stubsManager(std::move(stubsManager)),
-          m_callbackManager(callbackManager),
-          m_baseLayer(baseLayer),
-          m_stubsImplDylib(baseLayer.getExecutionSession().createBareJITDylib("<stubsImpl>")),
-          m_dataLayout(dataLayout),
-          m_mainDylib(mainDylib)
+        : ByteCodeLayer{mangler},
+          m_classLoader{classLoader},
+          m_stringInterner{stringInterner},
+          m_stubsManager{std::move(stubsManager)},
+          m_callbackManager{callbackManager},
+          m_baseLayer{baseLayer},
+          m_stubsImplDylib{baseLayer.getExecutionSession().createBareJITDylib("<stubsImpl>")},
+          m_dataLayout{dataLayout},
+          m_mainDylib{mainDylib}
     {
     }
 

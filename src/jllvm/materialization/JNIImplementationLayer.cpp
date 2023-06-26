@@ -94,7 +94,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 module->setDataLayout(m_dataLayout);
                 module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-                llvm::DIBuilder debugBuilder(*module);
+                llvm::DIBuilder debugBuilder{*module};
                 llvm::DIFile* file = debugBuilder.createFile(".", ".");
                 llvm::DICompileUnit* cu =
                     debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
@@ -112,7 +112,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
                 applyJavaMethodAttributes(function, {classObject, method});
 
-                llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+                llvm::IRBuilder<> builder{llvm::BasicBlock::Create(*context, "entry", function)};
 
                 llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
                 builder.CreateStore(

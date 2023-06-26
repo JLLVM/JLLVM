@@ -9,20 +9,20 @@ namespace
 {
 using namespace jllvm;
 
-template <class Singleton>
+template <std::derived_from<SingletonOp> Singleton>
 ByteCodeOp parseSingleton(const char*, std::size_t offset)
 {
     return Singleton{offset};
 }
 
-template <class LocalIndexed>
+template <std::derived_from<LocalIndexedOp> LocalIndexed>
 ByteCodeOp parseLocalIndexed(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
     return LocalIndexed{offset, consume<std::uint8_t>(bytes)};
 }
 
-template <class PoolIndexed>
+template <std::derived_from<PoolIndexedOp> PoolIndexed>
 ByteCodeOp parsePoolIndexed(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
@@ -52,7 +52,7 @@ ByteCodeOp parsePoolIndexed(const char* bytes, std::size_t offset)
     }
 }
 
-template <class BranchOffset>
+template <std::derived_from<BranchOffsetOp> BranchOffset>
 ByteCodeOp parseBranchOffset(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);

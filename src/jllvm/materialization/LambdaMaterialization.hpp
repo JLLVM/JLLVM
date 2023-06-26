@@ -141,17 +141,17 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
 public:
     LambdaMaterializationUnit(std::string&& symbol, llvm::orc::IRLayer& baseLayer, const F& f,
                               const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
-        : llvm::orc::MaterializationUnit(
+        : llvm::orc::MaterializationUnit{
             [&]
             {
                 llvm::orc::SymbolFlagsMap result;
                 result[interner(symbol)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
                 return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
-            }()),
-          m_symbol(std::move(symbol)),
-          m_baseLayer(baseLayer),
-          m_f(f),
-          m_dataLayout(dataLayout)
+            }()},
+          m_symbol{std::move(symbol)},
+          m_baseLayer{baseLayer},
+          m_f{f},
+          m_dataLayout{dataLayout}
     {
     }
 

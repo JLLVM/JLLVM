@@ -26,7 +26,7 @@ private:
     struct PerDylibResources
     {
         PerDylibResources(llvm::orc::JITDylib& impl, std::unique_ptr<llvm::orc::IndirectStubsManager> stubs)
-            : m_impl(impl), m_stubs(std::move(stubs))
+            : m_impl{impl}, m_stubs{std::move(stubs)}
         {
         }
 
@@ -54,11 +54,11 @@ public:
     ByteCodeOnDemandLayer(ByteCodeLayer& baseLayer, llvm::orc::ExecutionSession& session,
                           llvm::orc::MangleAndInterner& mangler, IndirectStubsManagerBuilder builder,
                           llvm::orc::LazyCallThroughManager& callThroughManager)
-        : ByteCodeLayer(mangler),
-          m_session(session),
-          m_baseLayer(baseLayer),
-          m_builder(std::move(builder)),
-          m_callThroughManager(callThroughManager)
+        : ByteCodeLayer{mangler},
+          m_session{session},
+          m_baseLayer{baseLayer},
+          m_builder{std::move(builder)},
+          m_callThroughManager{callThroughManager}
     {
     }
 

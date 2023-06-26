@@ -22,7 +22,7 @@ std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> jllvm::toJavaCompac
     // If they all fit within a byte use Latin1 to save on memory.
     if (llvm::all_of(codePoints, [](llvm::UTF32 codePoint) { return codePoint <= 0xFF; }))
     {
-        return {std::vector<std::uint8_t>(codePoints.begin(), codePoints.end()), CompactEncoding::Latin1};
+        return {std::vector<std::uint8_t>{codePoints.begin(), codePoints.end()}, CompactEncoding::Latin1};
     }
 
     // Otherwise we convert it to UTF-16.

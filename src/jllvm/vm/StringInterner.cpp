@@ -48,7 +48,7 @@ jllvm::String* jllvm::StringInterner::createString(llvm::ArrayRef<std::uint8_t> 
     llvm::copy(buffer, value->begin());
 
     auto* string = new (m_allocator.Allocate(sizeof(String), alignof(String)))
-        String(m_stringClass, value, static_cast<std::uint8_t>(encoding));
+        String{m_stringClass, value, static_cast<std::uint8_t>(encoding)};
 
     m_contentToStringMap.insert({{{value->begin(), value->end()}, static_cast<std::uint8_t>(encoding)}, string});
 

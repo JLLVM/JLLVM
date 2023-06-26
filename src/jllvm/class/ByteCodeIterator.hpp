@@ -80,8 +80,8 @@ using ByteCodeOp = swl::variant<
 class ByteCodeIterator : public llvm::iterator_facade_base<ByteCodeIterator, std::forward_iterator_tag, ByteCodeOp,
                                                            std::ptrdiff_t, ByteCodeOp, ByteCodeOp>
 {
-    const char* m_current = nullptr;
-    std::size_t m_offset = 0;
+    const char* m_current{};
+    std::size_t m_offset{};
 
     // Returns the size of the operation, including the identifying byte.
     std::size_t currentOpSize() const;

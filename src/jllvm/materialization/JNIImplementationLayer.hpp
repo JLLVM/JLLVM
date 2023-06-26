@@ -35,14 +35,14 @@ public:
                            llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::MangleAndInterner& mangler,
                            llvm::orc::IRLayer& irLayer, const llvm::DataLayout& dataLayout, void* jniNativeFunctions,
                            llvm::orc::JITDylib& implementationDylib)
-        : ByteCodeLayer(mangler),
-          m_jniImpls(session.createBareJITDylib("<jni>")),
-          m_jniBridges(session.createBareJITDylib("<jniBridge>")),
-          m_stubsManager(std::move(stubsManager)),
-          m_callbackManager(callbackManager),
-          m_irLayer(irLayer),
-          m_dataLayout(dataLayout),
-          m_jniNativeFunctions(jniNativeFunctions)
+        : ByteCodeLayer{mangler},
+          m_jniImpls{session.createBareJITDylib("<jni>")},
+          m_jniBridges{session.createBareJITDylib("<jniBridge>")},
+          m_stubsManager{std::move(stubsManager)},
+          m_callbackManager{callbackManager},
+          m_irLayer{irLayer},
+          m_dataLayout{dataLayout},
+          m_jniNativeFunctions{jniNativeFunctions}
     {
         m_jniBridges.addToLinkOrder(implementationDylib);
     }

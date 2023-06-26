@@ -13,7 +13,7 @@ bool jllvm::detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, U
         +[](_Unwind_Context* context, void* lp)
         {
             auto [lambda, fp] = *reinterpret_cast<decltype(data)*>(lp);
-            switch (fp(lambda, UnwindFrame(context)))
+            switch (fp(lambda, UnwindFrame{context}))
             {
                 case UnwindAction::ContinueUnwinding: return _URC_NO_REASON;
                 case UnwindAction::StopUnwinding: return _URC_END_OF_STACK;

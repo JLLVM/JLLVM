@@ -191,11 +191,10 @@ POOL_INDEX_OP(PutField, 0xb5)
 POOL_INDEX_OP(PutStatic, 0xb3)
 
 #define BRANCH_OFFSET_OP(name, code) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset, 3, code)
-#define BRANCH_OFFSET_SPECIAL_OP(name, size, code) \
-    GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset, size, code)
+#define BRANCH_OFFSET_LARGE_OP(name, code) GENERATE_SELECTOR(name, BranchOffsetOp, {}, parseBranchOffset, 5, code)
 
 BRANCH_OFFSET_OP(Goto, 0xa7)
-BRANCH_OFFSET_SPECIAL_OP(GotoW, 5, 0xc8)
+BRANCH_OFFSET_LARGE_OP(GotoW, 0xc8)
 BRANCH_OFFSET_OP(IfACmpEq, 0xa5)
 BRANCH_OFFSET_OP(IfACmpNe, 0xa6)
 BRANCH_OFFSET_OP(IfICmpEq, 0x9f)
@@ -213,7 +212,7 @@ BRANCH_OFFSET_OP(IfLe, 0x9e)
 BRANCH_OFFSET_OP(IfNonNull, 0xc7)
 BRANCH_OFFSET_OP(IfNull, 0xc6)
 BRANCH_OFFSET_OP(JSR, 0xa8)
-BRANCH_OFFSET_SPECIAL_OP(JSRw, 5, 0xc9)
+BRANCH_OFFSET_LARGE_OP(JSRw, 0xc9)
 
 GENERATE_SELECTOR(
     BIPush, ByteCodeBase, { std::int8_t value{}; }, parseBIPush, 2, 0x10)
@@ -240,7 +239,9 @@ GENERATE_SELECTOR_END(
     },
     parseWide, wideSize(m_current), 0xc4)
 
+#undef BRANCH_OFFSET_LARGE_OP
 #undef BRANCH_OFFSET_OP
+#undef POOL_INDEX_SPECIAL_OP
 #undef POOL_INDEX_OP
 #undef LOCAL_INDEX_OP
 #undef SINGLETON_OP

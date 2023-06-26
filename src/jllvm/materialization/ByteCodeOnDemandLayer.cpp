@@ -5,7 +5,7 @@
 jllvm::ByteCodeOnDemandLayer::PerDylibResources&
     jllvm::ByteCodeOnDemandLayer::getPerDylibResources(llvm::orc::JITDylib& target)
 {
-    std::lock_guard<std::mutex> lockGuard(m_mutex);
+    std::lock_guard<std::mutex> lockGuard{m_mutex};
 
     if (auto result = m_resources.find(&target); result != m_resources.end())
     {

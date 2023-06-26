@@ -53,7 +53,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     llvmArgs.push_back("-max-registers-for-gc-values=1000");
 #endif
 
-    CommandLine commandLine(args);
+    CommandLine commandLine{args};
 
 #ifndef NDEBUG
     llvm::SmallString<64> buffer;
@@ -81,7 +81,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
         classPath.push_back(iter->path());
     }
 
-    llvm::SmallString<32> inputFile(inputFiles.front());
+    llvm::SmallString<32> inputFile{inputFiles.front()};
     llvm::sys::fs::make_absolute(inputFile);
     classPath.emplace_back(llvm::sys::path::parent_path(inputFile));
 
