@@ -107,6 +107,12 @@ public:
     {
         return static_cast<Visibility>(m_visibility);
     }
+
+    /// Returns true if this method is an object constructor.
+    bool isObjectConstructor() const
+    {
+        return getName() == "<init>";
+    }
 };
 
 /// Object for representing the fields of a class and object.

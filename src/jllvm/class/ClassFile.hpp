@@ -460,6 +460,12 @@ public:
         return (m_accessFlags & AccessFlag::Abstract) != AccessFlag::None;
     }
 
+    /// Returns true if the super flag, used to modify the behaviour of 'invokespecial', is set.
+    bool hasSuperFlag() const
+    {
+        return (m_accessFlags & AccessFlag::Super) != AccessFlag::None;
+    }
+
     /// Returns the fields of this class.
     llvm::ArrayRef<FieldInfo> getFields() const
     {

@@ -938,7 +938,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(m_builder.CreateAdd(local, m_builder.getInt32(iInc.byte)), m_locals[iInc.index]);
         },
         // TODO: InvokeDynamic
-        [&](OneOf<InvokeInterface, InvokeVirtual> invoke)
+        [&](OneOf<InvokeInterface, InvokeSpecial, InvokeVirtual> invoke)
         {
             const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(m_classFile);
 
@@ -959,10 +959,14 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::FunctionType* functionType = descriptorToType(descriptor, false, m_builder.getContext());
             prepareArgumentsForCall(m_builder, args, functionType);
 
-            llvm::Value* call = m_helper.doIndirectCall(m_builder, className, methodName, methodType, args,
-                                                        holds_alternative<InvokeInterface>(operation) ?
-                                                            LazyClassLoaderHelper::Interface :
-                                                            LazyClassLoaderHelper::Virtual);
+            llvm::Value* call = m_helper.doInstanceCall(
+                m_builder, className, methodName, methodType, args,
+                match(
+                    operation,
+                    [](...) -> LazyClassLoaderHelper::MethodResolution { llvm_unreachable("unexpected op"); },
+                    [](InvokeInterface) { return LazyClassLoaderHelper::Interface; },
+                    [](InvokeVirtual) { return LazyClassLoaderHelper::Virtual; },
+                    [](InvokeSpecial) { return LazyClassLoaderHelper::Special; }));
 
             generateEHDispatch();
 
@@ -971,16 +975,14 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType, call));
             }
         },
-        [&](OneOf<InvokeSpecial, InvokeStatic> invoke)
+        [&](InvokeStatic invoke)
         {
             const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(m_classFile);
-
-            bool isStatic = holds_alternative<InvokeStatic>(operation);
 
             MethodType descriptor = parseMethodType(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
-            std::vector<llvm::Value*> args(descriptor.parameters.size() + (isStatic ? 0 : /*objectref*/ 1));
+            std::vector<llvm::Value*> args(descriptor.parameters.size());
             for (auto& iter : llvm::reverse(args))
             {
                 iter = m_operandStack.pop_back();
@@ -992,10 +994,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef methodType =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
 
-            llvm::FunctionType* functionType = descriptorToType(descriptor, isStatic, m_builder.getContext());
+            llvm::FunctionType* functionType = descriptorToType(descriptor, true, m_builder.getContext());
             prepareArgumentsForCall(m_builder, args, functionType);
 
-            llvm::Value* call = m_helper.doNonVirtualCall(m_builder, isStatic, className, methodName, methodType, args);
+            llvm::Value* call = m_helper.doStaticCall(m_builder, className, methodName, methodType, args);
             generateEHDispatch();
 
             if (descriptor.returnType != FieldType(BaseType::Void))
