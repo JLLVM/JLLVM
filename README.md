@@ -12,7 +12,7 @@ shipped with the OpenJDK.
 ## Building JLLVM
 
 Building JLLVM requires following dependencies:
-* A C++17 capable compiler
+* A C++20 capable compiler
 * CMake 3.20 or newer
 * Python 3.6 or newer
 * OpenJDK 17 or newer
