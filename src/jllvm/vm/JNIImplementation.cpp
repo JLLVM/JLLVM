@@ -1,6 +1,11 @@
-#include <jni.h>
+#include "JNIImplementation.hpp"
 
 #include "VirtualMachine.hpp"
+
+jllvm::VirtualMachine& jllvm::virtualMachineFromJNIEnv(JNIEnv* env)
+{
+    return *reinterpret_cast<jllvm::VirtualMachine*>(env->functions->reserved0);
+}
 
 jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEnvironment()
 {
