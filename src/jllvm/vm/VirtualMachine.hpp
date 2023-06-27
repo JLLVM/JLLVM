@@ -29,6 +29,8 @@ class VirtualMachine
     JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
+    GCRootRef<Thread> m_mainThread = static_cast<GCRootRef<Thread>>(m_gc.allocateStatic());
+    GCRootRef<Object> m_mainThreadGroup = m_gc.allocateStatic();
 
     void initialize(ClassObject& classObject);
 
@@ -61,13 +63,19 @@ public:
         return m_classLoader;
     }
 
+    /// Returns the main thread this VM is started on.
+    GCRootRef<Thread> getMainThread() const
+    {
+        return m_mainThread;
+    }
+
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);
 
     template <class... Args>
-    void executeObjectConstructor(GCRootRef<Object> object, llvm::StringRef methodDescriptor, Args... args)
+    void executeObjectConstructor(GCRootRef<ObjectInterface> object, llvm::StringRef methodDescriptor, Args... args)
     {
         auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getClassName(), "<init>", methodDescriptor));
-        reinterpret_cast<void (*)(Object*, Args...)>(addr.getAddress())(static_cast<Object*>(object), args...);
+        reinterpret_cast<void (*)(ObjectInterface*, Args...)>(addr.getAddress())(object.address(), args...);
     }
 };
 

@@ -216,4 +216,18 @@ public:
         &UnsafeModel::putIntVolatile, &UnsafeModel::putReferenceVolatile);
 };
 
+class VMModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static void initialize(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        // Noop in our implementation.
+    }
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/misc/VM";
+    constexpr static auto methods = std::make_tuple(&VMModel::initialize);
+};
+
 } // namespace jllvm::jdk
