@@ -79,7 +79,7 @@ public:
     /// 'length' is the amount entries in the resulting array.
     static Array* create(llvm::BumpPtrAllocator& allocator, const ClassObject* classObject, std::uint32_t length)
     {
-        return new (allocator.Allocate(arrayElementsOffset() + sizeof(T[length]), alignof(Array)))
+        return new (allocator.Allocate(arrayElementsOffset() + sizeof(T) * length, alignof(Array)))
             Array(classObject, length);
     }
 
