@@ -206,24 +206,9 @@ void introspectObject(ObjectRepr* object, F&& f)
         return;
     }
 
-    // TODO: This traversal is a lot more expensive than it has to be, especially for classes with lots of static
-    //       fields.
-    //       We should generate some kind of "mask" for every class object that can be applied to instances to get all
-    //       contained references in O(instanceSize).
-    for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
+    for (std::uint32_t iter : classObject->getGCObjectMask())
     {
-        for (const jllvm::Field& iter : curr->getFields())
-        {
-            if (iter.isStatic())
-            {
-                continue;
-            }
-            if (!jllvm::isReferenceDescriptor(iter.getType()))
-            {
-                continue;
-            }
-            f(reinterpret_cast<ObjectRepr**>(reinterpret_cast<char*>(object) + iter.getOffset()));
-        }
+        f(reinterpret_cast<ObjectRepr**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
     }
 }
 

@@ -259,6 +259,7 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     // followed by all direct superinterfaces. For interfaces, this is simply their direct superinterfaces.
     llvm::ArrayRef<ClassObject*> m_bases;
     llvm::ArrayRef<ITable*> m_iTables;
+    llvm::ArrayRef<std::uint32_t> m_gcMask;
     llvm::StringRef m_className;
     bool m_isPrimitive = false;
     bool m_initialized = false;
@@ -266,7 +267,8 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
 
     ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
-                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, bool isAbstract);
+                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, bool isAbstract,
+                llvm::ArrayRef<std::uint32_t> gcMask);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                 llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className);
@@ -354,6 +356,14 @@ public:
     std::uint32_t getInstanceSize() const
     {
         return m_fieldAreaSize + sizeof(ObjectHeader);
+    }
+
+    /// Returns the GC mask for instances of this class object.
+    /// The GC mask is an ordered array of indices, which if multiplied by the pointer size, create offsets from
+    /// **after** the object header, into a field of reference type within an instance.
+    llvm::ArrayRef<std::uint32_t> getGCObjectMask() const
+    {
+        return m_gcMask;
     }
 
     /// Returns the methods of this class.
