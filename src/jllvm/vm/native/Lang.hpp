@@ -216,31 +216,4 @@ public:
     constexpr static auto methods = std::make_tuple(&ReferenceModel::refersTo0);
 };
 
-class ThreadModel : public ModelBase<Thread>
-{
-public:
-    using Base::Base;
-
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
-    {
-        // Noop in our implementation.
-    }
-
-    static GCRootRef<Thread> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
-    {
-        // Once we are multi threaded, this should actually the return the corresponding Java thread
-        // this function is being called from. For now we are just returning the one and only thread for the time being.
-        return vm.getMainThread();
-    }
-
-    void setPriority0(std::int32_t priority)
-    {
-        javaThis->priority = priority;
-    }
-
-    constexpr static llvm::StringLiteral className = "java/lang/Thread";
-    constexpr static auto methods =
-        std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::setPriority0);
-};
-
 } // namespace jllvm::lang

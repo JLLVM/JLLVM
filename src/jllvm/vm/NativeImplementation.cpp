@@ -11,5 +11,5 @@ void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
     using namespace security;
 
     addModels<ObjectModel, ClassModel, ThrowableModel, FloatModel, DoubleModel, SystemModel, ReflectionModel, CDSModel,
-              UnsafeModel, ThreadModel, AccessControllerModel, VMModel>(virtualMachine);
+              UnsafeModel, ThreadModel, AccessControllerModel, VMModel, ReferenceModel>(virtualMachine);
 }
