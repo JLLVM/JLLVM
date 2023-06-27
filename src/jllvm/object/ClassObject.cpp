@@ -37,6 +37,22 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
         }
     }
 
+    std::vector<std::uint32_t> gcMask;
+    if (!bases.empty() && bases.front()->isClass())
+    {
+        gcMask = bases.front()->getGCObjectMask();
+    }
+
+    for (const Field& iter : fields)
+    {
+        if (iter.isStatic() || !isReferenceDescriptor(iter.getType()))
+        {
+            continue;
+        }
+        // Reference fields are always pointer aligned, making the division here lossless.
+        gcMask.emplace_back(iter.getOffset() / sizeof(Object*));
+    }
+
     // Abstract classes don't need a V-Table since they can't be instantiated and therefore can't ever occur as
     // class object in an 'invokevirtual' instruction.
     // Their methods nevertheless have v-table slot assignments since subclasses can call them and need to account for
@@ -44,9 +60,10 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
     std::uint32_t allocatedVTableSlots = isAbstract ? 0 : vTableSlots;
     void* storage =
         allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(allocatedVTableSlots), alignof(ClassObject));
-    auto* result = new (storage) ClassObject(metaClass, vTableSlots, fieldAreaSize, arrayRefAlloc(allocator, methods),
-                                             arrayRefAlloc(allocator, fields), arrayRefAlloc(allocator, bases),
-                                             arrayRefAlloc(allocator, iTables), className, isAbstract);
+    auto* result = new (storage)
+        ClassObject(metaClass, vTableSlots, fieldAreaSize, arrayRefAlloc(allocator, methods),
+                    arrayRefAlloc(allocator, fields), arrayRefAlloc(allocator, bases),
+                    arrayRefAlloc(allocator, iTables), className, isAbstract, arrayRefAlloc(allocator, gcMask));
     // Zero out vTable.
     std::fill(result->getVTable().begin(), result->getVTable().end(), nullptr);
     return result;
@@ -55,7 +72,7 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                                 llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
                                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
-                                llvm::StringRef className, bool isAbstract)
+                                llvm::StringRef className, bool isAbstract, llvm::ArrayRef<std::uint32_t> gcMask)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(fieldAreaSize),
       m_tableSize(vTableSlots),
@@ -64,6 +81,7 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTab
       m_bases(bases),
       m_iTables(iTables),
       m_className(className),
+      m_gcMask(gcMask),
       m_isAbstract(isAbstract)
 {
 }
@@ -94,7 +112,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, 0, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false)
+    : ClassObject(nullptr, 0, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false, {})
 {
     // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
     m_isPrimitive = true;
