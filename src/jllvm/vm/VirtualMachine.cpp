@@ -210,6 +210,22 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
 
     m_stringInterner.loadStringClass();
     initialize(m_stringInterner.getStringClass());
+
+    ClassObject& threadGroup = m_classLoader.forName("Ljava/lang/ThreadGroup;");
+    initialize(threadGroup);
+    m_mainThreadGroup = m_gc.allocate(&threadGroup);
+    executeObjectConstructor(m_mainThreadGroup, "()V");
+
+    ClassObject& thread = m_classLoader.forName("Ljava/lang/Thread;");
+    initialize(thread);
+    m_mainThread = m_gc.allocate<Thread>(&thread);
+
+    // These have to be set prior to the constructor for the constructor not to fail.
+    m_mainThread->priority = 1;
+    m_mainThread->threadStatus = ThreadState::Runnable;
+
+    executeObjectConstructor(m_mainThread, "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", m_mainThreadGroup.address(),
+                             m_stringInterner.intern("main"));
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)

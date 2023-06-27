@@ -1,5 +1,6 @@
 #pragma once
 
+#include <llvm/ADT/BitmaskEnum.h>
 #include <llvm/Support/Allocator.h>
 
 #include <cassert>
@@ -197,5 +198,57 @@ struct Throwable : ObjectInterface
 };
 
 static_assert(std::is_standard_layout_v<Throwable>);
+
+// Specified here https://docs.oracle.com/en/java/javase/17/docs/specs/jvmti.html#GetThreadState
+enum class ThreadState : std::int32_t
+{
+    Alive = 0x1,
+    Terminated = 0x2,
+    Runnable = 0x4,
+    BlockedOnMonitorEnter = 0x400,
+    Waiting = 0x80,
+    WaitingIndefinitely = 0x10,
+    WaitingWithTimeout = 0x20,
+    Sleeping = 0x40,
+    InObjectWait = 0x100,
+    Parked = 0x200,
+    Suspended = 0x100000,
+    Interrupted = 0x200000,
+    InNative = 0x400000,
+    LLVM_MARK_AS_BITMASK_ENUM(InNative)
+};
+LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
+
+struct Thread : ObjectInterface
+{
+    ObjectHeader header;
+
+    String* name{};
+    std::int32_t priority{};
+    bool daemon{};
+    bool interrupted{};
+    bool stillborn{};
+    std::int64_t eetop{};
+    Object* target{};
+    Object* group{};
+    Object* contextClassLoader{};
+    Object* inheritedAccessControlContext{};
+    Object* threadLocals{};
+    Object* inheritableThreadLocals{};
+    std::int64_t stackSize{};
+    std::int64_t tid{};
+    ThreadState threadStatus{};
+    Object* parkBlocker{};
+    Object* blocker{};
+    Object* blockerLock{};
+    Object* uncaughtExceptionHandler{};
+    std::int64_t threadLocalRandomSeed{};
+    std::int32_t threadLocalRandomProbe{};
+    std::int32_t threadLocalSecondarySeed{};
+
+    explicit Thread(const ClassObject* classObject) : header(classObject) {}
+};
+
+static_assert(std::is_standard_layout_v<Thread>);
 
 } // namespace jllvm
