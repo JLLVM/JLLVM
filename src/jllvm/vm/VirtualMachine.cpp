@@ -159,7 +159,7 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
         },
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_stringInterner(m_classLoader),
-      m_gc(/*small random value for now*/ 4096),
+      m_gc(/*random value for now*/ 16384),
       // Seed from the C++ implementations entropy source.
       m_pseudoGen(std::random_device{}()),
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".

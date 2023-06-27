@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <jllvm/vm/NativeImplementation.hpp>
@@ -49,7 +48,7 @@ public:
     {
         static llvm::DenseMap<llvm::StringRef, char> mapping = {
             {"boolean", 'Z'}, {"char", 'C'},  {"byte", 'B'}, {"short", 'S'}, {"int", 'I'},
-            {"double", 'D'},  {"float", 'F'}, {"void", 'V'}, {"long", 'L'},
+            {"double", 'D'},  {"float", 'F'}, {"void", 'V'}, {"long", 'J'},
         };
         std::string utf8 = string->toUTF8();
         char c = mapping.lookup(utf8);
@@ -65,6 +64,11 @@ public:
         return javaThis->isArray();
     }
 
+    bool isPrimitive()
+    {
+        return javaThis->isPrimitive();
+    }
+
     static bool desiredAssertionStatus0(VirtualMachine&, GCRootRef<ClassObject>)
     {
 #ifndef NDEBUG
@@ -77,7 +81,7 @@ public:
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
         std::make_tuple(&ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
-                        &ClassModel::getPrimitiveClass);
+                        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive);
 };
 
 class FloatModel : public ModelBase<>
@@ -152,6 +156,9 @@ class SystemModel : public ModelBase<>
 public:
     using Base::Base;
 
+    static void arraycopy(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
+                          GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length);
+
     static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
     {
         // Noop in our implementation.
@@ -164,7 +171,8 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/System";
-    constexpr static auto methods = std::make_tuple(&SystemModel::registerNatives, &SystemModel::nanoTime);
+    constexpr static auto methods =
+        std::make_tuple(&SystemModel::registerNatives, &SystemModel::nanoTime, &SystemModel::arraycopy);
 };
 
 class ThreadModel : public ModelBase<Thread>

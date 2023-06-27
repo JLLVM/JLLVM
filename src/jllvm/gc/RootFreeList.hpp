@@ -46,7 +46,6 @@ protected:
     }
 
 public:
-
     /// Creates a new 'GCRootRef' from a derived 'GCRootRef', referring to the same root.
     template <std::derived_from<T> U>
     GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_object(rhs.m_object)
@@ -192,7 +191,6 @@ class RootFreeList
     };
 
 public:
-
     /// Creates a new root free list with the given amount of roots per slab.
     explicit RootFreeList(std::size_t slabSize) : m_slabSize(slabSize)
     {
