@@ -88,7 +88,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
       m_dataLayout(layout),
       m_interner(*m_session, m_dataLayout),
       m_objectLayer(*m_session),
-      m_compilerLayer(*m_session, m_objectLayer, std::make_unique<llvm::orc::ConcurrentIRCompiler>(builder)),
+      m_compilerLayer(*m_session, m_objectLayer, std::make_unique<llvm::orc::SimpleCompiler>(*m_targetMachine)),
       m_optimizeLayer(*m_session, m_compilerLayer,
                       [&](llvm::orc::ThreadSafeModule tsm, const llvm::orc::MaterializationResponsibility&)
                       {
