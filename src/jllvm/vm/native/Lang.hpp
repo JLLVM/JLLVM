@@ -202,4 +202,18 @@ public:
         std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::setPriority0);
 };
 
+class ReferenceModel : public ModelBase<Reference>
+{
+public:
+    using Base::Base;
+
+    bool refersTo0(GCRootRef<Object> o)
+    {
+        return javaThis->referent == o;
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/ref/Reference";
+    constexpr static auto methods = std::make_tuple(&ReferenceModel::refersTo0);
+};
+
 } // namespace jllvm::lang

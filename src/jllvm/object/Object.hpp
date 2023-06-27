@@ -251,4 +251,13 @@ struct Thread : ObjectInterface
 
 static_assert(std::is_standard_layout_v<Thread>);
 
+struct Reference : ObjectInterface
+{
+    ObjectHeader header;
+
+    Object* referent;
+};
+
+static_assert(std::is_standard_layout_v<Reference>);
+
 } // namespace jllvm
