@@ -60,14 +60,21 @@ class Test
         var oArr = new String[]{"Foo", "Bar", null, null};
 
         System.arraycopy(oArr, 0, oArr, 1, 2);
-        // CHECK:[Foo, Foo, Bar, null]
+        // CHECK: [Foo, Foo, Bar, null]
         print(Arrays.toString(oArr));
 
         var objects = new Object[]{"Foo", "Bar", new Object()};
         var strings = new String[4];
 
         System.arraycopy(objects, 0, strings, 0, 2);
-        // CHECK:[Foo, Bar, null, null]
+        // CHECK: [Foo, Bar, null, null]
         print(Arrays.toString(strings));
+
+        var zArr1 = new boolean[]{true, false, true, false};
+        var zArr2 = new boolean[4];
+
+        System.arraycopy(zArr1, 0, zArr2, 0, zArr1.length);
+        // CHECK: [true, false, true, false]
+        print(Arrays.toString(zArr2));
     }
 }
