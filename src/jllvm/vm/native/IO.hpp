@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <jllvm/vm/NativeImplementation.hpp>
