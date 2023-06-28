@@ -352,7 +352,7 @@ public:
 
     /// Size of an instance of this class, returning ALL bytes composing of the type including the object header
     /// IF the object is not an array object. For array objects it does NOT contain the array elements, but does contain
-    /// the length field.
+    /// the length field with any padding afterwards *if and only if required*.
     std::uint32_t getInstanceSize() const
     {
         return m_fieldAreaSize + sizeof(ObjectHeader);

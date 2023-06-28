@@ -265,6 +265,12 @@ public:
     /// sweeping.
     GCRootRef<Object> allocateStatic();
 
+    /// Returns the size of the object heap in bytes.
+    std::size_t getHeapSize() const
+    {
+        return m_heapSize;
+    }
+
     void garbageCollect();
 };
 

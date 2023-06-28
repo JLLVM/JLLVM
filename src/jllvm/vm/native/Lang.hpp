@@ -29,8 +29,14 @@ public:
         return hashCode;
     }
 
+    void notifyAll()
+    {
+        // Noop while we are single threaded.
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/Object";
-    constexpr static auto methods = std::make_tuple(&ObjectModel::hashCode, &ObjectModel::getClass);
+    constexpr static auto methods =
+        std::make_tuple(&ObjectModel::hashCode, &ObjectModel::getClass, &ObjectModel::notifyAll);
 };
 
 /// Model implementation for the native methods of Javas 'Class' class.
@@ -170,9 +176,47 @@ public:
         return std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
     }
 
+    static void setIn0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    {
+        const void* addr = classObject->getField("in", "Ljava/io/InputStream;", true)->getAddressOfStatic();
+        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+    }
+
+    static void setOut0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    {
+        const void* addr = classObject->getField("out", "Ljava/io/PrintStream;", true)->getAddressOfStatic();
+        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+    }
+
+    static void setErr0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    {
+        const void* addr = classObject->getField("err", "Ljava/io/PrintStream;", true)->getAddressOfStatic();
+        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/System";
     constexpr static auto methods =
-        std::make_tuple(&SystemModel::registerNatives, &SystemModel::nanoTime, &SystemModel::arraycopy);
+        std::make_tuple(&SystemModel::registerNatives, &SystemModel::nanoTime, &SystemModel::arraycopy,
+                        &SystemModel::setIn0, &SystemModel::setOut0, &SystemModel::setErr0);
+};
+
+class RuntimeModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static std::int64_t maxMemory(VirtualMachine& vm, GCRootRef<ClassObject>)
+    {
+        return vm.getGC().getHeapSize();
+    }
+
+    static std::int32_t availableProcessors(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        return 1;
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/Runtime";
+    constexpr static auto methods = std::make_tuple(&RuntimeModel::maxMemory, &RuntimeModel::availableProcessors);
 };
 
 class ThreadModel : public ModelBase<Thread>

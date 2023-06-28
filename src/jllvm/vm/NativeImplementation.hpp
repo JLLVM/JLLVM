@@ -2,6 +2,8 @@
 
 #include <llvm/ADT/StringRef.h>
 
+#include <jllvm/support/FileUtils.hpp>
+
 #include <string_view>
 
 #include "JNIImplementation.hpp"

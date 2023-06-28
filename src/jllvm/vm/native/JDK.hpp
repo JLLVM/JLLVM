@@ -229,4 +229,107 @@ public:
     constexpr static auto methods = std::make_tuple(&VMModel::initialize);
 };
 
+class SystemPropsRawModel : public ModelBase<>
+{
+    // See
+    // https://github.com/openjdk/jdk/blob/7d4b77ad9ee803d89eab5632f5c65ac843a68b3c/src/java.base/share/classes/jdk/internal/util/SystemProps.java#L217
+    // and
+    // https://github.com/openjdk/jdk/blob/7d4b77ad9ee803d89eab5632f5c65ac843a68b3c/src/java.base/share/native/libjava/System.c#L107
+    enum PlatformPropertiesFields
+    {
+        DisplayCountryNDX = 0,
+        DisplayLanguageNDX = 1 + DisplayCountryNDX,
+        DisplayScriptNdx = 1 + DisplayLanguageNDX,
+        DisplayVariantNdx = 1 + DisplayScriptNdx,
+        FileEncodingNdx = 1 + DisplayVariantNdx,
+        FileSeparatorNdx = 1 + FileEncodingNdx,
+        FormatCountryNdx = 1 + FileSeparatorNdx,
+        FormatLanguageNdx = 1 + FormatCountryNdx,
+        FormatScriptNdx = 1 + FormatLanguageNdx,
+        FormatVariantNdx = 1 + FormatScriptNdx,
+        FtpNonProxyHostsNdx = 1 + FormatVariantNdx,
+        FtpProxyHostNdx = 1 + FtpNonProxyHostsNdx,
+        FtpProxyPortNdx = 1 + FtpProxyHostNdx,
+        HttpNonProxyHostsNdx = 1 + FtpProxyPortNdx,
+        HttpProxyHostNdx = 1 + HttpNonProxyHostsNdx,
+        HttpProxyPortNdx = 1 + HttpProxyHostNdx,
+        HttpsProxyHostNdx = 1 + HttpProxyPortNdx,
+        HttpsProxyPortNdx = 1 + HttpsProxyHostNdx,
+        JavaIoTmpdirNdx = 1 + HttpsProxyPortNdx,
+        LineSeparatorNdx = 1 + JavaIoTmpdirNdx,
+        OsArchNdx = 1 + LineSeparatorNdx,
+        OsNameNdx = 1 + OsArchNdx,
+        OsVersionNdx = 1 + OsNameNdx,
+        PathSeparatorNdx = 1 + OsVersionNdx,
+        SocksNonProxyHostsNdx = 1 + PathSeparatorNdx,
+        SocksProxyHostNdx = 1 + SocksNonProxyHostsNdx,
+        SocksProxyPortNdx = 1 + SocksProxyHostNdx,
+        SunArchAbiNdx = 1 + SocksProxyPortNdx,
+        SunArchDataModelNdx = 1 + SunArchAbiNdx,
+        SunCpuEndianNdx = 1 + SunArchDataModelNdx,
+        SunCpuIsalistNdx = 1 + SunCpuEndianNdx,
+        SunIoUnicodeEncodingNdx = 1 + SunCpuIsalistNdx,
+        SunJnuEncodingNdx = 1 + SunIoUnicodeEncodingNdx,
+        SunOsPatchLevelNdx = 1 + SunJnuEncodingNdx,
+        SunStderrEncodingNdx = 1 + SunOsPatchLevelNdx,
+        SunStdoutEncodingNdx = 1 + SunStderrEncodingNdx,
+        UserDirNdx = 1 + SunStdoutEncodingNdx,
+        UserHomeNdx = 1 + UserDirNdx,
+        UserNameNdx = 1 + UserHomeNdx,
+        FixedLength = 1 + UserNameNdx,
+    };
+
+public:
+    using Base::Base;
+
+    static Array<String*>* platformProperties(VirtualMachine& vm, GCRootRef<ClassObject>);
+
+    static Array<String*>* vmProperties(VirtualMachine& vm, GCRootRef<ClassObject>)
+    {
+        auto& array = *vm.getGC().allocate<Array<String*>>(&vm.getClassLoader().forName("[Ljava/lang/String;"), 5);
+
+        array[0] = vm.getStringInterner().intern("java.home");
+        array[1] = vm.getStringInterner().intern(vm.getJavaHome());
+        array[2] = vm.getStringInterner().intern("native.encoding");
+        array[3] = vm.getStringInterner().intern("UTF-8");
+
+        return &array;
+    }
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/util/SystemProps$Raw";
+    constexpr static auto methods =
+        std::make_tuple(&SystemPropsRawModel::platformProperties, &SystemPropsRawModel::vmProperties);
+};
+
+class ScopedMemoryAccessModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        // Noop in our implementation.
+    }
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/misc/ScopedMemoryAccess";
+    constexpr static auto methods = std::make_tuple(&ScopedMemoryAccessModel::registerNatives);
+};
+
+class SignalModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static std::int32_t findSignal0(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<String> sigName);
+
+    static std::int64_t handle0(VirtualMachine&, GCRootRef<ClassObject>, std::int32_t, std::int64_t)
+    {
+        // TODO:
+        return 0;
+    }
+
+    constexpr static llvm::StringLiteral className = "jdk/internal/misc/Signal";
+    constexpr static auto methods = std::make_tuple(&SignalModel::findSignal0, &SignalModel::handle0);
+};
+
 } // namespace jllvm::jdk

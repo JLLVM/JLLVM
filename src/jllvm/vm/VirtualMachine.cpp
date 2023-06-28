@@ -113,7 +113,7 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 
 } // namespace
 
-jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
+jllvm::VirtualMachine::VirtualMachine(llvm::StringRef javaHome, std::vector<std::string>&& classPath)
     : m_classLoader(
         std::move(classPath),
         [this](const ClassFile* classFile, ClassObject& classObject)
@@ -163,7 +163,8 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
       // Seed from the C++ implementations entropy source.
       m_pseudoGen(std::random_device{}()),
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
-      m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max())
+      m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max()),
+      m_javaHome(javaHome)
 {
     m_jit.addImplementationSymbols(
         std::pair{"fmodf", &fmodf},
@@ -226,6 +227,9 @@ jllvm::VirtualMachine::VirtualMachine(std::vector<std::string>&& classPath)
 
     executeObjectConstructor(m_mainThread, "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", m_mainThreadGroup.address(),
                              m_stringInterner.intern("main"));
+
+    initialize(m_classLoader.forName("Ljava/lang/System;"));
+    executeStaticMethod("java/lang/System", "initPhase1", "()V");
 }
 
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)
