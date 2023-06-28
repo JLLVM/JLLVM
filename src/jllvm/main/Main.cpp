@@ -72,6 +72,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     }
 
     llvm::SmallString<64> modulesPath = llvm::sys::path::parent_path(llvm::sys::path::parent_path(executablePath));
+    llvm::SmallString<64> javaHome = modulesPath;
     llvm::sys::path::append(modulesPath, "lib");
 
     std::vector<std::string> classPath;
@@ -92,7 +93,7 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
         llvm::append_range(classPath, splits);
     }
 
-    jllvm::VirtualMachine vm(std::move(classPath));
+    jllvm::VirtualMachine vm(javaHome, std::move(classPath));
 
     if (commandLine.getArgs().hasArg(OPT_Xenable_test_utils))
     {
