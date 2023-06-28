@@ -45,4 +45,36 @@ public:
                                                     &FileDescriptorModel::getAppend, &FileDescriptorModel::close0);
 };
 
+struct FileOutputStream : ObjectInterface
+{
+    ObjectHeader header;
+
+    FileDescriptor* descriptor{};
+};
+
+class FileOutputStreamModel : public ModelBase<FileOutputStream>
+{
+public:
+    using Base::Base;
+
+    static void initIDs(VirtualMachine&, GCRootRef<ClassObject>)
+    {
+        // Noop in our implementation.
+    }
+
+    void writeBytes(GCRootRef<Array<std::uint8_t>> bytes, std::int32_t offset, std::int32_t length, bool append)
+    {
+        llvm::raw_fd_ostream stream(javaThis->descriptor->fd, /*shouldClose=*/false);
+        if (append && stream.supportsSeeking())
+        {
+            // TODO:
+        }
+        stream.write(reinterpret_cast<char*>(bytes->data() + offset), length);
+    }
+
+    constexpr static llvm::StringLiteral className = "java/io/FileOutputStream";
+    constexpr static auto methods =
+        std::make_tuple(&FileOutputStreamModel::initIDs, &FileOutputStreamModel::writeBytes);
+};
+
 } // namespace jllvm::io
