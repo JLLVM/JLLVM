@@ -1,6 +1,6 @@
 #include "FileUtils.hpp"
 
-#ifdef __unix__
+#if defined(__unix__) || defined(__APPLE__)
     #include <fcntl.h>
 
 bool jllvm::isAppendMode(int fd)
