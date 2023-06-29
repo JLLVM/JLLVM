@@ -1,5 +1,5 @@
 // RUN: javac %s -d %t
-// RUN: jllvm -Xenable-test-utils %t/Test.class | FileCheck --match-full-lines %s
+// RUN: jllvm %t/Test.class | FileCheck --match-full-lines %s
 
 class Test
 {

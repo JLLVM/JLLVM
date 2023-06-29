@@ -1,5 +1,5 @@
 // RUN: javac %s -d %t
-// RUN: not jllvm -Xenable-test-utils %t/Test.class 2>&1 | FileCheck %s
+// RUN: not jllvm %t/Test.class 2>&1 | FileCheck %s
 
 class Test
 {
