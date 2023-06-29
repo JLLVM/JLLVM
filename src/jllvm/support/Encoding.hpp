@@ -12,8 +12,8 @@ enum class CompactEncoding : uint8_t
 {
     /// LATIN1 encoding. Subset of unicode which encompasses all codepoints from 0 to 0xFF.
     Latin1 = 0,
-    /// Big Endian UTF16 without a BOM.
-    Utf16BE = 1,
+    /// UTF16 in native byte order without a BOM.
+    Utf16 = 1,
 };
 
 /// Converts a utf8 string, as we use internally the majority of the time, to a Java Strings internal encoding.

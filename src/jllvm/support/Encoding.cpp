@@ -43,14 +43,10 @@ std::pair<std::vector<std::uint8_t>, jllvm::CompactEncoding> jllvm::toJavaCompac
     {
         std::uint8_t temp[2];
         std::memcpy(temp, &codePoint, sizeof(llvm::UTF16));
-        if constexpr (llvm::support::endianness::native != llvm::support::endianness::big)
-        {
-            std::swap(temp[0], temp[1]);
-        }
         result.push_back(temp[0]);
         result.push_back(temp[1]);
     }
-    return {std::move(result), CompactEncoding::Utf16BE};
+    return {std::move(result), CompactEncoding::Utf16};
 }
 
 std::string jllvm::fromJavaCompactEncoding(std::pair<llvm::ArrayRef<std::uint8_t>, CompactEncoding> compactEncoding)
@@ -75,15 +71,6 @@ std::string jllvm::fromJavaCompactEncoding(std::pair<llvm::ArrayRef<std::uint8_t
 
     std::vector<char> utf16{buffer.begin(), buffer.end()};
     std::string string;
-
-    if constexpr (llvm::support::endianness::native != llvm::support::endianness::big)
-    {
-        assert(utf16.size() % 2 == 0);
-        for (auto it = utf16.begin(); it != utf16.end();)
-        {
-            std::swap(*it++, *it++);
-        }
-    }
 
     bool success = llvm::convertUTF16ToUTF8String(utf16, string);
     assert(success);
