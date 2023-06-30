@@ -1,6 +1,6 @@
 // RUN: rm -rf %t && split-file %s %t
 // RUN: cd %t && javac %t/Test.java -d %t
-// RUN: not jllvm -Xenable-test-utils %t/Test.class 2>&1 | FileCheck %s
+// RUN: not jllvm %t/Test.class 2>&1 | FileCheck %s
 
 //--- Test.java
 

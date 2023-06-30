@@ -3,9 +3,9 @@
 // RUN: javac %t/SomeSecondDir/Otherwise.java -d %t/SomeSecondDir
 // RUN: javac -cp '%t/SomeOtherDir:%t/SomeSecondDir' %t/Test.java -d %t
 
-// RUN: jllvm -cp '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
-// RUN: jllvm --class-path '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
-// RUN: jllvm -classpath '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
+// RUN: jllvm -Xno-system-init -cp '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
+// RUN: jllvm -Xno-system-init --class-path '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
+// RUN: jllvm -Xno-system-init -classpath '%t/SomeOtherDir;%t/SomeSecondDir' -Xenable-test-utils %t/Test.class | FileCheck %s
 
 //--- Test.java
 

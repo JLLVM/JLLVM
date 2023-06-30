@@ -28,6 +28,15 @@
 
 namespace jllvm
 {
+
+/// Options used to boot the VM.
+struct BootOptions
+{
+    llvm::StringRef javaHome;
+    std::vector<std::string> classPath;
+    bool systemInitialization = true;
+};
+
 class VirtualMachine
 {
     using JNINativeInterfaceUPtr = std::unique_ptr<void, void (*)(void*)>;
@@ -49,7 +58,7 @@ class VirtualMachine
     void initialize(ClassObject& classObject);
 
 public:
-    VirtualMachine(llvm::StringRef javaHome, std::vector<std::string>&& classPath);
+    explicit VirtualMachine(BootOptions&& options);
 
     /// Returns a new pseudo random hash code for a Java object.
     /// Since we have a relocating garbage collector we use a similar strategy to V8, where we generate pseudo random

@@ -1,6 +1,6 @@
 ; RUN: rm -rf %t && split-file %s %t
 ; RUN: cd %t && jasmin %t/Test.j -d %t && jasmin %t/A.j  && jasmin %t/B.j -d %t
-; RUN: jllvm -Xenable-test-utils %t/Test.class | FileCheck %s
+; RUN: jllvm %t/Test.class | FileCheck %s
 
 ;--- A.j
 

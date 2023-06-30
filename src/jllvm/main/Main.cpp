@@ -106,7 +106,13 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
         llvm::append_range(classPath, splits);
     }
 
-    jllvm::VirtualMachine vm(javaHome, std::move(classPath));
+    BootOptions bootOptions{
+        .javaHome = javaHome,
+        .classPath = std::move(classPath),
+        .systemInitialization = commandLine.getArgs().hasFlag(OPT_Xsystem_init, OPT_Xno_system_init, true),
+    };
+
+    jllvm::VirtualMachine vm(std::move(bootOptions));
 
     if (commandLine.getArgs().hasArg(OPT_Xenable_test_utils))
     {

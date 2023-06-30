@@ -1,5 +1,5 @@
 // RUN: javac %s -d %t
-// RUN: jllvm -Xenable-test-utils %t/Test.class
+// RUN: jllvm %t/Test.class
 
 class Test
 {

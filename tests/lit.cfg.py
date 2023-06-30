@@ -68,7 +68,9 @@ tool_dirs = [
 ]
 
 tools = [
-    'jllvm', 'javac', ToolSubst('jasmin', f'java -jar {config.jasmin_src}/jasmin.jar')
+    ToolSubst('jllvm', extra_args=[
+        '%{JLLVM_EXTRA_ARGS}'
+    ]), 'javac', ToolSubst('jasmin', f'java -jar {config.jasmin_src}/jasmin.jar')
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
@@ -77,3 +79,5 @@ llvm_config.add_tool_substitutions(tools, tool_dirs)
 # This option avoids to accidentally reuse variable across -LABEL match,
 # it can be explicitly opted-in by prefixing the variable name with $
 config.environment['FILECHECK_OPTS'] = "-enable-var-scope --allow-unused-prefixes=false"
+
+config.substitutions.append(('%{JLLVM_EXTRA_ARGS}', ''))

@@ -1,5 +1,5 @@
 ; RUN: jasmin %s -d %t
-; RUN: jllvm -Xenable-test-utils %t/Test.class | FileCheck %s
+; RUN: jllvm %t/Test.class | FileCheck %s
 .class public Test
 .super java/lang/Object
 

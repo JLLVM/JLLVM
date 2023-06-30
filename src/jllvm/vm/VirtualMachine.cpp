@@ -126,9 +126,9 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 
 } // namespace
 
-jllvm::VirtualMachine::VirtualMachine(llvm::StringRef javaHome, std::vector<std::string>&& classPath)
+jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-        std::move(classPath),
+        std::move(bootOptions.classPath),
         [this](const ClassFile* classFile, ClassObject& classObject)
         {
             m_jit.add(classFile, &classObject);
@@ -177,7 +177,7 @@ jllvm::VirtualMachine::VirtualMachine(llvm::StringRef javaHome, std::vector<std:
       m_pseudoGen(std::random_device{}()),
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
       m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max()),
-      m_javaHome(javaHome)
+      m_javaHome(bootOptions.javaHome)
 {
     m_jit.addImplementationSymbols(
         std::pair{"fmodf", &fmodf},
@@ -224,6 +224,11 @@ jllvm::VirtualMachine::VirtualMachine(llvm::StringRef javaHome, std::vector<std:
 
     m_stringInterner.loadStringClass();
     initialize(m_stringInterner.getStringClass());
+
+    if (!bootOptions.systemInitialization)
+    {
+        return;
+    }
 
     ClassObject& threadGroup = m_classLoader.forName("Ljava/lang/ThreadGroup;");
     initialize(threadGroup);
