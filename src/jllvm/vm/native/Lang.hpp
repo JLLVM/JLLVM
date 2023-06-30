@@ -273,4 +273,16 @@ public:
     constexpr static auto methods = std::make_tuple(&ReferenceModel::refersTo0);
 };
 
+class StringUTF16Model : public ModelBase<>
+{
+public:
+
+    using Base::Base;
+
+    static bool isBigEndian(VirtualMachine&, GCRootRef<ClassObject>);
+
+    constexpr static llvm::StringLiteral className = "java/lang/StringUTF16";
+    constexpr static auto methods = std::make_tuple(&StringUTF16Model::isBigEndian);
+};
+
 } // namespace jllvm::lang
