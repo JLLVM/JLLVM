@@ -22,6 +22,8 @@ else()
     option(JLLVM_ENABLE_ASSERTIONS "Enable assertions" ON)
 endif()
 
+option(JLLVM_BUILD_DOCS "Build documentation" OFF)
+
 include(cmake/CPM.cmake)
 
 find_package(Threads REQUIRED)
@@ -109,3 +111,7 @@ include(CTest)
 enable_testing()
 add_subdirectory(tests)
 add_subdirectory(unittests)
+
+if (JLLVM_BUILD_DOCS)
+    add_subdirectory(docs EXCLUDE_FROM_ALL)
+endif ()
