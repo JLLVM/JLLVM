@@ -72,6 +72,7 @@ class NonOwningFrozenSet
                 return bucket;
             }
 
+            // Do quadratic probing otherwise.
             bucket += i;
             bucket &= mask;
         }
@@ -79,7 +80,7 @@ class NonOwningFrozenSet
     }
 
 public:
-    using iterator = decltype(m_keys)::iterator;
+    using iterator = typename decltype(m_keys)::iterator;
 
     NonOwningFrozenSet() = default;
 
