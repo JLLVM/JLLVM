@@ -67,6 +67,13 @@ public:
                 llvm::unique_function<void(const ClassFile*, ClassObject&)>&& prepareClassObject,
                 llvm::unique_function<void**()> allocateStatic);
 
+    ~ClassLoader();
+
+    ClassLoader(const ClassLoader&) = delete;
+    ClassLoader& operator=(const ClassLoader&) = delete;
+    ClassLoader(ClassLoader&&) noexcept = delete;
+    ClassLoader& operator=(ClassLoader&&) noexcept = delete;
+
     /// Loads the class object for the given class file. This may also load transitive dependencies
     /// of the class file. Currently aborts if a class file could not be loaded.
     ClassObject& add(std::unique_ptr<llvm::MemoryBuffer>&& memoryBuffer);

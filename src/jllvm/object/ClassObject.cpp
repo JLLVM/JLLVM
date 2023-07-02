@@ -22,7 +22,7 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 {
     auto* storage = allocator.Allocate<typename Range::value_type>(ref.size());
     llvm::copy(ref, storage);
-    return llvm::ArrayRef{storage, ref.size()};
+    return llvm::MutableArrayRef{storage, ref.size()};
 }
 } // namespace
 
@@ -73,17 +73,22 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
     std::uint32_t allocatedVTableSlots = isAbstract ? 0 : vTableSlots;
     void* storage =
         allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(allocatedVTableSlots), alignof(ClassObject));
+    llvm::MutableArrayRef<Method> methodsAlloc = arrayRefAlloc(allocator, methods);
     auto* result = new (storage)
-        ClassObject(metaClass, vTableSlots, fieldAreaSize, arrayRefAlloc(allocator, methods),
-                    arrayRefAlloc(allocator, fields), arrayRefAlloc(allocator, bases),
+        ClassObject(metaClass, vTableSlots, fieldAreaSize, NonOwningFrozenSet(methodsAlloc, allocator),
+                    NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator), arrayRefAlloc(allocator, bases),
                     arrayRefAlloc(allocator, iTables), className, isAbstract, arrayRefAlloc(allocator, gcMask));
+    for (Method& method : methodsAlloc)
+    {
+        method.setClassObject(result);
+    }
     // Zero out vTable.
     std::fill(result->getVTable().begin(), result->getVTable().end(), nullptr);
     return result;
 }
 
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
-                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
+                                const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
                                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
                                 llvm::StringRef className, bool isAbstract, llvm::ArrayRef<std::uint32_t> gcMask)
     : m_objectHeader(metaClass),
@@ -133,25 +138,9 @@ jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name
     // NOLINTEND(*-prefer-member-initializer)
 }
 
-const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef fieldName, llvm::StringRef fieldType,
-                                                 bool isStatic) const
-{
-    for (const ClassObject* curr : getSuperClasses())
-    {
-        const Field* iter = llvm::find_if(
-            curr->getFields(), [&](const Field& field)
-            { return field.isStatic() == isStatic && field.getName() == fieldName && field.getType() == fieldType; });
-        if (iter != curr->getFields().end())
-        {
-            return iter;
-        }
-    }
-    return nullptr;
-}
-
-jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces,
-                                llvm::StringRef className)
+jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId,
+                                const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
+                                llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(0),
       m_tableSize(llvm::count_if(methods, [](const Method& method) { return method.getTableSlot(); })),
@@ -169,9 +158,16 @@ jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& 
                                                         llvm::ArrayRef<ClassObject*> interfaces,
                                                         llvm::StringRef className)
 {
-    return new (allocator.Allocate<ClassObject>())
-        ClassObject(metaClass, interfaceId, arrayRefAlloc(allocator, methods), arrayRefAlloc(allocator, fields),
+    llvm::MutableArrayRef<jllvm::Method> methodsAllocated = arrayRefAlloc(allocator, methods);
+    auto* result = new (allocator.Allocate<ClassObject>())
+        ClassObject(metaClass, interfaceId, NonOwningFrozenSet(methodsAllocated, allocator),
+                    NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator),
                     arrayRefAlloc(allocator, interfaces), className);
+    for (Method& method : methodsAllocated)
+    {
+        method.setClassObject(result);
+    }
+    return result;
 }
 
 jllvm::ITable* jllvm::ITable::create(llvm::BumpPtrAllocator& allocator, std::size_t id, std::size_t iTableSlots)

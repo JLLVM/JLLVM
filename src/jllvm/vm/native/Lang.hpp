@@ -191,19 +191,19 @@ public:
 
     static void setIn0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getField("in", "Ljava/io/InputStream;", true)->getAddressOfStatic();
+        const void* addr = classObject->getStaticField("in", "Ljava/io/InputStream;")->getAddressOfStatic();
         std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
     }
 
     static void setOut0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getField("out", "Ljava/io/PrintStream;", true)->getAddressOfStatic();
+        const void* addr = classObject->getStaticField("out", "Ljava/io/PrintStream;")->getAddressOfStatic();
         std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
     }
 
     static void setErr0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getField("err", "Ljava/io/PrintStream;", true)->getAddressOfStatic();
+        const void* addr = classObject->getStaticField("err", "Ljava/io/PrintStream;")->getAddressOfStatic();
         std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
     }
 

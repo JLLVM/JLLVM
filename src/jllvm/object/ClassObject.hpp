@@ -27,6 +27,9 @@
 #include <llvm/Support/TrailingObjects.h>
 
 #include <jllvm/class/Descriptors.hpp>
+#include <jllvm/support/NonOwningFrozenSet.hpp>
+
+#include <functional>
 
 #include "Object.hpp"
 
@@ -46,6 +49,7 @@ class Method
 {
     llvm::StringRef m_name;
     llvm::StringRef m_type;
+    const ClassObject* m_classObject{};
     std::uint32_t m_tableSlot;
     std::uint8_t m_hasTableSlot : 1;
     std::uint8_t m_isStatic : 1;
@@ -126,7 +130,33 @@ public:
     {
         return getName() == "<init>";
     }
+
+    /// Returns the class object this method is contained in.
+    const ClassObject* getClassObject() const
+    {
+        return m_classObject;
+    }
+
+    void setClassObject(const ClassObject* classObject)
+    {
+        m_classObject = classObject;
+    }
+
+    bool operator==(const Method& method) const
+    {
+        return m_name == method.m_name && m_type == method.m_type;
+    }
+
+    bool operator==(const std::pair<llvm::StringRef, llvm::StringRef>& nameAndDesc) const
+    {
+        return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
+    }
 };
+
+inline llvm::hash_code hash_value(const Method& method)
+{
+    return llvm::hash_value(std::pair{method.getName(), method.getType()});
+}
 
 /// Object for representing the fields of a class and object.
 class Field
@@ -200,7 +230,22 @@ public:
         }
         return reinterpret_cast<const void*>(m_primitiveStorage);
     }
+
+    bool operator==(const Field& field) const
+    {
+        return m_name == field.m_name && m_type == field.m_type;
+    }
+
+    bool operator==(const std::pair<llvm::StringRef, llvm::StringRef>& nameAndDesc) const
+    {
+        return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
+    }
 };
+
+inline llvm::hash_code hash_value(const Field& field)
+{
+    return llvm::hash_value(std::pair{field.getName(), field.getType()});
+}
 
 using VTableSlot = void*;
 
@@ -266,8 +311,8 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     std::int32_t m_fieldAreaSize;
     // V-Table size for classes, I-Table size for Interfaces.
     std::int32_t m_tableSize;
-    llvm::ArrayRef<Method> m_methods;
-    llvm::ArrayRef<Field> m_fields;
+    NonOwningFrozenSet<Method> m_methods;
+    NonOwningFrozenSet<Field> m_fields;
     // Contains all the bases of this class object. For classes, this contains the superclass (except for 'Object')
     // followed by all direct superinterfaces. For interfaces, this is simply their direct superinterfaces.
     llvm::ArrayRef<ClassObject*> m_bases;
@@ -279,12 +324,13 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     bool m_isAbstract = false;
 
     ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
-                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
-                llvm::ArrayRef<ITable*> iTables, llvm::StringRef className, bool isAbstract,
-                llvm::ArrayRef<std::uint32_t> gcMask);
+                const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
+                llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables, llvm::StringRef className,
+                bool isAbstract, llvm::ArrayRef<std::uint32_t> gcMask);
 
-    ClassObject(const ClassObject* metaClass, std::size_t interfaceId, llvm::ArrayRef<Method> methods,
-                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className);
+    ClassObject(const ClassObject* metaClass, std::size_t interfaceId, const NonOwningFrozenSet<Method>& methods,
+                const NonOwningFrozenSet<Field>& fields, llvm::ArrayRef<ClassObject*> interfaces,
+                llvm::StringRef className);
 
     class SuperclassIterator
         : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
@@ -380,22 +426,60 @@ public:
     }
 
     /// Returns the methods of this class.
-    llvm::ArrayRef<Method> getMethods() const
+    const NonOwningFrozenSet<Method>& getMethods() const
     {
         return m_methods;
     }
 
+    /// Returns the method with the given 'name' and 'type' that matches the 'predicate'.
+    /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no method was found.
+    template <std::predicate<const Method&> P>
+    const Method* getMethod(llvm::StringRef name, llvm::StringRef type, P predicate) const;
+
+    /// Returns the method with the given 'name' and 'type'.
+    /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no method was found.
+    const Method* getMethod(llvm::StringRef name, llvm::StringRef type) const
+    {
+        return getMethod(name, type, [](auto) { return true; });
+    }
+
     /// Returns the fields of this class.
-    llvm::ArrayRef<Field> getFields() const
+    const NonOwningFrozenSet<Field>& getFields() const
     {
         return m_fields;
     }
 
-    /// Returns the field with the given 'fieldName' and 'fieldType', only considering static or instance fields
-    /// depending on 'isStatic'.
-    /// This field lookup unlike 'getFields' also considers fields in the base classes of this class.
+    /// Returns the field with the given 'name' and 'type' matching the 'predicate'.
+    /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
-    const Field* getField(llvm::StringRef fieldName, llvm::StringRef fieldType, bool isStatic) const;
+    template <std::predicate<const Field&> P>
+    const Field* getField(llvm::StringRef name, llvm::StringRef type, P predicate) const;
+
+    /// Returns the field with the given 'name' and 'type'.
+    /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no field was found.
+    const Field* getField(llvm::StringRef name, llvm::StringRef type) const
+    {
+        return getField(name, type, [](auto) { return true; });
+    }
+
+    /// Returns the static field with the given 'name' and 'type'.
+    /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no field was found.
+    const Field* getStaticField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    {
+        return getField(fieldName, fieldType, &Field::isStatic);
+    }
+
+    /// Returns the instance field with the given 'name' and 'type'.
+    /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no field was found.
+    const Field* getInstanceField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    {
+        return getField(fieldName, fieldType, std::not_fn(std::mem_fn(&Field::isStatic)));
+    }
 
     /// Returns all direct superclasses and superinterfaces of the class object.
     llvm::ArrayRef<ClassObject*> getBases() const
@@ -676,4 +760,34 @@ inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
     };
 
     return RPODropFront{this};
+}
+
+template <std::predicate<const jllvm::Method&> P>
+const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, llvm::StringRef type, P predicate) const
+{
+    for (const ClassObject* curr : getSuperClasses())
+    {
+        const NonOwningFrozenSet<Method>& methods = curr->getMethods();
+        const Method* iter = methods.find(std::pair{name, type});
+        if (iter != methods.end() && std::invoke(predicate, *iter))
+        {
+            return iter;
+        }
+    }
+    return nullptr;
+}
+
+template <std::predicate<const jllvm::Field&> F>
+const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef name, llvm::StringRef type, F predicate) const
+{
+    for (const ClassObject* curr : getSuperClasses())
+    {
+        const NonOwningFrozenSet<Field>& fields = curr->getFields();
+        const Field* iter = fields.find(std::pair{name, type});
+        if (iter != fields.end() && std::invoke(predicate, *iter))
+        {
+            return iter;
+        }
+    }
+    return nullptr;
 }

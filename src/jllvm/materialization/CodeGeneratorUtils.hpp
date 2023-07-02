@@ -173,16 +173,13 @@ class LazyClassLoaderHelper
                                       llvm::StringRef methodType, bool isStatic, llvm::Twine key,
                                       llvm::ArrayRef<llvm::Value*> args, F&& f);
 
-    static std::pair<const ClassObject*, const Method*>
-        methodResolution(const ClassObject* classObject, llvm::StringRef methodName, llvm::StringRef methodType);
+    static const Method* methodResolution(const ClassObject* classObject, llvm::StringRef methodName, llvm::StringRef methodType);
 
-    static std::pair<const ClassObject*, const Method*> interfaceMethodResolution(const ClassObject* classObject,
-                                                                                  llvm::StringRef methodName,
+    static const Method* interfaceMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
                                                                                   llvm::StringRef methodType,
                                                                                   ClassLoader& classLoader);
 
-    static std::pair<const ClassObject*, const Method*>
-        specialMethodResolution(const ClassObject* referencedClassObject, llvm::StringRef methodName,
+    static const Method* specialMethodResolution(const ClassObject* referencedClassObject, llvm::StringRef methodName,
                                 llvm::StringRef methodType, ClassLoader& classLoader, const ClassObject* currentClass,
                                 const ClassFile* currentClassFile);
 
