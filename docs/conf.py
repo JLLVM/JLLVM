@@ -11,9 +11,6 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-import os.path
-import sys
-
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -25,11 +22,11 @@ import sys
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
 
+import os
+import sys
+
+sys.path.append(os.path.abspath('./ext'))
 
 # -- Project information -----------------------------------------------------
 
@@ -38,8 +35,6 @@ copyright = '2023, The JLLVM Contributors'
 author = 'The JLLVM Contributors'
 
 # -- General configuration ---------------------------------------------------
-
-sys.path.append(os.path.abspath('./_ext'))
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
