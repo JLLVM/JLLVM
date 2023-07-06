@@ -301,3 +301,9 @@ jllvm::ClassObject& jllvm::ClassLoader::loadBootstrapClasses()
     }
     return *m_metaClassObject;
 }
+
+jllvm::ClassLoader::~ClassLoader()
+{
+    auto range = llvm::make_second_range(m_mapping);
+    std::destroy(range.begin(), range.end());
+}

@@ -178,7 +178,7 @@ void jllvm::JIT::add(const jllvm::ClassFile* classFile, const ClassObject* class
             continue;
         }
 
-        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleMethod(info, *classFile) << " to JIT Link graph\n"; });
+        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleMethod(&method) << " to JIT Link graph\n"; });
 
         if (info.isNative())
         {

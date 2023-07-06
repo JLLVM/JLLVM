@@ -33,6 +33,11 @@ std::string jllvm::mangleMethod(const MethodInfo& methodInfo, const ClassFile& c
     return mangleMethod(className, methodName, descriptor);
 }
 
+std::string jllvm::mangleMethod(const jllvm::Method* method)
+{
+    return mangleMethod(method->getClassObject()->getClassName(), method->getName(), method->getType());
+}
+
 llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo,
                                       const ClassFile* classFile, const Method* method, const ClassObject* classObject)
 {

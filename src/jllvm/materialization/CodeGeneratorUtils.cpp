@@ -767,9 +767,8 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
     return call;
 }
 
-std::pair<const jllvm::ClassObject*, const jllvm::Method*>
-    LazyClassLoaderHelper::methodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                            llvm::StringRef methodType)
+const jllvm::Method* LazyClassLoaderHelper::methodResolution(const ClassObject* classObject, llvm::StringRef methodName,
+                                                             llvm::StringRef methodType)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
 
@@ -781,17 +780,9 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
 
     // Otherwise, if C has a superclass, step 2 of method resolution is
     // recursively invoked on the direct superclass of C.
-    for (const ClassObject* curr : classObject->getSuperClasses())
+    if (const Method* iter = classObject->getMethod(methodName, methodType))
     {
-        llvm::ArrayRef<Method> methods = curr->getMethods();
-        const Method* iter =
-            llvm::find_if(methods, [&](const Method& method)
-                          { return method.getName() == methodName && method.getType() == methodType; });
-        if (iter == methods.end())
-        {
-            continue;
-        }
-        return {curr, iter};
+        return iter;
     }
 
     // Otherwise, method resolution attempts to locate the referenced method
@@ -803,14 +794,11 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
     // is chosen and method lookup succeeds.
     for (const ClassObject* interface : classObject->maximallySpecificInterfaces())
     {
-        const Method* method = llvm::find_if(
-            interface->getMethods(), [&](const Method& method)
-            { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
-        if (method == interface->getMethods().end())
+        if (const Method* method =
+                interface->getMethod(methodName, methodType, std::not_fn(std::mem_fn(&Method::isAbstract))))
         {
-            continue;
+            return method;
         }
-        return {interface, method};
     }
 
     // Otherwise, if any superinterface of C declares a method with the name and descriptor specified by the method
@@ -818,40 +806,30 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
     // chosen and method lookup succeeds.
     for (const ClassObject* interface : classObject->getAllInterfaces())
     {
-        const Method* method = llvm::find_if(interface->getMethods(),
-                                             [&](const Method& method)
-                                             {
-                                                 return method.getVisibility() != Visibility::Private
-                                                        && method.getName() == methodName
-                                                        && method.getType() == methodType;
-                                             });
-        if (method == interface->getMethods().end())
+        if (const Method* method =
+                interface->getMethod(methodName, methodType,
+                                     [](const Method& method)
+                                     { return !method.isStatic() && method.getVisibility() != Visibility::Private; }))
         {
-            continue;
+            return method;
         }
-        return {interface, method};
     }
 
     llvm_unreachable("method not found");
 }
 
-std::pair<const jllvm::ClassObject*, const jllvm::Method*>
-    LazyClassLoaderHelper::interfaceMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                                     llvm::StringRef methodType, ClassLoader& classLoader)
+const jllvm::Method* LazyClassLoaderHelper::interfaceMethodResolution(const ClassObject* classObject,
+                                                                      llvm::StringRef methodName,
+                                                                      llvm::StringRef methodType,
+                                                                      ClassLoader& classLoader)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
 
     // Otherwise, if C declares a method with the name and descriptor specified by the interface method
     // reference, method lookup succeeds.
+    if (const Method* method = classObject->getMethod(methodName, methodType))
     {
-        llvm::ArrayRef<Method> methods = classObject->getMethods();
-        const Method* iter =
-            llvm::find_if(methods, [&](const Method& method)
-                          { return method.getName() == methodName && method.getType() == methodType; });
-        if (iter != methods.end())
-        {
-            return {classObject, iter};
-        }
+        return method;
     }
 
     // Otherwise, if the class Object declares a method with the name and descriptor specified by the
@@ -860,17 +838,12 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
     {
         constexpr llvm::StringLiteral className = "java/lang/Object";
         ClassObject& object = classLoader.forName("L" + className + ";");
-        llvm::ArrayRef<Method> methods = object.getMethods();
-        const Method* iter = llvm::find_if(methods,
-                                           [&](const Method& method)
-                                           {
-                                               return !method.isStatic() && method.getVisibility() == Visibility::Public
-                                                      && method.getName() == methodName
-                                                      && method.getType() == methodType;
-                                           });
-        if (iter != methods.end())
+        if (const Method* method =
+                object.getMethod(methodName, methodType,
+                                 [](const Method& method)
+                                 { return !method.isStatic() && method.getVisibility() == Visibility::Public; }))
         {
-            return {&object, iter};
+            return method;
         }
     }
 
@@ -879,28 +852,26 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
     // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
     for (const ClassObject* interface : classObject->maximallySpecificInterfaces())
     {
-        const Method* method = llvm::find_if(
-            interface->getMethods(), [&](const Method& method)
-            { return !method.isAbstract() && method.getName() == methodName && method.getType() == methodType; });
-        if (method == interface->getMethods().end())
+        if (const Method* method =
+                interface->getMethod(methodName, methodType, std::not_fn(std::mem_fn(&Method::isAbstract))))
         {
-            continue;
+            return method;
         }
-        return {interface, method};
     }
 
     llvm_unreachable("method not found");
 }
 
-std::pair<const jllvm::ClassObject*, const jllvm::Method*>
+const jllvm::Method*
     LazyClassLoaderHelper::specialMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
                                                    llvm::StringRef methodType, ClassLoader& classLoader,
                                                    const ClassObject* currentClass, const ClassFile* currentClassFile)
 {
     // The named method is resolved (§5.4.3.3, §5.4.3.4).
-    auto [resolvedClass, resolvedMethod] =
-        classObject->isInterface() ? interfaceMethodResolution(classObject, methodName, methodType, classLoader) :
-                                     methodResolution(classObject, methodName, methodType);
+    const Method* resolvedMethod = classObject->isInterface() ?
+                                       interfaceMethodResolution(classObject, methodName, methodType, classLoader) :
+                                       methodResolution(classObject, methodName, methodType);
+    const ClassObject* resolvedClass = resolvedMethod->getClassObject();
 
     // If all of the following are true, let C be the direct superclass of the current class:
     //
@@ -912,7 +883,7 @@ std::pair<const jllvm::ClassObject*, const jllvm::Method*>
     if (!currentClassFile->hasSuperFlag() || resolvedMethod->isObjectConstructor() || !resolvedClass->isClass()
         || !llvm::is_contained(currentClass->getSuperClasses(/*includeThis=*/false), resolvedClass))
     {
-        return {resolvedClass, resolvedMethod};
+        return resolvedMethod;
     }
 
     // What follows in the spec is essentially an interface or method resolution but with 'resolvedClass' as the new
@@ -938,7 +909,7 @@ llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llv
                 buildClassInitializerInitStub(builder, *classObject);
             }
 
-            auto [clazz, method] = classObject->isInterface() ?
+            const Method* method = classObject->isInterface() ?
                                        interfaceMethodResolution(classObject, methodName, methodType, classLoader) :
                                        methodResolution(classObject, methodName, methodType);
 
@@ -946,10 +917,8 @@ llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llv
             llvm::FunctionType* functionType = descriptorToType(desc, /*isStatic=*/true, builder.getContext());
 
             llvm::Module* module = builder.GetInsertBlock()->getModule();
-            llvm::CallInst* call = builder.CreateCall(
-                module->getOrInsertFunction(mangleMethod(clazz->getClassName(), method->getName(), method->getType()),
-                                            functionType),
-                args);
+            llvm::CallInst* call =
+                builder.CreateCall(module->getOrInsertFunction(mangleMethod(method), functionType), args);
             call->setAttributes(getABIAttributes(builder.getContext(), parseMethodType(methodType), /*isStatic=*/true));
 
             return call;
@@ -973,19 +942,18 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
          &classLoader = m_classLoader, currentClass = m_currentClass, currentClassFile = m_currentClassFile](
             llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
         {
-            std::pair<const ClassObject*, const Method*> resolutionResult;
+            const Method* resolvedMethod;
             switch (resolution)
             {
-                case Virtual: resolutionResult = methodResolution(classObject, methodName, methodType); break;
+                case Virtual: resolvedMethod = methodResolution(classObject, methodName, methodType); break;
                 case Interface:
-                    resolutionResult = interfaceMethodResolution(classObject, methodName, methodType, classLoader);
+                    resolvedMethod = interfaceMethodResolution(classObject, methodName, methodType, classLoader);
                     break;
                 case Special:
-                    resolutionResult = specialMethodResolution(classObject, methodName, methodType, classLoader,
-                                                               currentClass, currentClassFile);
+                    resolvedMethod = specialMethodResolution(classObject, methodName, methodType, classLoader,
+                                                             currentClass, currentClassFile);
                     break;
             }
-            auto [resolvedClass, resolvedMethod] = resolutionResult;
 
             MethodType desc = parseMethodType(methodType);
             llvm::FunctionType* functionType = descriptorToType(desc, false, builder.getContext());
@@ -995,17 +963,14 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             if (resolution == Special || !resolvedMethod->getTableSlot())
             {
                 llvm::Module* module = builder.GetInsertBlock()->getModule();
-                llvm::CallInst* call = builder.CreateCall(
-                    module->getOrInsertFunction(mangleMethod(resolvedClass->getClassName(), resolvedMethod->getName(),
-                                                             resolvedMethod->getType()),
-                                                functionType),
-                    args);
+                llvm::CallInst* call =
+                    builder.CreateCall(module->getOrInsertFunction(mangleMethod(resolvedMethod), functionType), args);
                 call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
 
                 return call;
             }
 
-            if (!resolvedClass->isInterface())
+            if (!resolvedMethod->getClassObject()->isInterface())
             {
                 llvm::Value* methodOffset = builder.getInt32(sizeof(VTableSlot) * *resolvedMethod->getTableSlot());
                 llvm::Value* thisClassObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
@@ -1022,7 +987,7 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
 
             std::size_t sizeTBits = std::numeric_limits<std::size_t>::digits;
             llvm::Value* slot = builder.getIntN(sizeTBits, *resolvedMethod->getTableSlot());
-            llvm::Value* id = builder.getIntN(sizeTBits, resolvedClass->getInterfaceId());
+            llvm::Value* id = builder.getIntN(sizeTBits, resolvedMethod->getClassObject()->getInterfaceId());
 
             llvm::Value* thisClassObject = builder.CreateLoad(referenceType(builder.getContext()), args.front());
             llvm::Value* iTablesPtr = builder.CreateGEP(builder.getInt8Ty(), thisClassObject,
@@ -1069,12 +1034,7 @@ llvm::Value* LazyClassLoaderHelper::getInstanceFieldOffset(llvm::IRBuilder<>& bu
     return returnConstantForClassObject(
         builder, "L" + className + ";", fieldName + ";" + fieldType,
         [=](const ClassObject* classObject)
-        {
-            return classObject
-                ->getField(fieldName, fieldType,
-                           /*isStatic=*/false)
-                ->getOffset();
-        },
+        { return classObject->getInstanceField(fieldName, fieldType)->getOffset(); },
         /*mustInitializeClassObject=*/false);
 }
 
@@ -1084,7 +1044,7 @@ llvm::Value* LazyClassLoaderHelper::getStaticFieldAddress(llvm::IRBuilder<>& bui
     return returnConstantForClassObject(
         builder, "L" + className + ";", fieldName + ";" + fieldType,
         [=](const ClassObject* classObject)
-        { return classObject->getField(fieldName, fieldType, /*isStatic=*/true)->getAddressOfStatic(); },
+        { return classObject->getStaticField(fieldName, fieldType)->getAddressOfStatic(); },
         /*mustInitializeClassObject=*/true);
 }
 
