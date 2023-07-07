@@ -1,3 +1,7 @@
+<p align="center">
+  <img height="250" src="logo.png" alt="JLLVM logo">
+</p>
+
 # JLLVM
 
 This repository contains a best-effort implementation of a JVM as part of the course work for the course 
