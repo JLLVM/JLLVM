@@ -231,6 +231,12 @@ public:
         return reinterpret_cast<const void*>(m_primitiveStorage);
     }
 
+    /// Non const variant of the above.
+    void* getAddressOfStatic()
+    {
+        return const_cast<void*>(const_cast<const Field*>(this)->getAddressOfStatic());
+    }
+
     bool operator==(const Field& field) const
     {
         return m_name == field.m_name && m_type == field.m_type;
@@ -239,6 +245,98 @@ public:
     bool operator==(const std::pair<llvm::StringRef, llvm::StringRef>& nameAndDesc) const
     {
         return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
+    }
+};
+
+/// Wrapper around a 'Field*' allowing safer access to a field within an object.
+/// 'T' is the corresponding C++ type of the field.
+/// Like 'Field*' it is nullable and can be checked for null via contextual boolean conversion.
+template <JavaCompatible T>
+class InstanceFieldRef
+{
+    const Field* m_field{};
+
+public:
+    /// Default constructs a null 'InstanceFieldRef'.
+    InstanceFieldRef() = default;
+
+    /// Constructs a 'InstanceFieldRef' from a 'field'.
+    /// 'field' must be an instance field with a type descriptor matching the memory layout of 'T'.
+    explicit InstanceFieldRef(const Field* field) : m_field(field)
+    {
+        assert(!m_field->isStatic());
+        // TODO: assert that the type of the field is equal to 'T' once we have a mapping.
+    }
+
+    /// Allows access to 'Field's methods via '->'.
+    const Field* operator->() const
+    {
+        return m_field;
+    }
+
+    /// Returns true if this is not a null 'InstanceFieldRef'.
+    explicit operator bool() const
+    {
+        return m_field;
+    }
+
+    /// Returns true if this is a null 'InstanceFieldRef'.
+    bool operator!() const
+    {
+        return !m_field;
+    }
+
+    /// Allows access to the field referred to by this 'InstanceFieldRef' within 'object'.
+    T& operator()(ObjectInterface* object) const
+    {
+        assert(m_field);
+        return *reinterpret_cast<T*>(reinterpret_cast<char*>(object) + m_field->getOffset());
+    }
+};
+
+/// Wrapper around a 'Field*' allowing safer access to a static field.
+/// 'T' is the corresponding C++ type of the field.
+/// Like 'Field*' it is nullable and can be checked for null via contextual boolean conversion.
+template <JavaCompatible T>
+class StaticFieldRef
+{
+    Field* m_field{};
+
+public:
+    /// Default constructs a null 'StaticFieldRef'.
+    StaticFieldRef() = default;
+
+    /// Constructs a 'StaticFieldRef' from a 'field'.
+    /// 'field' must be a static field with a type descriptor matching the memory layout of 'T'.
+    explicit StaticFieldRef(Field* field) : m_field(field)
+    {
+        assert(m_field->isStatic());
+        // TODO: assert that the type of the field is equal to 'T' once we have a mapping.
+    }
+
+    /// Allows access to 'Field's methods via '->'.
+    Field* operator->() const
+    {
+        return m_field;
+    }
+
+    /// Returns true if this is not a null 'StaticFieldRef'.
+    explicit operator bool() const
+    {
+        return m_field;
+    }
+
+    /// Returns true if this is a null 'StaticFieldRef'.
+    bool operator!() const
+    {
+        return !m_field;
+    }
+
+    /// Allows access to the static field referred to by this 'StaticFieldRef'.
+    T& operator()() const
+    {
+        assert(m_field);
+        return *reinterpret_cast<T*>(m_field->getAddressOfStatic());
     }
 };
 
@@ -457,6 +555,13 @@ public:
     template <std::predicate<const Field&> P>
     const Field* getField(llvm::StringRef name, llvm::StringRef type, P predicate) const;
 
+    /// Non-const variant of the above.
+    template <std::predicate<const Field&> P>
+    Field* getField(llvm::StringRef name, llvm::StringRef type, P predicate)
+    {
+        return const_cast<Field*>(const_cast<const ClassObject*>(this)->getField(name, type, predicate));
+    }
+
     /// Returns the field with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
@@ -473,12 +578,26 @@ public:
         return getField(fieldName, fieldType, &Field::isStatic);
     }
 
+    /// Non-const and strongly typed variant of the above, retuning a 'StaticFieldRef' instead.
+    template <class T>
+    StaticFieldRef<T> getStaticField(llvm::StringRef fieldName, llvm::StringRef fieldType)
+    {
+        return StaticFieldRef<T>(getField(fieldName, fieldType, &Field::isStatic));
+    }
+
     /// Returns the instance field with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
     const Field* getInstanceField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
     {
         return getField(fieldName, fieldType, std::not_fn(std::mem_fn(&Field::isStatic)));
+    }
+
+    /// Strongly typed variant of the above, retuning a 'InstanceFieldRef' instead.
+    template <class T>
+    InstanceFieldRef<T> getInstanceField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    {
+        return InstanceFieldRef<T>(getInstanceField(fieldName, fieldType));
     }
 
     /// Returns all direct superclasses and superinterfaces of the class object.

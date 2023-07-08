@@ -191,20 +191,20 @@ public:
 
     static void setIn0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getStaticField("in", "Ljava/io/InputStream;")->getAddressOfStatic();
-        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+        StaticFieldRef<Object*> in = classObject->getStaticField<Object*>("in", "Ljava/io/InputStream;");
+        in() = stream;
     }
 
     static void setOut0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getStaticField("out", "Ljava/io/PrintStream;")->getAddressOfStatic();
-        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+        StaticFieldRef<Object*> out = classObject->getStaticField<Object*>("out", "Ljava/io/PrintStream;");
+        out() = stream;
     }
 
     static void setErr0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
     {
-        const void* addr = classObject->getStaticField("err", "Ljava/io/PrintStream;")->getAddressOfStatic();
-        std::memcpy(const_cast<void*>(addr), stream.data(), sizeof(Object*));
+        StaticFieldRef<Object*> err = classObject->getStaticField<Object*>("err", "Ljava/io/PrintStream;");
+        err() = stream;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/System";
@@ -232,7 +232,7 @@ public:
     constexpr static auto methods = std::make_tuple(&RuntimeModel::maxMemory, &RuntimeModel::availableProcessors);
 };
 
-class ThreadModel : public ModelBase<Thread>
+class ThreadModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -242,7 +242,7 @@ public:
         // Noop in our implementation.
     }
 
-    static GCRootRef<Thread> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
+    static GCRootRef<Object> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
     {
         // Once we are multi threaded, this should actually the return the corresponding Java thread
         // this function is being called from. For now we are just returning the one and only thread for the time being.
@@ -251,7 +251,8 @@ public:
 
     void setPriority0(std::int32_t priority)
     {
-        javaThis->priority = priority;
+        auto priorityField = javaThis->getClass()->getInstanceField<std::int32_t>("priority", "I");
+        priorityField(javaThis) = priority;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Thread";

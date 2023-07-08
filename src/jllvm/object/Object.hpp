@@ -237,38 +237,6 @@ enum class ThreadState : std::int32_t
 };
 LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 
-struct Thread : ObjectInterface
-{
-    ObjectHeader header;
-
-    String* name{};
-    std::int32_t priority{};
-    bool daemon{};
-    bool interrupted{};
-    bool stillborn{};
-    std::int64_t eetop{};
-    Object* target{};
-    Object* group{};
-    Object* contextClassLoader{};
-    Object* inheritedAccessControlContext{};
-    Object* threadLocals{};
-    Object* inheritableThreadLocals{};
-    std::int64_t stackSize{};
-    std::int64_t tid{};
-    ThreadState threadStatus{};
-    Object* parkBlocker{};
-    Object* blocker{};
-    Object* blockerLock{};
-    Object* uncaughtExceptionHandler{};
-    std::int64_t threadLocalRandomSeed{};
-    std::int32_t threadLocalRandomProbe{};
-    std::int32_t threadLocalSecondarySeed{};
-
-    explicit Thread(const ClassObject* classObject) : header(classObject) {}
-};
-
-static_assert(std::is_standard_layout_v<Thread>);
-
 struct Reference : ObjectInterface
 {
     ObjectHeader header;
