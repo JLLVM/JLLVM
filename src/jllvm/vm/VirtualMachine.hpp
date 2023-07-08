@@ -52,7 +52,7 @@ class VirtualMachine
     JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
-    GCRootRef<Thread> m_mainThread = static_cast<GCRootRef<Thread>>(m_gc.allocateStatic());
+    GCRootRef<Object> m_mainThread = m_gc.allocateStatic();
     GCRootRef<Object> m_mainThreadGroup = m_gc.allocateStatic();
     std::string m_javaHome;
 
@@ -88,7 +88,7 @@ public:
     }
 
     /// Returns the main thread this VM is started on.
-    GCRootRef<Thread> getMainThread() const
+    GCRootRef<Object> getMainThread() const
     {
         return m_mainThread;
     }
