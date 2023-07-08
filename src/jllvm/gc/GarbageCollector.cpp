@@ -46,7 +46,7 @@ jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
 
 namespace
 {
-class ObjectRepr
+class ObjectRepr : public jllvm::ObjectInterface
 {
     llvm::PointerIntPair<jllvm::ClassObject*, 1, bool> m_classObject;
 

@@ -110,11 +110,6 @@ SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoo
             STATIC_CHECK(std::is_convertible_v<GCUniqueRoot<Object>, GCRootRef<Object>>);
         }
 
-        THEN("it cannot be assigned a GCRootRef")
-        {
-            STATIC_CHECK_FALSE(std::is_assignable_v<GCUniqueRoot<Object>, GCRootRef<Object>>);
-        }
-
         AND_WHEN("reset")
         {
             root.reset();

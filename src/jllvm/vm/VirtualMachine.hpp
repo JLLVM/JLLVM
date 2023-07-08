@@ -23,6 +23,7 @@
 #include <memory>
 #include <random>
 
+#include "InteropHelpers.hpp"
 #include "JIT.hpp"
 #include "StringInterner.hpp"
 
@@ -106,20 +107,21 @@ public:
 
     int executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args);
 
-    template <class... Args>
-    void executeObjectConstructor(GCRootRef<ObjectInterface> object, llvm::StringRef methodDescriptor, Args... args)
+    /// Calls the constructor of 'object' with the types described by 'methodDescriptor' using 'args'.
+    template <JavaConvertible... Args>
+    void executeObjectConstructor(ObjectInterface* object, llvm::StringRef methodDescriptor, Args... args)
     {
         auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getClassName(), "<init>", methodDescriptor));
-        reinterpret_cast<void (*)(ObjectInterface*, Args...)>(addr.getAddress())(object.address(), args...);
+        invokeJava<void>(addr, object, args...);
     }
 
     /// Calls the static method 'methodName' with types 'methodDescriptor' within 'className' using 'args'.
-    template <class Ret = void, class... Args>
+    template <JavaCompatible Ret = void, JavaConvertible... Args>
     Ret executeStaticMethod(llvm::StringRef className, llvm::StringRef methodName, llvm::StringRef methodDescriptor,
                             Args... args)
     {
         auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
-        return reinterpret_cast<Ret (*)(Args...)>(addr.getAddress())(args...);
+        return invokeJava<Ret>(addr, args...);
     }
 };
 
