@@ -17,11 +17,12 @@
 
 void jllvm::io::FileDescriptorModel::close0()
 {
-    if (javaThis->fd == -1)
+    std::uint32_t& fd = state().fdField(javaThis);
+    if (fd == -1)
     {
         return;
     }
-    llvm::sys::fs::file_t native = llvm::sys::fs::convertFDToNativeFile(javaThis->fd);
+    llvm::sys::fs::file_t native = llvm::sys::fs::convertFDToNativeFile(fd);
     (void)llvm::sys::fs::closeFile(native);
-    javaThis->fd = -1;
+    fd = -1;
 }

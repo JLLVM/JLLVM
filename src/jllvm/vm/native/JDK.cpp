@@ -73,8 +73,7 @@ jllvm::Array<jllvm::String*>* jllvm::jdk::SystemPropsRawModel::platformPropertie
     return &array;
 }
 
-std::int32_t jllvm::jdk::SignalModel::findSignal0(jllvm::VirtualMachine&, jllvm::GCRootRef<jllvm::ClassObject>,
-                                                  jllvm::GCRootRef<jllvm::String> sigName)
+std::int32_t jllvm::jdk::SignalModel::findSignal0(GCRootRef<ClassObject>, GCRootRef<String> sigName)
 {
     std::string utf8 = sigName->toUTF8();
     static llvm::DenseMap<llvm::StringRef, std::int32_t> mapping = {

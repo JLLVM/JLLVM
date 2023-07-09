@@ -17,36 +17,29 @@
 
 namespace jllvm::io
 {
-struct FileDescriptor : ObjectInterface
-{
-    ObjectHeader header;
 
-    std::uint32_t fd{};
-    std::uint64_t handle{};
-    Object* parent{};
-    Object* otherParents{};
-    bool closed{};
-};
-
-static_assert(std::is_standard_layout_v<FileDescriptor>);
-
-class FileDescriptorModel : public ModelBase<FileDescriptor>
+class FileDescriptorModel : public ModelBase<FileDescriptorModel>
 {
 public:
     using Base::Base;
 
-    static void initIDs(VirtualMachine&, GCRootRef<ClassObject>)
+    struct State
     {
-        // Noop in our implementation.
+        InstanceFieldRef<std::uint32_t> fdField;
+    };
+
+    static void initIDs(State& state, GCRootRef<ClassObject> classObject)
+    {
+        state.fdField = classObject->getInstanceField<std::uint32_t>("fd", "I");
     }
 
-    static std::uint64_t getHandle(VirtualMachine&, GCRootRef<ClassObject>, std::uint32_t)
+    static std::uint64_t getHandle(GCRootRef<ClassObject>, std::uint32_t)
     {
         // Noop on Unix, would return handle on Windows.
         return -1;
     }
 
-    static bool getAppend(VirtualMachine&, GCRootRef<ClassObject>, std::uint32_t fd)
+    static bool getAppend(GCRootRef<ClassObject>, std::uint32_t fd)
     {
         return isAppendMode(fd);
     }
@@ -58,26 +51,28 @@ public:
                                                     &FileDescriptorModel::getAppend, &FileDescriptorModel::close0);
 };
 
-struct FileOutputStream : ObjectInterface
-{
-    ObjectHeader header;
-
-    FileDescriptor* descriptor{};
-};
-
-class FileOutputStreamModel : public ModelBase<FileOutputStream>
+class FileOutputStreamModel : public ModelBase<FileOutputStreamModel>
 {
 public:
+    struct State
+    {
+        InstanceFieldRef<Object*> descriptor;
+        InstanceFieldRef<std::uint32_t> fdField;
+    };
+
     using Base::Base;
 
-    static void initIDs(VirtualMachine&, GCRootRef<ClassObject>)
+    static void initIDs(State& state, VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject)
     {
-        // Noop in our implementation.
+        state.descriptor = classObject->getInstanceField<Object*>("fd", "Ljava/io/FileDescriptor;");
+        state.fdField = virtualMachine.getClassLoader()
+                            .forName("Ljava/io/FileDescriptor;")
+                            .getInstanceField<std::uint32_t>("fd", "I");
     }
 
     void writeBytes(GCRootRef<Array<std::uint8_t>> bytes, std::int32_t offset, std::int32_t length, bool append)
     {
-        llvm::raw_fd_ostream stream(javaThis->descriptor->fd, /*shouldClose=*/false);
+        llvm::raw_fd_ostream stream(state().fdField(state().descriptor(javaThis)), /*shouldClose=*/false);
         if (append && stream.supportsSeeking())
         {
             // TODO:

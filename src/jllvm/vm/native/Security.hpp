@@ -19,12 +19,12 @@
 namespace jllvm::security
 {
 
-class AccessControllerModel : public ModelBase<>
+class AccessControllerModel : public ModelBase<AccessControllerModel>
 {
 public:
     using Base::Base;
 
-    static Object* getStackAccessControlContext(VirtualMachine&, GCRootRef<ClassObject>)
+    static Object* getStackAccessControlContext(GCRootRef<ClassObject>)
     {
         // Null defined in the docs as "privileged code".
         return nullptr;

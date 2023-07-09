@@ -19,7 +19,7 @@
 namespace jllvm::jdk
 {
 
-class ReflectionModel : public ModelBase<>
+class ReflectionModel : public ModelBase<ReflectionModel>
 {
 public:
     using Base::Base;
@@ -30,32 +30,32 @@ public:
     constexpr static auto methods = std::make_tuple(&ReflectionModel::getCallerClass);
 };
 
-class CDSModel : public ModelBase<>
+class CDSModel : public ModelBase<CDSModel>
 {
 public:
     using Base::Base;
 
-    static bool isDumpingClassList0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isDumpingClassList0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static bool isDumpingArchive0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isDumpingArchive0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static bool isSharingEnabled0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isSharingEnabled0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static std::int64_t getRandomSeedForDumping(VirtualMachine&, GCRootRef<ClassObject>)
+    static std::int64_t getRandomSeedForDumping(GCRootRef<ClassObject>)
     {
         return 0;
     }
 
-    static void initializeFromArchive(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<ClassObject>) {}
+    static void initializeFromArchive(GCRootRef<ClassObject>, GCRootRef<ClassObject>) {}
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/CDS";
     constexpr static auto methods =
@@ -63,7 +63,7 @@ public:
                         &CDSModel::getRandomSeedForDumping, &CDSModel::initializeFromArchive);
 };
 
-class UnsafeModel : public ModelBase<>
+class UnsafeModel : public ModelBase<UnsafeModel>
 {
     template <JavaCompatible T>
     bool compareAndSet(Object* object, std::uint64_t offset, T expected, T desired)
@@ -90,7 +90,7 @@ class UnsafeModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>) {}
+    static void registerNatives(GCRootRef<ClassObject>) {}
 
     std::uint32_t arrayBaseOffset0(GCRootRef<ClassObject> arrayClass)
     {
@@ -226,12 +226,12 @@ public:
         &UnsafeModel::putIntVolatile, &UnsafeModel::putReferenceVolatile);
 };
 
-class VMModel : public ModelBase<>
+class VMModel : public ModelBase<VMModel>
 {
 public:
     using Base::Base;
 
-    static void initialize(VirtualMachine&, GCRootRef<ClassObject>)
+    static void initialize(GCRootRef<ClassObject>)
     {
         // Noop in our implementation.
     }
@@ -240,7 +240,7 @@ public:
     constexpr static auto methods = std::make_tuple(&VMModel::initialize);
 };
 
-class SystemPropsRawModel : public ModelBase<>
+class SystemPropsRawModel : public ModelBase<SystemPropsRawModel>
 {
     // See
     // https://github.com/openjdk/jdk/blob/7d4b77ad9ee803d89eab5632f5c65ac843a68b3c/src/java.base/share/classes/jdk/internal/util/SystemProps.java#L217
@@ -312,12 +312,12 @@ public:
         std::make_tuple(&SystemPropsRawModel::platformProperties, &SystemPropsRawModel::vmProperties);
 };
 
-class ScopedMemoryAccessModel : public ModelBase<>
+class ScopedMemoryAccessModel : public ModelBase<ScopedMemoryAccessModel>
 {
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    static void registerNatives(GCRootRef<ClassObject>)
     {
         // Noop in our implementation.
     }
@@ -326,14 +326,14 @@ public:
     constexpr static auto methods = std::make_tuple(&ScopedMemoryAccessModel::registerNatives);
 };
 
-class SignalModel : public ModelBase<>
+class SignalModel : public ModelBase<SignalModel>
 {
 public:
     using Base::Base;
 
-    static std::int32_t findSignal0(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<String> sigName);
+    static std::int32_t findSignal0(GCRootRef<ClassObject>, GCRootRef<String> sigName);
 
-    static std::int64_t handle0(VirtualMachine&, GCRootRef<ClassObject>, std::int32_t, std::int64_t)
+    static std::int64_t handle0(GCRootRef<ClassObject>, std::int32_t, std::int64_t)
     {
         // TODO:
         return 0;
