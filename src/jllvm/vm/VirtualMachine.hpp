@@ -131,12 +131,12 @@ public:
     /// Default constructs a 'Model::State' instance within the VM and returns it.
     /// The lifetime of this object is equal to the lifetime of the VM.
     template <class Model>
-    Model::State& allocModelState()
+    typename Model::State& allocModelState()
     {
-        auto* ptr = new Model::State;
+        auto* ptr = new typename Model::State;
         // Type erased deleter.
         m_modelState.emplace_back(
-            ptr, +[](void* ptr) { delete reinterpret_cast<Model::State*>(ptr); });
+            ptr, +[](void* ptr) { delete reinterpret_cast<typename Model::State*>(ptr); });
         return *ptr;
     }
 };
