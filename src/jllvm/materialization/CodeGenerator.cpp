@@ -88,7 +88,7 @@ llvm::FunctionCallee forNameLoadedFunction(llvm::Module* module)
     return function;
 }
 
-llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType type, llvm::Value* value)
+llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm::Value* value)
 {
     return match(
         type,
@@ -105,7 +105,6 @@ llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType type
                 case BaseType::Char:
                 {
                     return builder.CreateZExt(value, builder.getInt32Ty());
-                    break;
                 }
                 default: return value;
             }
@@ -137,7 +136,7 @@ void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<l
 
 struct ArrayInfo
 {
-    llvm::StringRef descriptor;
+    std::string_view descriptor;
     llvm::Type* type{};
     std::size_t size{};
     std::size_t elementOffset{};
@@ -399,7 +398,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* count = m_operandStack.pop_back();
 
             llvm::Value* classObject = m_helper.getClassObject(
-                m_builder, "[L" + index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text + ";");
+                m_builder, ArrayType(ObjectType(index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text)));
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -812,7 +811,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             const auto* refInfo = PoolIndex<FieldRefInfo>{getField.index}.resolve(m_classFile);
             const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(m_classFile);
-            FieldType descriptor = parseFieldType(nameAndTypeInfo->descriptorIndex.resolve(m_classFile)->text);
+            FieldType descriptor(nameAndTypeInfo->descriptorIndex.resolve(m_classFile)->text);
             llvm::Type* type = descriptorToType(descriptor, m_builder.getContext());
 
             llvm::Value* objectRef = m_operandStack.pop_back();
@@ -820,8 +819,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef fieldType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
+            FieldType fieldType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
             llvm::Value* fieldOffset = m_helper.getInstanceFieldOffset(m_builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(fieldOffset))
@@ -842,8 +841,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef fieldType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
+            FieldType fieldType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             llvm::Value* fieldPtr = m_helper.getStaticFieldAddress(m_builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
@@ -853,11 +852,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 generateEHDispatch();
             }
 
-            FieldType descriptor = parseFieldType(fieldType);
-            llvm::Type* type = descriptorToType(descriptor, m_builder.getContext());
+            llvm::Type* type = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* field = m_builder.CreateLoad(type, fieldPtr);
 
-            m_operandStack.push_back(extendToStackType(m_builder, descriptor, field));
+            m_operandStack.push_back(extendToStackType(m_builder, fieldType, field));
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
@@ -955,7 +953,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(m_classFile);
 
-            MethodType descriptor = parseMethodType(
+            MethodType descriptor(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             std::vector<llvm::Value*> args(descriptor.size() + 1);
@@ -966,8 +964,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef methodType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
+            MethodType methodType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             llvm::FunctionType* functionType = descriptorToType(descriptor, false, m_builder.getContext());
             prepareArgumentsForCall(m_builder, args, functionType);
@@ -992,7 +990,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(m_classFile);
 
-            MethodType descriptor = parseMethodType(
+            MethodType descriptor(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             std::vector<llvm::Value*> args(descriptor.size());
@@ -1004,8 +1002,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef methodType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
+            MethodType methodType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             llvm::FunctionType* functionType = descriptorToType(descriptor, true, m_builder.getContext());
             prepareArgumentsForCall(m_builder, args, functionType);
@@ -1146,13 +1144,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](MultiANewArray multiANewArray)
         {
-            llvm::StringRef descriptor =
-                PoolIndex<ClassInfo>{multiANewArray.index}.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
+            auto descriptor = get<ArrayType>(FieldType(
+                PoolIndex<ClassInfo>{multiANewArray.index}.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text));
 
-            assert(descriptor.size() - descriptor.drop_while([](char c) { return c == '['; }).size()
-                   == multiANewArray.dimensions);
-
-            llvm::StringRef className = descriptor;
             std::uint8_t dimensions = multiANewArray.dimensions;
             std::uint8_t iterations = dimensions - 1;
 
@@ -1172,14 +1166,17 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                           // TODO: throw NegativeArraySizeException
                           [&] { return m_operandStack.pop_back(); });
 
-            std::generate(arrayClassObjects.begin(), arrayClassObjects.end(),
-                          [&]
-                          {
-                              llvm::Value* classObject = m_helper.getClassObject(m_builder, descriptor);
-                              descriptor = descriptor.drop_front();
+            {
+                FieldType copy = descriptor;
+                std::generate(arrayClassObjects.begin(), arrayClassObjects.end(),
+                              [&]
+                              {
+                                  llvm::Value* classObject = m_helper.getClassObject(m_builder, copy);
+                                  copy = get<ArrayType>(copy).getComponentType();
 
-                              return classObject;
-                          });
+                                  return classObject;
+                              });
+            }
 
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(arrayClassObjects[0]))
@@ -1191,7 +1188,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::BasicBlock* done = llvm::BasicBlock::Create(m_builder.getContext(), "done", m_function);
 
             llvm::Value* size = loopCounts[0];
-            llvm::Value* array = generateAllocArray(className, arrayClassObjects[0], size);
+            llvm::Value* array = generateAllocArray(descriptor, arrayClassObjects[0], size);
             llvm::Value* outerArray = array;
             llvm::BasicBlock* nextEnd = done;
 
@@ -1213,7 +1210,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 llvm::PHINode* phi = m_builder.CreatePHI(m_builder.getInt32Ty(), 2);
                 phi->addIncoming(m_builder.getInt32(0), last);
 
-                llvm::Value* innerArray = generateAllocArray(className.drop_front(), classObject, innerSize);
+                llvm::Value* innerArray =
+                    generateAllocArray(get<ArrayType>(descriptor.getComponentType()), classObject, innerSize);
 
                 llvm::Value* gep = m_builder.CreateGEP(arrayStructType(referenceType(m_builder.getContext())),
                                                        outerArray, {m_builder.getInt32(0), m_builder.getInt32(2), phi});
@@ -1228,7 +1226,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 m_builder.CreateCondBr(cmp, nextEnd, start);
 
                 m_builder.SetInsertPoint(start);
-                className = className.drop_front();
+                descriptor = get<ArrayType>(descriptor.getComponentType());
                 outerArray = innerArray;
                 size = innerSize;
                 nextEnd = end;
@@ -1264,7 +1262,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             // TODO: throw NegativeArraySizeException
             llvm::Value* count = m_operandStack.pop_back();
 
-            llvm::Value* classObject = m_helper.getClassObject(m_builder, "[" + descriptor);
+            llvm::Value* classObject = m_helper.getClassObject(m_builder, ArrayType(descriptor));
             // If the class was already loaded 'callee' is optimized to a constant and no exception may
             // occur.
             if (!llvm::isa<llvm::Constant>(classObject))
@@ -1309,9 +1307,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef fieldType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
-            llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), m_builder.getContext());
+            FieldType fieldType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
+            llvm::Type* llvmFieldType = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* objectRef = m_operandStack.pop_back();
             llvm::Value* fieldOffset = m_helper.getInstanceFieldOffset(m_builder, className, fieldName, fieldType);
@@ -1342,9 +1340,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-            llvm::StringRef fieldType =
-                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text;
-            llvm::Type* llvmFieldType = descriptorToType(parseFieldType(fieldType), m_builder.getContext());
+            FieldType fieldType(
+                refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
+            llvm::Type* llvmFieldType = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* fieldPtr = m_helper.getStaticFieldAddress(m_builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
@@ -1541,16 +1539,16 @@ llvm::Value* CodeGenerator::loadClassObjectFromPool(PoolIndex<ClassInfo> index)
     {
         // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
         // just the name of the class. Hence, these two cases.
-        return m_helper.getClassObject(m_builder, className);
+        return m_helper.getClassObject(m_builder, FieldType(className));
     }
 
-    return m_helper.getClassObject(m_builder, "L" + className + ";");
+    return m_helper.getClassObject(m_builder, ObjectType(className));
 }
 
-llvm::Value* CodeGenerator::generateAllocArray(llvm::StringRef descriptor, llvm::Value* classObject, llvm::Value* size)
+llvm::Value* CodeGenerator::generateAllocArray(ArrayType descriptor, llvm::Value* classObject, llvm::Value* size)
 {
     auto [elementType, elementSize, elementOffset] = match(
-        parseFieldType(descriptor.drop_front()),
+        descriptor.getComponentType(),
         [&](BaseType baseType) -> std::tuple<llvm::Type*, std::size_t, std::size_t>
         {
             auto [_, eType, eSize, eOffset] =

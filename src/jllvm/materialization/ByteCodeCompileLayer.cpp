@@ -30,7 +30,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module = std::make_unique<llvm::Module>(methodName, *context);
 
-    MethodType descriptor = parseMethodType(methodInfo->getDescriptor(*classFile));
+    MethodType descriptor = methodInfo->getDescriptor(*classFile);
 
     auto* function =
         llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),

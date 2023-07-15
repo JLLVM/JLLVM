@@ -27,6 +27,8 @@
 
 #include <swl/variant.hpp>
 
+#include "Descriptors.hpp"
+
 namespace jllvm
 {
 struct ClassFile;
@@ -342,7 +344,7 @@ public:
     llvm::StringRef getName(const ClassFile& classFile) const;
 
     /// Returns the field descriptor of this field, indicating its type.
-    llvm::StringRef getDescriptor(const ClassFile& classFile) const;
+    FieldType getDescriptor(const ClassFile& classFile) const;
 
     /// Returns the attributes of this field.
     const AttributeMap& getAttributes() const
@@ -403,7 +405,7 @@ public:
     llvm::StringRef getName(const ClassFile& classFile) const;
 
     /// Returns the method descriptor of this method, indicating its type.
-    llvm::StringRef getDescriptor(const ClassFile& classFile) const;
+    MethodType getDescriptor(const ClassFile& classFile) const;
 
     /// Returns the attributes of this method.
     const AttributeMap& getAttributes() const

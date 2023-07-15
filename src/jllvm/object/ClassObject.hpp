@@ -48,7 +48,7 @@ enum class Visibility : std::uint8_t
 class Method
 {
     llvm::StringRef m_name;
-    llvm::StringRef m_type;
+    MethodType m_type;
     const ClassObject* m_classObject{};
     std::uint32_t m_tableSlot;
     std::uint8_t m_hasTableSlot : 1;
@@ -59,8 +59,8 @@ class Method
     std::uint8_t m_isAbstract : 1;
 
 public:
-    Method(llvm::StringRef name, llvm::StringRef type, std::optional<std::uint32_t> vTableSlot, bool isStatic,
-           bool isFinal, bool isNative, Visibility visibility, bool isAbstract)
+    Method(llvm::StringRef name, MethodType type, std::optional<std::uint32_t> vTableSlot, bool isStatic, bool isFinal,
+           bool isNative, Visibility visibility, bool isAbstract)
         : m_name(name),
           m_type(type),
           m_tableSlot(vTableSlot.value_or(0)),
@@ -80,7 +80,7 @@ public:
     }
 
     /// Returns the JVM descriptor of the method.
-    llvm::StringRef getType() const
+    MethodType getType() const
     {
         return m_type;
     }
@@ -147,7 +147,7 @@ public:
         return m_name == method.m_name && m_type == method.m_type;
     }
 
-    bool operator==(const std::pair<llvm::StringRef, llvm::StringRef>& nameAndDesc) const
+    bool operator==(const std::pair<llvm::StringRef, MethodType>& nameAndDesc) const
     {
         return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
     }
@@ -162,7 +162,7 @@ inline llvm::hash_code hash_value(const Method& method)
 class Field
 {
     llvm::StringRef m_name;
-    llvm::StringRef m_type;
+    FieldType m_type;
     union
     {
         std::uint16_t m_offset;
@@ -172,24 +172,27 @@ class Field
     bool m_isStatic;
 
 public:
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
+    // Fixed by https://github.com/llvm/llvm-project/commit/2d8e91a5d3597461b5ae2a40d9362abde67b5e1f
+    // TODO: Remove when updating to clang-tidy 16
+
     /// Creates a new non-static field with the given name, type descriptor and its offset within an instance.
-    Field(llvm::StringRef name, llvm::StringRef type, std::uint16_t offset)
+    Field(llvm::StringRef name, FieldType type, std::uint16_t offset)
         : m_name(name), m_type(type), m_offset(offset), m_isStatic(false)
     {
     }
 
     /// Creates a new static field of a reference type with the given name, type descriptor and a pointer to where the
     /// static reference is allocated.
-    Field(llvm::StringRef name, llvm::StringRef type, void** reference)
+    Field(llvm::StringRef name, FieldType type, void** reference)
         : m_name(name), m_type(type), m_reference(reference), m_isStatic(true)
     {
     }
 
     /// Creates a new static field of a non-reference with the given name, type descriptor.
-    Field(llvm::StringRef name, llvm::StringRef type)
-        : m_name(name), m_type(type), m_primitiveStorage{}, m_isStatic(true)
-    {
-    }
+    Field(llvm::StringRef name, FieldType type) : m_name(name), m_type(type), m_primitiveStorage{}, m_isStatic(true) {}
+
+    // NOLINTEND(cppcoreguidelines-pro-type-member-init)
 
     /// Returns the offset of the field within an object.
     /// Calling this method is only valid for non-static fields.
@@ -206,7 +209,7 @@ public:
     }
 
     /// Returns the JVM tpye descriptor of this field.
-    llvm::StringRef getType() const
+    FieldType getType() const
     {
         return m_type;
     }
@@ -224,7 +227,7 @@ public:
     const void* getAddressOfStatic() const
     {
         assert(isStatic());
-        if (jllvm::isReferenceDescriptor(m_type))
+        if (m_type.isReference())
         {
             return m_reference;
         }
@@ -242,7 +245,7 @@ public:
         return m_name == field.m_name && m_type == field.m_type;
     }
 
-    bool operator==(const std::pair<llvm::StringRef, llvm::StringRef>& nameAndDesc) const
+    bool operator==(const std::pair<llvm::StringRef, FieldType>& nameAndDesc) const
     {
         return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
     }
@@ -533,12 +536,12 @@ public:
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no method was found.
     template <std::predicate<const Method&> P>
-    const Method* getMethod(llvm::StringRef name, llvm::StringRef type, P predicate) const;
+    const Method* getMethod(llvm::StringRef name, MethodType type, P predicate) const;
 
     /// Returns the method with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no method was found.
-    const Method* getMethod(llvm::StringRef name, llvm::StringRef type) const
+    const Method* getMethod(llvm::StringRef name, MethodType type) const
     {
         return getMethod(name, type, [](auto) { return true; });
     }
@@ -553,11 +556,11 @@ public:
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
     template <std::predicate<const Field&> P>
-    const Field* getField(llvm::StringRef name, llvm::StringRef type, P predicate) const;
+    const Field* getField(llvm::StringRef name, FieldType type, P predicate) const;
 
     /// Non-const variant of the above.
     template <std::predicate<const Field&> P>
-    Field* getField(llvm::StringRef name, llvm::StringRef type, P predicate)
+    Field* getField(llvm::StringRef name, FieldType type, P predicate)
     {
         return const_cast<Field*>(const_cast<const ClassObject*>(this)->getField(name, type, predicate));
     }
@@ -565,7 +568,7 @@ public:
     /// Returns the field with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
-    const Field* getField(llvm::StringRef name, llvm::StringRef type) const
+    const Field* getField(llvm::StringRef name, FieldType type) const
     {
         return getField(name, type, [](auto) { return true; });
     }
@@ -573,14 +576,14 @@ public:
     /// Returns the static field with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
-    const Field* getStaticField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    const Field* getStaticField(llvm::StringRef fieldName, FieldType fieldType) const
     {
         return getField(fieldName, fieldType, &Field::isStatic);
     }
 
     /// Non-const and strongly typed variant of the above, retuning a 'StaticFieldRef' instead.
     template <class T>
-    StaticFieldRef<T> getStaticField(llvm::StringRef fieldName, llvm::StringRef fieldType)
+    StaticFieldRef<T> getStaticField(llvm::StringRef fieldName, FieldType fieldType)
     {
         return StaticFieldRef<T>(getField(fieldName, fieldType, &Field::isStatic));
     }
@@ -588,14 +591,14 @@ public:
     /// Returns the instance field with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no field was found.
-    const Field* getInstanceField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    const Field* getInstanceField(llvm::StringRef fieldName, FieldType fieldType) const
     {
         return getField(fieldName, fieldType, std::not_fn(std::mem_fn(&Field::isStatic)));
     }
 
     /// Strongly typed variant of the above, retuning a 'InstanceFieldRef' instead.
     template <class T>
-    InstanceFieldRef<T> getInstanceField(llvm::StringRef fieldName, llvm::StringRef fieldType) const
+    InstanceFieldRef<T> getInstanceField(llvm::StringRef fieldName, FieldType fieldType) const
     {
         return InstanceFieldRef<T>(getInstanceField(fieldName, fieldType));
     }
@@ -882,7 +885,7 @@ inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
 }
 
 template <std::predicate<const jllvm::Method&> P>
-const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, llvm::StringRef type, P predicate) const
+const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, MethodType type, P predicate) const
 {
     for (const ClassObject* curr : getSuperClasses())
     {
@@ -897,7 +900,7 @@ const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, llvm::S
 }
 
 template <std::predicate<const jllvm::Field&> F>
-const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef name, llvm::StringRef type, F predicate) const
+const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef name, FieldType type, F predicate) const
 {
     for (const ClassObject* curr : getSuperClasses())
     {

@@ -272,9 +272,9 @@ llvm::StringRef FieldInfo::getName(const ClassFile& classFile) const
     return m_nameIndex.resolve(classFile)->text;
 }
 
-llvm::StringRef FieldInfo::getDescriptor(const jllvm::ClassFile& classFile) const
+FieldType FieldInfo::getDescriptor(const jllvm::ClassFile& classFile) const
 {
-    return m_descriptorIndex.resolve(classFile)->text;
+    return FieldType(m_descriptorIndex.resolve(classFile)->text);
 }
 
 llvm::StringRef MethodInfo::getName(const ClassFile& classFile) const
@@ -282,7 +282,7 @@ llvm::StringRef MethodInfo::getName(const ClassFile& classFile) const
     return m_nameIndex.resolve(classFile)->text;
 }
 
-llvm::StringRef MethodInfo::getDescriptor(const jllvm::ClassFile& classFile) const
+MethodType MethodInfo::getDescriptor(const jllvm::ClassFile& classFile) const
 {
-    return m_descriptorIndex.resolve(classFile)->text;
+    return MethodType(m_descriptorIndex.resolve(classFile)->text);
 }

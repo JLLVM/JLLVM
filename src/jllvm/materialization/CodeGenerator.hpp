@@ -36,7 +36,7 @@ class CodeGenerator
     const ClassFile& m_classFile;
     LazyClassLoaderHelper m_helper;
     StringInterner& m_stringInterner;
-    const MethodType& m_functionMethodType;
+    MethodType m_functionMethodType;
     llvm::IRBuilder<> m_builder;
     llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
@@ -65,11 +65,11 @@ class CodeGenerator
 
     llvm::Value* loadClassObjectFromPool(PoolIndex<ClassInfo> index);
 
-    llvm::Value* generateAllocArray(llvm::StringRef descriptor, llvm::Value* classObject, llvm::Value* size);
+    llvm::Value* generateAllocArray(ArrayType descriptor, llvm::Value* classObject, llvm::Value* size);
 
 public:
     CodeGenerator(llvm::Function* function, const ClassFile& classFile, LazyClassLoaderHelper helper,
-                  StringInterner& stringInterner, const MethodType& methodType, std::uint16_t maxStack,
+                  StringInterner& stringInterner, MethodType methodType, std::uint16_t maxStack,
                   std::uint16_t maxLocals)
         : m_function{function},
           m_classFile{classFile},

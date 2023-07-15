@@ -159,7 +159,7 @@ public:
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
     /// returning a pointer to the function if successful or an error otherwise.
     llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef className, llvm::StringRef methodName,
-                                                    llvm::StringRef methodDescriptor)
+                                                    MethodType methodDescriptor)
     {
         return m_session->lookup({&m_main}, m_interner(mangleMethod(className, methodName, methodDescriptor)));
     }

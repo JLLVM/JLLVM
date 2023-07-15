@@ -58,7 +58,7 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 
     for (const Field& iter : fields)
     {
-        if (iter.isStatic() || !isReferenceDescriptor(iter.getType()))
+        if (iter.isStatic() || !iter.getType().isReference())
         {
             continue;
         }

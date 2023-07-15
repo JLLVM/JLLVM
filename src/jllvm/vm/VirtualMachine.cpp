@@ -182,7 +182,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     m_jit.addImplementationSymbols(
         std::pair{"fmodf", &fmodf},
         std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return m_gc.allocate(size); }},
-        std::pair{"jllvm_for_name_loaded", [&](const char* name) { return m_classLoader.forNameLoaded(name); }},
+        std::pair{"jllvm_for_name_loaded",
+                  [&](const char* name) { return m_classLoader.forNameLoaded(FieldType(name)); }},
         std::pair{"jllvm_instance_of",
                   [](const Object* object, const ClassObject* classObject) -> std::int32_t
                   { return object->instanceOf(classObject); }},

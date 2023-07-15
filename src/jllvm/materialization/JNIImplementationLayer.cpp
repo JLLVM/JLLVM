@@ -45,19 +45,20 @@ std::string escape(llvm::StringRef string)
 
 } // namespace
 
-std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName,
-                                     llvm::StringRef methodDescriptor)
+std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName)
 {
-    std::string result = "Java_" + escape(className) + "_" + escape(methodName);
-    if (methodDescriptor.empty())
-    {
-        return result;
-    }
+    return "Java_" + escape(className) + "_" + escape(methodName);
+}
 
+std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName, MethodType methodType)
+{
+    std::string result = formJNIMethodName(className, methodName);
     result += "__";
-    // Append just the parameters from the method descriptor. This is essentially dropping the return
-    // type and the parentheses.
-    result += methodDescriptor.drop_front(1).take_while([](char c) { return c != ')'; });
+    // Append just the parameters from the method descriptor.
+    for (FieldType parameter : methodType.parameters())
+    {
+        result += parameter.textual();
+    }
     return result;
 }
 
@@ -117,7 +118,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     debugBuilder.createSubroutineType(debugBuilder.getOrCreateTypeArray({})), 1, llvm::DINode::FlagZero,
                     llvm::DISubprogram::SPFlagDefinition);
 
-                MethodType methodType = parseMethodType(methodInfo->getDescriptor(*classFile));
+                MethodType methodType = methodInfo->getDescriptor(*classFile);
                 auto* function = llvm::Function::Create(descriptorToType(methodType, methodInfo->isStatic(), *context),
                                                         llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
                 function->setSubprogram(subprogram);
@@ -175,7 +176,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
                 for (auto&& [index, type] : llvm::enumerate(methodType.parameters()))
                 {
-                    const auto baseType = get_if<BaseType>(&type);
+                    auto baseType = get_if<BaseType>(&type);
                     if (!baseType || !baseType->isIntegerType())
                     {
                         continue;
