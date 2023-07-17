@@ -88,7 +88,7 @@ llvm::FunctionCallee forNameLoadedFunction(llvm::Module* module)
     return function;
 }
 
-llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType& type, llvm::Value* value)
+llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, jllvm::FieldType type, llvm::Value* value)
 {
     return match(
         type,
@@ -428,7 +428,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 operation, [](...) {},
                 [&](IReturn)
                 {
-                    if (m_functionMethodType.returnType == FieldType(BaseType::Boolean))
+                    if (m_functionMethodType.returnType() == BaseType(BaseType::Boolean))
                     {
                         value = m_builder.CreateAnd(value, m_builder.getInt32(1));
                     }
@@ -958,7 +958,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             MethodType descriptor = parseMethodType(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
-            std::vector<llvm::Value*> args(descriptor.parameters.size() + 1);
+            std::vector<llvm::Value*> args(descriptor.size() + 1);
             for (auto& iter : llvm::reverse(args))
             {
                 iter = m_operandStack.pop_back();
@@ -983,9 +983,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             generateEHDispatch();
 
-            if (descriptor.returnType != FieldType(BaseType::Void))
+            if (descriptor.returnType() != BaseType(BaseType::Void))
             {
-                m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType, call));
+                m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType(), call));
             }
         },
         [&](InvokeStatic invoke)
@@ -995,7 +995,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             MethodType descriptor = parseMethodType(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
-            std::vector<llvm::Value*> args(descriptor.parameters.size());
+            std::vector<llvm::Value*> args(descriptor.size());
             for (auto& iter : llvm::reverse(args))
             {
                 iter = m_operandStack.pop_back();
@@ -1013,9 +1013,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* call = m_helper.doStaticCall(m_builder, className, methodName, methodType, args);
             generateEHDispatch();
 
-            if (descriptor.returnType != FieldType(BaseType::Void))
+            if (descriptor.returnType() != BaseType(BaseType::Void))
             {
-                m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType, call));
+                m_operandStack.push_back(extendToStackType(m_builder, descriptor.returnType(), call));
             }
         },
         [&](OneOf<IOr, LOr>)

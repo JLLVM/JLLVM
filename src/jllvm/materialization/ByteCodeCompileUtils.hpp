@@ -38,10 +38,10 @@ llvm::Type* objectHeaderType(llvm::LLVMContext& context);
 llvm::PointerType* referenceType(llvm::LLVMContext& context);
 
 /// Returns the corresponding LLVM type for a given Java field descriptor.
-llvm::Type* descriptorToType(const FieldType& type, llvm::LLVMContext& context);
+llvm::Type* descriptorToType(FieldType type, llvm::LLVMContext& context);
 
 /// Returns the corresponding LLVM function type for a given, possible static, Java method descriptor.
-llvm::FunctionType* descriptorToType(const MethodType& type, bool isStatic, llvm::LLVMContext& context);
+llvm::FunctionType* descriptorToType(MethodType type, bool isStatic, llvm::LLVMContext& context);
 
 /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
 struct JavaMethodMetadata
