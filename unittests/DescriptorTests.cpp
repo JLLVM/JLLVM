@@ -81,7 +81,7 @@ TEST_CASE("FieldType variant methods", "[desc][field]")
     {
         return [value](auto other)
         {
-            if constexpr (std::is_same_v<decltype(value), decltype(other)>)
+            if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::decay_t<decltype(other)>>)
             {
                 return value == other;
             }
