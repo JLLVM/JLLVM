@@ -36,7 +36,9 @@ TEST_CASE("BaseType", "[desc][field]")
     REQUIRE(FieldType::verify(character));
 
     // Test with both parsed and assigned from form.
-    FieldType fieldType = GENERATE_COPY(FieldType(character), BaseType(enumVal));
+    auto first = FieldType(character);
+    auto second = BaseType(enumVal);
+    FieldType fieldType = GENERATE_COPY(first, second);
 
     CHECK(fieldType.textual() == character);
     CHECK(!fieldType.isReference());

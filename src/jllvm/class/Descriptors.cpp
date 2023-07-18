@@ -12,3 +12,29 @@
 // see <http://www.gnu.org/licenses/>.
 
 #include "Descriptors.hpp"
+
+std::string jllvm::FieldType::textual() const
+{
+    std::string result(m_arrayCount, '[');
+    if (m_name)
+    {
+        result += 'L';
+        result.append(m_name, m_size);
+        result += ';';
+        return result;
+    }
+
+    switch (m_baseTypeValue)
+    {
+        case BaseType::Byte: return result + 'B';
+        case BaseType::Char: return result + 'C';
+        case BaseType::Double: return result + 'D';
+        case BaseType::Float: return result + 'F';
+        case BaseType::Int: return result + 'I';
+        case BaseType::Long: return result + 'J';
+        case BaseType::Short: return result + 'S';
+        case BaseType::Void: return result + 'V';
+        case BaseType::Boolean: return result + 'Z';
+        default: llvm_unreachable("Invalid value");
+    }
+}
