@@ -351,12 +351,12 @@ public:
 
     param_iterator param_begin() const
     {
-        return param_iterator(std::string_view{m_text + 1, m_text + m_textSize});
+        return param_iterator(std::string_view(m_text + 1, m_textSize - 1));
     }
 
     param_iterator param_end() const
     {
-        return param_iterator(std::string_view{m_text + m_retBegin - 1, m_text + m_textSize});
+        return param_iterator(std::string_view(m_text + m_retBegin - 1, m_textSize - m_retBegin + 1));
     }
 
     /// Returns the number of parameters this 'MethodType' has.
@@ -368,7 +368,7 @@ public:
     /// Returns the return type of this 'MethodType'.
     constexpr FieldType returnType() const
     {
-        return FieldType(std::string_view{m_text + m_retBegin, m_text + m_textSize});
+        return FieldType(std::string_view(m_text + m_retBegin, m_textSize - m_retBegin));
     }
 
     /// Returns the string representation of the 'MethodType'.
