@@ -65,6 +65,16 @@ public:
     {
     }
 
+    /// Assignment operator required to make assignment from another 'GCRootRef' not ambiguous.
+    /// This does not copy the root, but rather assigns the object within 'rhs' to this root.
+    /// Rational for this is that null 'GCRootRef's do not exist (and 'GCRootRef' does not have a default constructor),
+    /// making a rootless 'GCRootRef' basically not a thing.
+    template <std::derived_from<T> U>
+    GCRootRef& operator=(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>)
+    {
+        return *this = rhs.address();
+    }
+
     /// Explicit cast to a 'GCRootRef' of another type. This allows both up and down casting and does not perform any
     /// validity checks. It is therefore up to the user to make sure the cast is valid.
     template <class U>
@@ -75,7 +85,7 @@ public:
 
     /// Explicit cast to 'T*'. This operation should generally be avoided in favour of just using the 'GCRootRef' as
     /// intended.
-    explicit operator T*() const
+    /*implicit*/ operator T*() const
     {
         return get();
     }
@@ -92,12 +102,6 @@ public:
     friend bool operator==(GCRootRef<T> lhs, GCRootRef<U> rhs)
     {
         return lhs.get() == static_cast<U*>(rhs);
-    }
-
-    /// Returns true if 'lhs' and 'rhs' refer to the same object.
-    friend bool operator==(GCRootRef<T> lhs, const T* object)
-    {
-        return lhs.get() == object;
     }
 
     /// Returns true if this root contains a reference to an object instead of null.

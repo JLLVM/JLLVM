@@ -194,7 +194,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       assert(!classObject->isInitialized());
                       initialize(*classObject);
                   }},
-        std::pair{"jllvm_build_class_cast_exception", [&](Object* object, ClassObject* classObject)
+        std::pair{"jllvm_build_class_cast_exception",
+                  [&](Object* object, ClassObject* classObject) -> Object*
                   {
                       llvm::StringRef className = object->getClass()->getClassName();
                       llvm::StringRef prefix;
@@ -213,7 +214,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       GCUniqueRoot root =
                           m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/ClassCastException;")));
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
-                      return static_cast<Object*>(root);
+                      return root;
                   }},
         std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
         std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }});
@@ -243,7 +244,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     m_mainThread->priority = 1;
     m_mainThread->threadStatus = ThreadState::Runnable;
 
-    executeObjectConstructor(m_mainThread, "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", m_mainThreadGroup.address(),
+    executeObjectConstructor(m_mainThread, "(Ljava/lang/ThreadGroup;Ljava/lang/String;)V", m_mainThreadGroup,
                              m_stringInterner.intern("main"));
 
     initialize(m_classLoader.forName("Ljava/lang/System;"));

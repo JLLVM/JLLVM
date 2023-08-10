@@ -65,28 +65,26 @@ public:
 
 class UnsafeModel : public ModelBase<>
 {
-    template <class T>
-    bool compareAndSet(GCRootRef<Object> object, std::uint64_t offset, T expected, T desired)
+    template <JavaCompatible T>
+    bool compareAndSet(Object* object, std::uint64_t offset, T expected, T desired)
     {
         // TODO: use C++20 std::atomic_ref instead of atomic builtins in the future.
-        return __atomic_compare_exchange_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object.address()) + offset),
-                                           &expected, desired, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return __atomic_compare_exchange_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object) + offset), &expected,
+                                           desired, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
     }
 
-    template <class T>
-    T getVolatile(GCRootRef<Object> object, std::uint64_t offset)
+    template <JavaCompatible T>
+    T getVolatile(Object* object, std::uint64_t offset)
     {
         // TODO: use C++20 std::atomic_ref instead of atomic builtins in the future.
-        return __atomic_load_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object.address()) + offset),
-                               __ATOMIC_SEQ_CST);
+        return __atomic_load_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object) + offset), __ATOMIC_SEQ_CST);
     }
 
-    template <class T>
-    void putVolatile(GCRootRef<Object> object, std::uint64_t offset, T value)
+    template <JavaCompatible T>
+    void putVolatile(Object* object, std::uint64_t offset, T value)
     {
         // TODO: use C++20 std::atomic_ref instead of atomic builtins in the future.
-        __atomic_store_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object.address()) + offset), value,
-                         __ATOMIC_SEQ_CST);
+        __atomic_store_n(reinterpret_cast<T*>(reinterpret_cast<char*>(object) + offset), value, __ATOMIC_SEQ_CST);
     }
 
 public:

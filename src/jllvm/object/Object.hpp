@@ -70,11 +70,27 @@ public:
     }
 };
 
-class Object;
+/// In memory representation for a general Java object.
+class Object : public ObjectInterface
+{
+    ObjectHeader m_header;
+
+public:
+    explicit Object(const ClassObject* classObject) : m_header(classObject) {}
+};
+
+static_assert(std::is_standard_layout_v<Object>);
+
+/// Concept for any type that is compatible with Java objects in their object representation.
+/// This should be used in places when doing interop that require the storage/value to be identical to the corresponding
+/// Java type.
+template <class T>
+concept JavaCompatible =
+    std::is_arithmetic_v<T> || std::is_void_v<T> || std::is_base_of_v<ObjectInterface, std::remove_pointer_t<T>>;
 
 /// In memory representation of Java array with component type 'T'.
 /// 'T' is always either a primitive or a pointer to Java objects.
-template <class T = Object*>
+template <JavaCompatible T = ObjectInterface*>
 class Array : public ObjectInterface
 {
     ObjectHeader m_header;
@@ -157,17 +173,6 @@ public:
 };
 
 static_assert(std::is_standard_layout_v<Array<>>);
-
-/// In memory representation for a general Java object.
-class Object : public ObjectInterface
-{
-    ObjectHeader m_header;
-
-public:
-    explicit Object(const ClassObject* classObject) : m_header(classObject) {}
-};
-
-static_assert(std::is_standard_layout_v<Object>);
 
 /// In memory representation for a Java String.
 class String : public ObjectInterface

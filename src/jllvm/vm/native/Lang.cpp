@@ -87,7 +87,8 @@ void jllvm::lang::SystemModel::arraycopy(jllvm::VirtualMachine&, jllvm::GCRootRe
         return;
     }
 
-    for (Object* object : llvm::ArrayRef<Object*>{srcArr->begin(), srcArr->end()}.slice(srcPos, length))
+    for (ObjectInterface* object :
+         llvm::ArrayRef<ObjectInterface*>{srcArr->begin(), srcArr->end()}.slice(srcPos, length))
     {
         if (object && !object->instanceOf(destComp))
         {
