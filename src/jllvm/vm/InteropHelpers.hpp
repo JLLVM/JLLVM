@@ -42,10 +42,7 @@ using JavaConvertedType = decltype(detail::javaConvertedType(std::declval<T>()))
 
 /// Concept for any type that is known to implicitly convert to a 'JavaCompatible' type.
 template <class T>
-concept JavaConvertible = !std::is_void_v<T> && requires
-{
-    JavaCompatible<JavaConvertedType<T>>;
-};
+concept JavaConvertible = !std::is_void_v<T> && JavaCompatible<JavaConvertedType<T>>;
 
 /// Helper function to call 'fnPtr', which is known to be a Java function, with the given 'args'.
 /// Does implicit conversion of 'args' their 'JavaCompatible' type.
