@@ -272,7 +272,7 @@ void addModel(VirtualMachine& virtualMachine)
         "'Model' must have a 'constexpr static' tuple called 'methods' listing all 'native' methods implemented");
 
     constexpr auto methods = Model::methods;
-    using State = Model::State;
+    using State = typename Model::State;
     auto& state = [&]() -> State&
     {
         if constexpr (std::is_empty_v<State>)
