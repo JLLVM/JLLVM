@@ -19,7 +19,7 @@
 namespace jllvm::jdk
 {
 
-class ReflectionModel : public ModelBase<ReflectionModel>
+class ReflectionModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -30,7 +30,7 @@ public:
     constexpr static auto methods = std::make_tuple(&ReflectionModel::getCallerClass);
 };
 
-class CDSModel : public ModelBase<CDSModel>
+class CDSModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -63,7 +63,7 @@ public:
                         &CDSModel::getRandomSeedForDumping, &CDSModel::initializeFromArchive);
 };
 
-class UnsafeModel : public ModelBase<UnsafeModel>
+class UnsafeModel : public ModelBase<>
 {
     template <JavaCompatible T>
     bool compareAndSet(Object* object, std::uint64_t offset, T expected, T desired)
@@ -226,7 +226,7 @@ public:
         &UnsafeModel::putIntVolatile, &UnsafeModel::putReferenceVolatile);
 };
 
-class VMModel : public ModelBase<VMModel>
+class VMModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -240,7 +240,7 @@ public:
     constexpr static auto methods = std::make_tuple(&VMModel::initialize);
 };
 
-class SystemPropsRawModel : public ModelBase<SystemPropsRawModel>
+class SystemPropsRawModel : public ModelBase<>
 {
     // See
     // https://github.com/openjdk/jdk/blob/7d4b77ad9ee803d89eab5632f5c65ac843a68b3c/src/java.base/share/classes/jdk/internal/util/SystemProps.java#L217
@@ -312,7 +312,7 @@ public:
         std::make_tuple(&SystemPropsRawModel::platformProperties, &SystemPropsRawModel::vmProperties);
 };
 
-class ScopedMemoryAccessModel : public ModelBase<ScopedMemoryAccessModel>
+class ScopedMemoryAccessModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -326,7 +326,7 @@ public:
     constexpr static auto methods = std::make_tuple(&ScopedMemoryAccessModel::registerNatives);
 };
 
-class SignalModel : public ModelBase<SignalModel>
+class SignalModel : public ModelBase<>
 {
 public:
     using Base::Base;

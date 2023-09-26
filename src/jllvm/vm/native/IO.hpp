@@ -18,15 +18,15 @@
 namespace jllvm::io
 {
 
-class FileDescriptorModel : public ModelBase<FileDescriptorModel>
+struct FileDescriptorModelState : ModelState
+{
+    InstanceFieldRef<std::uint32_t> fdField;
+};
+
+class FileDescriptorModel : public ModelBase<FileDescriptorModelState>
 {
 public:
     using Base::Base;
-
-    struct State
-    {
-        InstanceFieldRef<std::uint32_t> fdField;
-    };
 
     static void initIDs(State& state, GCRootRef<ClassObject> classObject)
     {
@@ -51,15 +51,15 @@ public:
                                                     &FileDescriptorModel::getAppend, &FileDescriptorModel::close0);
 };
 
-class FileOutputStreamModel : public ModelBase<FileOutputStreamModel>
+struct FileOutputStreamModelState : ModelState
+{
+    InstanceFieldRef<Object*> descriptor;
+    InstanceFieldRef<std::uint32_t> fdField;
+};
+
+class FileOutputStreamModel : public ModelBase<FileOutputStreamModelState>
 {
 public:
-    struct State
-    {
-        InstanceFieldRef<Object*> descriptor;
-        InstanceFieldRef<std::uint32_t> fdField;
-    };
-
     using Base::Base;
 
     static void initIDs(State& state, VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject)
@@ -72,7 +72,7 @@ public:
 
     void writeBytes(GCRootRef<Array<std::uint8_t>> bytes, std::int32_t offset, std::int32_t length, bool append)
     {
-        llvm::raw_fd_ostream stream(state().fdField(state().descriptor(javaThis)), /*shouldClose=*/false);
+        llvm::raw_fd_ostream stream(state.fdField(state.descriptor(javaThis)), /*shouldClose=*/false);
         if (append && stream.supportsSeeking())
         {
             // TODO:

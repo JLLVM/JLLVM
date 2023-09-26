@@ -22,7 +22,7 @@ namespace jllvm::lang
 {
 
 /// Model implementation for the native methods of Javas 'Object' class.
-class ObjectModel : public ModelBase<ObjectModel>
+class ObjectModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -53,7 +53,7 @@ public:
 };
 
 /// Model implementation for the native methods of Javas 'Class' class.
-class ClassModel : public ModelBase<ClassModel, ClassObject>
+class ClassModel : public ModelBase<ModelState, ClassObject>
 {
 public:
     using Base::Base;
@@ -103,7 +103,7 @@ public:
                         &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive);
 };
 
-class FloatModel : public ModelBase<FloatModel>
+class FloatModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -128,7 +128,7 @@ public:
     constexpr static auto methods = std::make_tuple(&floatToRawIntBits, &intBitsToFloat);
 };
 
-class DoubleModel : public ModelBase<DoubleModel>
+class DoubleModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -154,7 +154,7 @@ public:
 };
 
 /// Model implementation for the native methods of Javas 'Thowable' class.
-class ThrowableModel : public ModelBase<ThrowableModel, Throwable>
+class ThrowableModel : public ModelBase<ModelState, Throwable>
 {
 public:
     using Base::Base;
@@ -170,17 +170,17 @@ public:
     constexpr static auto methods = std::make_tuple(&ThrowableModel::fillInStackTrace);
 };
 
-class SystemModel : public ModelBase<SystemModel>
+struct SystemModelState : ModelState
+{
+    StaticFieldRef<Object*> in;
+    StaticFieldRef<Object*> out;
+    StaticFieldRef<Object*> err;
+};
+
+class SystemModel : public ModelBase<SystemModelState>
 {
 public:
     using Base::Base;
-
-    struct State
-    {
-        StaticFieldRef<Object*> in;
-        StaticFieldRef<Object*> out;
-        StaticFieldRef<Object*> err;
-    };
 
     static void arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos, GCRootRef<Object> dest,
                           std::int32_t destPos, std::int32_t length);
@@ -219,7 +219,7 @@ public:
                         &SystemModel::setIn0, &SystemModel::setOut0, &SystemModel::setErr0);
 };
 
-class RuntimeModel : public ModelBase<RuntimeModel>
+class RuntimeModel : public ModelBase<>
 {
 public:
     using Base::Base;
@@ -238,15 +238,15 @@ public:
     constexpr static auto methods = std::make_tuple(&RuntimeModel::maxMemory, &RuntimeModel::availableProcessors);
 };
 
-class ThreadModel : public ModelBase<ThreadModel>
+struct ThreadModelState : ModelState
+{
+    InstanceFieldRef<std::int32_t> priorityField;
+};
+
+class ThreadModel : public ModelBase<ThreadModelState>
 {
 public:
     using Base::Base;
-
-    struct State
-    {
-        InstanceFieldRef<std::int32_t> priorityField;
-    };
 
     static void registerNatives(State& state, GCRootRef<ClassObject> classObject)
     {
@@ -262,7 +262,7 @@ public:
 
     void setPriority0(std::int32_t priority)
     {
-        state().priorityField(javaThis) = priority;
+        state.priorityField(javaThis) = priority;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Thread";
@@ -270,7 +270,7 @@ public:
         std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::setPriority0);
 };
 
-class ReferenceModel : public ModelBase<ReferenceModel, Reference>
+class ReferenceModel : public ModelBase<ModelState, Reference>
 {
 public:
     using Base::Base;
@@ -284,10 +284,9 @@ public:
     constexpr static auto methods = std::make_tuple(&ReferenceModel::refersTo0);
 };
 
-class StringUTF16Model : public ModelBase<StringUTF16Model>
+class StringUTF16Model : public ModelBase<>
 {
 public:
-
     using Base::Base;
 
     static bool isBigEndian(GCRootRef<ClassObject>);

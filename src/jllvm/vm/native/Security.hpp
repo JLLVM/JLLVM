@@ -19,7 +19,7 @@
 namespace jllvm::security
 {
 
-class AccessControllerModel : public ModelBase<AccessControllerModel>
+class AccessControllerModel : public ModelBase<>
 {
 public:
     using Base::Base;
