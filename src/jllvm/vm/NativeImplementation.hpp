@@ -25,18 +25,21 @@
 namespace jllvm
 {
 
-/// Default 'State' type of a 'ModelBase' subclass.
-struct NullState
-{
-};
-
 /// Base class for any Models used as our high level API for implementing native methods of Java.
 /// This high level API builds on top of the JNI and translates the JNIs general and JVM agnostic C interface to
 /// a more high level C++ API specific to our JVM implementation.
 ///
 /// To implement a new implementation of native methods for a Java class, simply create a new model class inheriting
-/// from 'ModelBase', specifying the subclass as template parameter for 'Self' (CRTP).
-/// The optional template parameter describes the type that should be used as object representation for any 'this'
+/// from 'ModelBase'.
+///
+/// 'StateType' refers to a subclass of 'ModelState', of which a per VM singleton will be default constructed
+/// when registering the model and injected into static methods when requested
+/// or can be accessed from non-static methods using the 'state' field.
+//
+/// Use case for this type is the ability to persist state between function calls within a Model. This is commonly
+/// used to create and then use 'InstanceFieldRef' or 'StaticFieldRef's without having to look them up on every call.
+///
+/// The second optional template parameter describes the type that should be used as object representation for any 'this'
 /// object coming from Java. By default it is simply 'Object'.
 ///
 /// The model subclass may then simply implement member functions with the EXACT same name as the 'native' method in
@@ -58,60 +61,42 @@ struct NullState
 /// * 'State&, VirtualMachine&'
 /// * 'State&'
 ///
-/// The 'State' type refers to a type within the 'ModelBase' subclass that can optionally be overwritten.
-/// A per VM singleton of that type will be default constructed when registering the model and injected into static
-/// methods when requested or can be accessed from non-static methods using the 'state()' member function.
-///
-/// Use case for this type is the ability to persist state between function calls within a Model. This is commonly
-/// used to create and then use 'InstanceFieldRef' or 'StaticFieldRef's without having to look them up on every
-/// call.
-///
 /// As a final step, 'ModelBase' subclasses must add the following 'constexpr static' fields:
 /// * 'llvm::StringLiteral className' which should contain the fully qualified name (i.e. with slashes) of the class
 ///    being modelled
 /// *  'auto methods = std::make_tuple(&ModelClass::aNativeMethod, ...)' which is a tuple that should list ALL
 ///    implementations of 'native' methods that should be registered in the VM.
-template <class Self, class JavaObject = Object>
+template <class StateType = ModelState, class JavaObject = Object>
 class ModelBase
 {
+    static_assert(std::is_base_of_v<ModelState, StateType>, "State must inherit from ModelState");
+
     static_assert(
         std::is_base_of_v<ObjectInterface, JavaObject>,
         "JavaObject must be a valid Java object representation with an object header and inherits from ObjectInterface");
 
-    // Type erased pointer to 'Self::State'.
-    // This is type erased because 'Self' is not yet complete when this class gets instantiated.
-    void* m_state;
-
 protected:
-    using Base = ModelBase<Self, JavaObject>;
+    using Base = ModelBase<StateType, JavaObject>;
 
     /// 'this' object from Java to be used in member functions.
     GCRootRef<JavaObject> javaThis;
     /// Instance of the virtual machine this model is registered in.
     VirtualMachine& virtualMachine;
-
-    /// Returns the state instance of this model.
-    template <class U = Self>
-    auto state()
-    {
-        // Note, this class is templated to instantiate it not on class instantiation, but on the call.
-        // This makes it possible for us to access 'Self::State' within the method body as the class is already
-        // complete at that point in time.
-        return *reinterpret_cast<typename U::State*>(m_state);
-    }
+    /// State instance of this model
+    StateType& state;
 
 public:
     /// Constructor required to be implemented by any subclasses. Simply adding 'using Base::Base' to subclasses will
     /// make them inherit this constructor.
-    ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine, void* state)
-        : javaThis(javaThis), virtualMachine(virtualMachine), m_state(state)
+    ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine, StateType& state)
+        : javaThis(javaThis), virtualMachine(virtualMachine), state(state)
     {
     }
 
     /// Object representation type of Javas 'this'.
     using ThisType = JavaObject;
-    /// Default 'State' type of a models.
-    using State = NullState;
+    /// 'State' type of a model.
+    using State = StateType;
 };
 
 /// Register any models for builtin Java classes in the VM.
@@ -222,12 +207,12 @@ auto createMethodBridge(typename Model::State& state, Ret (Model::*ptr)(Args...)
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
         {
-            return coerceReturnType((Model(javaThis, virtualMachine, reinterpret_cast<void*>(&state)).*ptr)(args...),
+            return coerceReturnType((Model(javaThis, virtualMachine, state).*ptr)(args...),
                                     virtualMachine);
         }
         else
         {
-            return (Model(javaThis, virtualMachine, reinterpret_cast<void*>(&state)).*ptr)(args...);
+            return (Model(javaThis, virtualMachine, state).*ptr)(args...);
         }
     };
 }
@@ -287,17 +272,18 @@ void addModel(VirtualMachine& virtualMachine)
         "'Model' must have a 'constexpr static' tuple called 'methods' listing all 'native' methods implemented");
 
     constexpr auto methods = Model::methods;
-    auto& state = [&]() -> typename Model::State&
+    using State = Model::State;
+    auto& state = [&]() -> State&
     {
-        if constexpr (std::is_empty_v<typename Model::State>)
+        if constexpr (std::is_empty_v<State>)
         {
             // Don't waste a memory allocation for any empty state.
             // Just create a global instead.
-            return detail::emptyInstance<typename Model::State>();
+            return detail::emptyInstance<State>();
         }
         else
         {
-            return virtualMachine.allocModelState<Model>();
+            return virtualMachine.allocModelState<State>();
         }
     }();
 

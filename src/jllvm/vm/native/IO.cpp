@@ -17,7 +17,7 @@
 
 void jllvm::io::FileDescriptorModel::close0()
 {
-    std::uint32_t& fd = state().fdField(javaThis);
+    std::uint32_t& fd = state.fdField(javaThis);
     if (fd == -1)
     {
         return;
