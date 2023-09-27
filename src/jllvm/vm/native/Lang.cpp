@@ -15,9 +15,8 @@
 
 #include <llvm/Support/Endian.h>
 
-void jllvm::lang::SystemModel::arraycopy(jllvm::VirtualMachine&, jllvm::GCRootRef<jllvm::ClassObject>,
-                                         jllvm::GCRootRef<Object> src, std::int32_t srcPos,
-                                         jllvm::GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length)
+void jllvm::lang::SystemModel::arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
+                                         GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length)
 {
     if (!src || !dest)
     {
@@ -99,7 +98,7 @@ void jllvm::lang::SystemModel::arraycopy(jllvm::VirtualMachine&, jllvm::GCRootRe
     }
 }
 
-bool jllvm::lang::StringUTF16Model::isBigEndian(jllvm::VirtualMachine&, jllvm::GCRootRef<jllvm::ClassObject>)
+bool jllvm::lang::StringUTF16Model::isBigEndian(GCRootRef<ClassObject>)
 {
     return llvm::sys::IsBigEndianHost;
 }

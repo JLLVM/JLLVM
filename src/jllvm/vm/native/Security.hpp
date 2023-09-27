@@ -24,7 +24,7 @@ class AccessControllerModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static Object* getStackAccessControlContext(VirtualMachine&, GCRootRef<ClassObject>)
+    static Object* getStackAccessControlContext(GCRootRef<ClassObject>)
     {
         // Null defined in the docs as "privileged code".
         return nullptr;

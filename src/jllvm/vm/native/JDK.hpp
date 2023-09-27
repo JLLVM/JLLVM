@@ -35,27 +35,27 @@ class CDSModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static bool isDumpingClassList0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isDumpingClassList0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static bool isDumpingArchive0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isDumpingArchive0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static bool isSharingEnabled0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool isSharingEnabled0(GCRootRef<ClassObject>)
     {
         return false;
     }
 
-    static std::int64_t getRandomSeedForDumping(VirtualMachine&, GCRootRef<ClassObject>)
+    static std::int64_t getRandomSeedForDumping(GCRootRef<ClassObject>)
     {
         return 0;
     }
 
-    static void initializeFromArchive(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<ClassObject>) {}
+    static void initializeFromArchive(GCRootRef<ClassObject>, GCRootRef<ClassObject>) {}
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/CDS";
     constexpr static auto methods =
@@ -90,7 +90,7 @@ class UnsafeModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>) {}
+    static void registerNatives(GCRootRef<ClassObject>) {}
 
     std::uint32_t arrayBaseOffset0(GCRootRef<ClassObject> arrayClass)
     {
@@ -231,7 +231,7 @@ class VMModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static void initialize(VirtualMachine&, GCRootRef<ClassObject>)
+    static void initialize(GCRootRef<ClassObject>)
     {
         // Noop in our implementation.
     }
@@ -317,7 +317,7 @@ class ScopedMemoryAccessModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    static void registerNatives(GCRootRef<ClassObject>)
     {
         // Noop in our implementation.
     }
@@ -331,9 +331,9 @@ class SignalModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static std::int32_t findSignal0(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<String> sigName);
+    static std::int32_t findSignal0(GCRootRef<ClassObject>, GCRootRef<String> sigName);
 
-    static std::int64_t handle0(VirtualMachine&, GCRootRef<ClassObject>, std::int32_t, std::int64_t)
+    static std::int64_t handle0(GCRootRef<ClassObject>, std::int32_t, std::int64_t)
     {
         // TODO:
         return 0;

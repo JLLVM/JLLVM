@@ -53,12 +53,12 @@ public:
 };
 
 /// Model implementation for the native methods of Javas 'Class' class.
-class ClassModel : public ModelBase<ClassObject>
+class ClassModel : public ModelBase<ModelState, ClassObject>
 {
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    static void registerNatives(GCRootRef<ClassObject>)
     {
         // Noop until (if?) we need some C++ initialization code.
     }
@@ -88,7 +88,7 @@ public:
         return javaThis->isPrimitive();
     }
 
-    static bool desiredAssertionStatus0(VirtualMachine&, GCRootRef<ClassObject>)
+    static bool desiredAssertionStatus0(GCRootRef<ClassObject>)
     {
 #ifndef NDEBUG
         return true;
@@ -108,7 +108,7 @@ class FloatModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static std::uint32_t floatToRawIntBits(VirtualMachine&, GCRootRef<ClassObject>, float value)
+    static std::uint32_t floatToRawIntBits(GCRootRef<ClassObject>, float value)
     {
         // TODO: Use std::bit_cast once supported by our C++20.
         std::uint32_t repr;
@@ -116,7 +116,7 @@ public:
         return repr;
     }
 
-    static float intBitsToFloat(VirtualMachine&, GCRootRef<ClassObject>, std::uint32_t value)
+    static float intBitsToFloat(GCRootRef<ClassObject>, std::uint32_t value)
     {
         // TODO: Use std::bit_cast once supported by our C++20.
         float repr;
@@ -133,7 +133,7 @@ class DoubleModel : public ModelBase<>
 public:
     using Base::Base;
 
-    static std::uint64_t doubleToRawLongBits(VirtualMachine&, GCRootRef<ClassObject>, double value)
+    static std::uint64_t doubleToRawLongBits(GCRootRef<ClassObject>, double value)
     {
         // TODO: Use std::bit_cast once supported by our C++20.
         std::uint64_t repr;
@@ -141,7 +141,7 @@ public:
         return repr;
     }
 
-    static double longBitsToDouble(VirtualMachine&, GCRootRef<ClassObject>, std::uint64_t value)
+    static double longBitsToDouble(GCRootRef<ClassObject>, std::uint64_t value)
     {
         // TODO: Use std::bit_cast once supported by our C++20.
         double repr;
@@ -154,7 +154,7 @@ public:
 };
 
 /// Model implementation for the native methods of Javas 'Thowable' class.
-class ThrowableModel : public ModelBase<Throwable>
+class ThrowableModel : public ModelBase<ModelState, Throwable>
 {
 public:
     using Base::Base;
@@ -170,41 +170,47 @@ public:
     constexpr static auto methods = std::make_tuple(&ThrowableModel::fillInStackTrace);
 };
 
-class SystemModel : public ModelBase<>
+struct SystemModelState : ModelState
+{
+    StaticFieldRef<Object*> in;
+    StaticFieldRef<Object*> out;
+    StaticFieldRef<Object*> err;
+};
+
+class SystemModel : public ModelBase<SystemModelState>
 {
 public:
     using Base::Base;
 
-    static void arraycopy(VirtualMachine&, GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
-                          GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length);
+    static void arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos, GCRootRef<Object> dest,
+                          std::int32_t destPos, std::int32_t length);
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    static void registerNatives(State& state, GCRootRef<ClassObject> classObject)
     {
-        // Noop in our implementation.
+        state.in = classObject->getStaticField<Object*>("in", "Ljava/io/InputStream;");
+        state.out = classObject->getStaticField<Object*>("out", "Ljava/io/PrintStream;");
+        state.err = classObject->getStaticField<Object*>("err", "Ljava/io/PrintStream;");
     }
 
-    static std::int64_t nanoTime(VirtualMachine&, GCRootRef<ClassObject>)
+    static std::int64_t nanoTime(GCRootRef<ClassObject>)
     {
         auto now = std::chrono::high_resolution_clock::now();
         return std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
     }
 
-    static void setIn0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    static void setIn0(State& state, GCRootRef<ClassObject>, GCRootRef<Object> stream)
     {
-        StaticFieldRef<Object*> in = classObject->getStaticField<Object*>("in", "Ljava/io/InputStream;");
-        in() = stream;
+        state.in() = stream;
     }
 
-    static void setOut0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    static void setOut0(State& state, GCRootRef<ClassObject>, GCRootRef<Object> stream)
     {
-        StaticFieldRef<Object*> out = classObject->getStaticField<Object*>("out", "Ljava/io/PrintStream;");
-        out() = stream;
+        state.out() = stream;
     }
 
-    static void setErr0(VirtualMachine&, GCRootRef<ClassObject> classObject, GCRootRef<Object> stream)
+    static void setErr0(State& state, GCRootRef<ClassObject>, GCRootRef<Object> stream)
     {
-        StaticFieldRef<Object*> err = classObject->getStaticField<Object*>("err", "Ljava/io/PrintStream;");
-        err() = stream;
+        state.err() = stream;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/System";
@@ -223,7 +229,7 @@ public:
         return vm.getGC().getHeapSize();
     }
 
-    static std::int32_t availableProcessors(VirtualMachine&, GCRootRef<ClassObject>)
+    static std::int32_t availableProcessors(GCRootRef<ClassObject>)
     {
         return 1;
     }
@@ -232,14 +238,19 @@ public:
     constexpr static auto methods = std::make_tuple(&RuntimeModel::maxMemory, &RuntimeModel::availableProcessors);
 };
 
-class ThreadModel : public ModelBase<>
+struct ThreadModelState : ModelState
+{
+    InstanceFieldRef<std::int32_t> priorityField;
+};
+
+class ThreadModel : public ModelBase<ThreadModelState>
 {
 public:
     using Base::Base;
 
-    static void registerNatives(VirtualMachine&, GCRootRef<ClassObject>)
+    static void registerNatives(State& state, GCRootRef<ClassObject> classObject)
     {
-        // Noop in our implementation.
+        state.priorityField = classObject->getInstanceField<std::int32_t>("priority", "I");
     }
 
     static GCRootRef<Object> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
@@ -251,8 +262,7 @@ public:
 
     void setPriority0(std::int32_t priority)
     {
-        auto priorityField = javaThis->getClass()->getInstanceField<std::int32_t>("priority", "I");
-        priorityField(javaThis) = priority;
+        state.priorityField(javaThis) = priority;
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Thread";
@@ -260,7 +270,7 @@ public:
         std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::setPriority0);
 };
 
-class ReferenceModel : public ModelBase<Reference>
+class ReferenceModel : public ModelBase<ModelState, Reference>
 {
 public:
     using Base::Base;
@@ -277,10 +287,9 @@ public:
 class StringUTF16Model : public ModelBase<>
 {
 public:
-
     using Base::Base;
 
-    static bool isBigEndian(VirtualMachine&, GCRootRef<ClassObject>);
+    static bool isBigEndian(GCRootRef<ClassObject>);
 
     constexpr static llvm::StringLiteral className = "java/lang/StringUTF16";
     constexpr static auto methods = std::make_tuple(&StringUTF16Model::isBigEndian);

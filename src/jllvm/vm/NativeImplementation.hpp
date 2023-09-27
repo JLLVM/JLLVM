@@ -30,8 +30,17 @@ namespace jllvm
 /// a more high level C++ API specific to our JVM implementation.
 ///
 /// To implement a new implementation of native methods for a Java class, simply create a new model class inheriting
-/// from 'ModelBase'. The one optional template parameter describes the type that should be used as object
-/// representation for any 'this' object coming from Java. By default it is simply 'Object'.
+/// from 'ModelBase'.
+///
+/// 'StateType' refers to a subclass of 'ModelState', of which a per VM singleton will be default constructed
+/// when registering the model and injected into static methods when requested
+/// or can be accessed from non-static methods using the 'state' field.
+//
+/// Use case for this type is the ability to persist state between function calls within a Model. This is commonly
+/// used to create and then use 'InstanceFieldRef' or 'StaticFieldRef's without having to look them up on every call.
+///
+/// The second optional template parameter describes the type that should be used as object representation for any 'this'
+/// object coming from Java. By default it is simply 'Object'.
 ///
 /// The model subclass may then simply implement member functions with the EXACT same name as the 'native' method in
 /// Java. Function parameters from Java can easily be translated to C++ types: For integer types simply use signed
@@ -43,40 +52,51 @@ namespace jllvm
 /// Non-static method members do NOT need an explicit 'this' pointer parameter. You can use 'javaThis' from within
 /// member functions to get the 'this' reference from Java.
 ///
-/// Static methods must always have 'VirtualMachine&' and 'GCRootRef<ClassObject>' as their first two parameters. The
-/// parameters from the static method from Java follow right afterwards. The 'GCRootRef<ClassObject>' is the class
+/// Static methods generally have 'GCRootRef<ClassObject>' as their first parameter.
+/// The parameters from the static method from Java follow right afterwards. The 'GCRootRef<ClassObject>' is the class
 /// object of the class the static method is defined in.
+/// Optionally, static methods may have additional parameters prior to the class object to inject additional state
+/// required for the implementation. These may be one of:
+/// * 'VirtualMachine&'
+/// * 'State&, VirtualMachine&'
+/// * 'State&'
 ///
 /// As a final step, 'ModelBase' subclasses must add the following 'constexpr static' fields:
 /// * 'llvm::StringLiteral className' which should contain the fully qualified name (i.e. with slashes) of the class
 ///    being modelled
 /// *  'auto methods = std::make_tuple(&ModelClass::aNativeMethod, ...)' which is a tuple that should list ALL
 ///    implementations of 'native' methods that should be registered in the VM.
-template <class JavaObject = Object>
+template <class StateType = ModelState, class JavaObject = Object>
 class ModelBase
 {
+    static_assert(std::is_base_of_v<ModelState, StateType>, "State must inherit from ModelState");
+
     static_assert(
         std::is_base_of_v<ObjectInterface, JavaObject>,
         "JavaObject must be a valid Java object representation with an object header and inherits from ObjectInterface");
 
 protected:
+    using Base = ModelBase<StateType, JavaObject>;
+
     /// 'this' object from Java to be used in member functions.
     GCRootRef<JavaObject> javaThis;
     /// Instance of the virtual machine this model is registered in.
     VirtualMachine& virtualMachine;
-
-    using Base = ModelBase<JavaObject>;
+    /// State instance of this model
+    StateType& state;
 
 public:
     /// Constructor required to be implemented by any subclasses. Simply adding 'using Base::Base' to subclasses will
     /// make them inherit this constructor.
-    ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine)
-        : javaThis(javaThis), virtualMachine(virtualMachine)
+    ModelBase(GCRootRef<JavaObject> javaThis, VirtualMachine& virtualMachine, StateType& state)
+        : javaThis(javaThis), virtualMachine(virtualMachine), state(state)
     {
     }
 
     /// Object representation type of Javas 'this'.
     using ThisType = JavaObject;
+    /// 'State' type of a model.
+    using State = StateType;
 };
 
 /// Register any models for builtin Java classes in the VM.
@@ -104,8 +124,9 @@ auto coerceReturnType(GCRootRef<T> ref, VirtualMachine&)
     return ref;
 }
 
-template <class, class Ret, class... Args>
-auto createMethodBridge(Ret (*ptr)(VirtualMachine&, GCRootRef<ClassObject>, Args...))
+// Static 'VirtualMachine&, Args...' method.
+template <class Model, class Ret, class... Args>
+auto createMethodBridge(typename Model::State&, Ret (*ptr)(VirtualMachine&, GCRootRef<ClassObject>, Args...))
 {
     return [ptr](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
@@ -121,19 +142,77 @@ auto createMethodBridge(Ret (*ptr)(VirtualMachine&, GCRootRef<ClassObject>, Args
     };
 }
 
+// Static 'State&, Args...' method.
 template <class Model, class Ret, class... Args>
-auto createMethodBridge(Ret (Model::*ptr)(Args...))
+auto createMethodBridge(typename Model::State& state,
+                        Ret (*ptr)(typename Model::State&, GCRootRef<ClassObject>, Args...))
 {
-    return [ptr](JNIEnv* env, GCRootRef<typename Model::ThisType> javaThis, Args... args)
+    return [ptr, &state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    {
+        if constexpr (!std::is_void_v<Ret>)
+        {
+            VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+            return coerceReturnType(ptr(state, classObject, args...), virtualMachine);
+        }
+        else
+        {
+            return ptr(state, classObject, args...);
+        }
+    };
+}
+
+// Static 'State&, VirtualMachine&, Args...' method.
+template <class Model, class Ret, class... Args>
+auto createMethodBridge(typename Model::State& state,
+                        Ret (*ptr)(typename Model::State&, VirtualMachine&, GCRootRef<ClassObject>, Args...))
+{
+    return [ptr, &state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
         {
-            return coerceReturnType((Model(javaThis, virtualMachine).*ptr)(args...), virtualMachine);
+            return coerceReturnType(ptr(state, virtualMachine, classObject, args...), virtualMachine);
         }
         else
         {
-            return (Model(javaThis, virtualMachine).*ptr)(args...);
+            return ptr(state, virtualMachine, classObject, args...);
+        }
+    };
+}
+
+// Static 'Args...' method.
+template <class Model, class Ret, class... Args>
+auto createMethodBridge(typename Model::State&, Ret (*ptr)(GCRootRef<ClassObject>, Args...))
+{
+    return [ptr](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    {
+        if constexpr (!std::is_void_v<Ret>)
+        {
+            VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+            return coerceReturnType(ptr(classObject, args...), virtualMachine);
+        }
+        else
+        {
+            return ptr(classObject, args...);
+        }
+    };
+}
+
+// Instance method.
+template <class Model, class Ret, class... Args>
+auto createMethodBridge(typename Model::State& state, Ret (Model::*ptr)(Args...))
+{
+    return [ptr, &state](JNIEnv* env, GCRootRef<typename Model::ThisType> javaThis, Args... args)
+    {
+        VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+        if constexpr (!std::is_void_v<Ret>)
+        {
+            return coerceReturnType((Model(javaThis, virtualMachine, state).*ptr)(args...),
+                                    virtualMachine);
+        }
+        else
+        {
+            return (Model(javaThis, virtualMachine, state).*ptr)(args...);
         }
     };
 }
@@ -163,6 +242,13 @@ constexpr auto functionName()
     return demangledName;
 }
 
+template <class T>
+T& emptyInstance()
+{
+    static T result;
+    return result;
+}
+
 } // namespace detail
 
 /// Registers all methods of a model 'Model' within 'virtualMachine'.
@@ -186,6 +272,20 @@ void addModel(VirtualMachine& virtualMachine)
         "'Model' must have a 'constexpr static' tuple called 'methods' listing all 'native' methods implemented");
 
     constexpr auto methods = Model::methods;
+    using State = typename Model::State;
+    auto& state = [&]() -> State&
+    {
+        if constexpr (std::is_empty_v<State>)
+        {
+            // Don't waste a memory allocation for any empty state.
+            // Just create a global instead.
+            return detail::emptyInstance<State>();
+        }
+        else
+        {
+            return virtualMachine.allocModelState<State>();
+        }
+    }();
 
     [&]<std::size_t... idxs>(std::index_sequence<idxs...>)
     {
@@ -195,7 +295,7 @@ void addModel(VirtualMachine& virtualMachine)
                 constexpr auto fn = std::get<idxs>(methods);
                 constexpr std::string_view methodName = detail::functionName<fn>();
                 virtualMachine.getJIT().addJNISymbol(formJNIMethodName(Model::className, methodName),
-                                                     detail::createMethodBridge<Model>(fn));
+                                                     detail::createMethodBridge<Model>(state, fn));
             }(),
             ...);
     }(std::make_index_sequence<std::tuple_size_v<decltype(methods)>>{});

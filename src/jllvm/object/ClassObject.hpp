@@ -231,7 +231,7 @@ public:
         return reinterpret_cast<const void*>(m_primitiveStorage);
     }
 
-    /// Non const variant of the above.
+    /// Non-const variant of the above.
     void* getAddressOfStatic()
     {
         return const_cast<void*>(const_cast<const Field*>(this)->getAddressOfStatic());

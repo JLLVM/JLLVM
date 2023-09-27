@@ -30,6 +30,22 @@
 namespace jllvm
 {
 
+/// Default 'State' type of a 'ModelBase' subclass.
+struct ModelState
+{
+    ModelState() = default;
+
+    ModelState(const ModelState&) = delete;
+
+    ModelState(ModelState&&) = delete;
+
+    ModelState& operator=(const ModelState&) = delete;
+
+    ModelState& operator=(ModelState&&) = delete;
+
+    virtual ~ModelState() = default;
+};
+
 /// Options used to boot the VM.
 struct BootOptions
 {
@@ -57,6 +73,10 @@ class VirtualMachine
     std::string m_javaHome;
 
     void initialize(ClassObject& classObject);
+
+    // Type erased instances of 'Model::State'.
+    // The deleter casts the 'void*' back to its real type for destruction.
+    std::vector<std::unique_ptr<ModelState>> m_modelState;
 
 public:
     explicit VirtualMachine(BootOptions&& options);
@@ -122,6 +142,14 @@ public:
     {
         auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
         return invokeJava<Ret>(addr, args...);
+    }
+
+    /// Default constructs a 'Model::State' instance within the VM and returns it.
+    /// The lifetime of this object is equal to the lifetime of the VM.
+    template <class State>
+    State& allocModelState()
+    {
+        return static_cast<State&>(*m_modelState.emplace_back(std::make_unique<State>()));
     }
 };
 
