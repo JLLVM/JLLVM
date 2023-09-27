@@ -207,12 +207,12 @@ CheckOptions:
   - key: readability-identifier-naming.MethodIgnoredRegexp
     # Ignoring methods from template specializations which obviously have to match, STL style methods, some LLVM style
     # methods etc.
-    value: 'child_begin|child_end|push_back|pop_back|emplace_back|insert(_.+)?|find(_.+)?|erase(_.+)?|isa(_.+)?|([a-z]+)_cast(_.+)?'
+    value: '.+_begin|.+_end|push_back|pop_back|emplace_back|insert(_.+)?|find(_.+)?|erase(_.+)?|isa(_.+)?|([a-z]+)_cast(_.+)?'
   - key: readability-identifier-naming.FunctionCase
     value: camelBack
   - key: readability-identifier-naming.FunctionIgnoredRegexp
     # Ignoring function overloads where the name obviously has to match.
-    value: 'hash_value|isa(_.+)?|([a-z]+)_cast(_.+)?'
+    value: 'hash_value|isa(_.+)?|([a-z]+)_cast(_.+)?|holds_alternative|get_if'
   - key: readability-identifier-naming.VariableCase
     value: camelBack
   - key: readability-identifier-naming.ValueTemplateParameterCase

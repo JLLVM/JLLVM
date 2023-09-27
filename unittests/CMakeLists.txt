@@ -12,3 +12,7 @@ catch_discover_tests(GCTests)
 add_executable(SupportTests NonOwningFrozenSetTests.cpp)
 target_link_libraries(SupportTests JLLVMSupport Catch2::Catch2WithMain)
 catch_discover_tests(SupportTests)
+
+add_executable(ClassTests DescriptorTests.cpp)
+target_link_libraries(ClassTests JLLVMClassParser Catch2::Catch2WithMain)
+catch_discover_tests(ClassTests)

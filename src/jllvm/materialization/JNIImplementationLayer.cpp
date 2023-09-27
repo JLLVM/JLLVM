@@ -156,7 +156,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                         module->getOrInsertFunction("jllvm_new_local_root", arg->getType(), arg->getType()), arg);
                 }
 
-                llvm::Type* returnType = descriptorToType(methodType.returnType, *context);
+                llvm::Type* returnType = descriptorToType(methodType.returnType(), *context);
                 llvm::SmallVector<llvm::Type*> argTypes;
                 // Env
                 argTypes.push_back(environment->getType());
@@ -164,7 +164,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 argTypes.push_back(referenceType(*context));
 
                 constexpr std::size_t parameterStartOffset = 2;
-                for (auto& iter : methodType.parameters)
+                for (FieldType iter : methodType.parameters())
                 {
                     argTypes.push_back(descriptorToType(iter, *context));
                 }
@@ -173,9 +173,9 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
                 llvm::CallInst* result =
                     builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
-                for (auto&& [index, type] : llvm::enumerate(methodType.parameters))
+                for (auto&& [index, type] : llvm::enumerate(methodType.parameters()))
                 {
-                    const auto* baseType = get_if<BaseType>(&type);
+                    const auto baseType = get_if<BaseType>(&type);
                     if (!baseType || !baseType->isIntegerType())
                     {
                         continue;

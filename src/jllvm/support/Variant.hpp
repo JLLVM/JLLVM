@@ -39,7 +39,10 @@ Overload(Ts...) -> Overload<Ts...>;
 template <typename Variant, typename... Matchers>
 constexpr decltype(auto) match(Variant&& variant, Matchers&&... matchers)
 {
-    assert(!variant.valueless_by_exception());
+    if constexpr (requires { variant.valueless_by_exception(); })
+    {
+        assert(!variant.valueless_by_exception());
+    }
     return visit(detail::Overload{std::forward<Matchers>(matchers)...}, std::forward<Variant>(variant));
 }
 } // namespace jllvm

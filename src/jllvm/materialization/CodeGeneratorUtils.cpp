@@ -27,10 +27,10 @@ namespace
 /// This attribute list can be applied to either a call or a function itself.
 llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodType& methodType, bool isStatic)
 {
-    llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.parameters.size());
-    for (auto&& [param, attrs] : llvm::zip(methodType.parameters, paramAttrs))
+    llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.size());
+    for (auto&& [param, attrs] : llvm::zip(methodType.parameters(), paramAttrs))
     {
-        const auto* baseType = get_if<BaseType>(&param);
+        const auto baseType = get_if<BaseType>(&param);
         if (!baseType || !baseType->isIntegerType())
         {
             continue;
@@ -39,7 +39,8 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodTyp
     }
 
     llvm::AttributeSet retAttrs;
-    if (const auto* baseType = get_if<BaseType>(&methodType.returnType); baseType && baseType->isIntegerType())
+    FieldType returnType = methodType.returnType();
+    if (const auto baseType = get_if<BaseType>(&returnType); baseType && baseType->isIntegerType())
     {
         retAttrs =
             retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
@@ -358,7 +359,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                                                             ->descriptorIndex.resolve(m_classFile)
                                                             ->text);
 
-                for (auto& _ : descriptor.parameters)
+                for (std::size_t i = 0; i < descriptor.size(); i++)
                 {
                     typeStack.pop_back();
                 }
@@ -369,7 +370,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                     typeStack.pop_back();
                 }
 
-                llvm::Type* type = descriptorToType(descriptor.returnType, m_context);
+                llvm::Type* type = descriptorToType(descriptor.returnType(), m_context);
                 if (type->isIntegerTy() && !type->isIntegerTy(64))
                 {
                     type = m_intType;

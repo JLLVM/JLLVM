@@ -49,7 +49,7 @@ llvm::PointerType* jllvm::referenceType(llvm::LLVMContext& context)
     return llvm::PointerType::get(context, 1);
 }
 
-llvm::Type* jllvm::descriptorToType(const FieldType& type, llvm::LLVMContext& context)
+llvm::Type* jllvm::descriptorToType(FieldType type, llvm::LLVMContext& context)
 {
     return jllvm::match(
         type,
@@ -73,15 +73,15 @@ llvm::Type* jllvm::descriptorToType(const FieldType& type, llvm::LLVMContext& co
         [&](ObjectType) -> llvm::Type* { return referenceType(context); });
 }
 
-llvm::FunctionType* jllvm::descriptorToType(const MethodType& type, bool isStatic, llvm::LLVMContext& context)
+llvm::FunctionType* jllvm::descriptorToType(MethodType type, bool isStatic, llvm::LLVMContext& context)
 {
     auto args = llvm::to_vector(
-        llvm::map_range(type.parameters, [&](const auto& elem) { return descriptorToType(elem, context); }));
+        llvm::map_range(type.parameters(), [&](const auto& elem) { return descriptorToType(elem, context); }));
     if (!isStatic)
     {
         args.insert(args.begin(), referenceType(context));
     }
-    return llvm::FunctionType::get(descriptorToType(type.returnType, context), args, false);
+    return llvm::FunctionType::get(descriptorToType(type.returnType(), context), args, false);
 }
 
 void jllvm::applyJavaMethodAttributes(llvm::Function* function, const jllvm::JavaMethodMetadata& metadata)

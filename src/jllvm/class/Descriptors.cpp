@@ -13,53 +13,28 @@
 
 #include "Descriptors.hpp"
 
-#include <llvm/Support/ErrorHandling.h>
-
-#include <cassert>
-
-namespace
+std::string jllvm::FieldType::textual() const
 {
-jllvm::FieldType parseFieldTypeImpl(llvm::StringRef& string)
-{
-    auto first = string.front();
-    string = string.drop_front();
-    switch (first)
+    std::string result(m_arrayCount, '[');
+    if (m_name)
     {
-        case 'B': return jllvm::BaseType::Byte;
-        case 'C': return jllvm::BaseType::Char;
-        case 'D': return jllvm::BaseType::Double;
-        case 'F': return jllvm::BaseType::Float;
-        case 'I': return jllvm::BaseType::Int;
-        case 'J': return jllvm::BaseType::Long;
-        case 'S': return jllvm::BaseType::Short;
-        case 'Z': return jllvm::BaseType::Boolean;
-        case 'V': return jllvm::BaseType::Void;
-        case '[': return jllvm::ArrayType{std::make_unique<jllvm::FieldType>(parseFieldTypeImpl(string))};
-        case 'L':
-        {
-            auto clazz = string.take_while([](char c) { return c != ';'; });
-            string = string.drop_front(clazz.size() + 1);
-            return jllvm::ObjectType{clazz};
-        }
-        default: llvm::report_fatal_error("Invalid descriptor");
+        result += 'L';
+        result.append(m_name, m_size);
+        result += ';';
+        return result;
     }
-}
-} // namespace
 
-jllvm::FieldType jllvm::parseFieldType(llvm::StringRef string)
-{
-    return parseFieldTypeImpl(string);
-}
-
-jllvm::MethodType jllvm::parseMethodType(llvm::StringRef string)
-{
-    assert(string.front() == '(');
-    string = string.drop_front();
-    std::vector<FieldType> parameters;
-    while (string.front() != ')')
+    switch (m_baseTypeValue)
     {
-        parameters.push_back(parseFieldTypeImpl(string));
+        case BaseType::Byte: return result + 'B';
+        case BaseType::Char: return result + 'C';
+        case BaseType::Double: return result + 'D';
+        case BaseType::Float: return result + 'F';
+        case BaseType::Int: return result + 'I';
+        case BaseType::Long: return result + 'J';
+        case BaseType::Short: return result + 'S';
+        case BaseType::Void: return result + 'V';
+        case BaseType::Boolean: return result + 'Z';
+        default: llvm_unreachable("Invalid value");
     }
-    string = string.drop_front();
-    return MethodType{std::move(parameters), parseFieldTypeImpl(string)};
 }
