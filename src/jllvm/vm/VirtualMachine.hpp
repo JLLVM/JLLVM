@@ -33,6 +33,16 @@ namespace jllvm
 /// Default 'State' type of a 'ModelBase' subclass.
 struct ModelState
 {
+    ModelState() = default;
+
+    ModelState(const ModelState&) = delete;
+
+    ModelState(ModelState&&) = delete;
+
+    ModelState& operator=(const ModelState&) = delete;
+
+    ModelState& operator=(ModelState&&) = delete;
+
     virtual ~ModelState() = default;
 };
 
