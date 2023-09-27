@@ -165,23 +165,23 @@ class LazyClassLoaderHelper
     static void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject);
 
     template <class F>
-    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor, llvm::Twine key,
+    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor, llvm::Twine key,
                                               F&& f, bool mustInitializeClassObject);
 
     template <class F>
     llvm::Value* doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                                      llvm::StringRef methodType, bool isStatic, llvm::Twine key,
+                                      MethodType methodType, bool isStatic, llvm::Twine key,
                                       llvm::ArrayRef<llvm::Value*> args, F&& f);
 
-    static const Method* methodResolution(const ClassObject* classObject, llvm::StringRef methodName, llvm::StringRef methodType);
+    static const Method* methodResolution(const ClassObject* classObject, llvm::StringRef methodName,
+                                          MethodType methodType);
 
     static const Method* interfaceMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                                                                  llvm::StringRef methodType,
-                                                                                  ClassLoader& classLoader);
+                                                   MethodType methodType, ClassLoader& classLoader);
 
     static const Method* specialMethodResolution(const ClassObject* referencedClassObject, llvm::StringRef methodName,
-                                llvm::StringRef methodType, ClassLoader& classLoader, const ClassObject* currentClass,
-                                const ClassFile* currentClassFile);
+                                                 MethodType methodType, ClassLoader& classLoader,
+                                                 const ClassObject* currentClass, const ClassFile* currentClassFile);
 
 public:
     LazyClassLoaderHelper(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib, llvm::orc::JITDylib& implDylib,
@@ -207,7 +207,7 @@ public:
     /// Creates a non-virtual call to the static function 'methodName' of the type 'methodType' within
     /// 'className' using 'args'. This is used to implement `invokestatic`.
     llvm::Value* doStaticCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                              llvm::StringRef methodType, llvm::ArrayRef<llvm::Value*> args);
+                              MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
 
     enum MethodResolution
     {
@@ -222,21 +222,20 @@ public:
     /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
     /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.
     llvm::Value* doInstanceCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                                llvm::StringRef methodType, llvm::ArrayRef<llvm::Value*> args,
-                                MethodResolution resolution);
+                                MethodType methodType, llvm::ArrayRef<llvm::Value*> args, MethodResolution resolution);
 
     /// Returns an LLVM integer constant which contains the offset of the 'fieldName' with the type 'fieldType'
     /// within the class 'className'.
     llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                        llvm::StringRef fieldName, llvm::StringRef fieldType);
+                                        llvm::StringRef fieldName, FieldType fieldType);
 
     /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
     /// within the class 'className'.
     llvm::Value* getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef fieldName,
-                                       llvm::StringRef fieldType);
+                                       FieldType fieldType);
 
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
-    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
+    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
                                 bool mustInitializeClassObject = false);
 };
 } // namespace jllvm

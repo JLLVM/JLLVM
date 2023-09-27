@@ -65,17 +65,18 @@ public:
 
     static const ClassObject* getPrimitiveClass(VirtualMachine& vm, GCRootRef<ClassObject>, GCRootRef<String> string)
     {
-        static llvm::DenseMap<llvm::StringRef, char> mapping = {
-            {"boolean", 'Z'}, {"char", 'C'},  {"byte", 'B'}, {"short", 'S'}, {"int", 'I'},
-            {"double", 'D'},  {"float", 'F'}, {"void", 'V'}, {"long", 'J'},
+        static llvm::DenseMap<llvm::StringRef, BaseType> mapping = {
+            {"boolean", BaseType::Boolean}, {"char", BaseType::Char}, {"byte", BaseType::Byte},
+            {"short", BaseType::Short},     {"int", BaseType::Int},   {"double", BaseType::Double},
+            {"float", BaseType::Float},     {"void", BaseType::Void}, {"long", BaseType::Long},
         };
         std::string utf8 = string->toUTF8();
-        char c = mapping.lookup(utf8);
-        if (c == 0)
+        auto result = mapping.find(utf8);
+        if (result == mapping.end())
         {
             return nullptr;
         }
-        return &vm.getClassLoader().forName(llvm::Twine(c));
+        return &vm.getClassLoader().forName(result->second);
     }
 
     bool isArray()

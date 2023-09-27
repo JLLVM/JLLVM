@@ -19,16 +19,16 @@
 
 #include "ByteCodeMaterializationUnit.hpp"
 
-std::string jllvm::mangleMethod(llvm::StringRef className, llvm::StringRef methodName, llvm::StringRef descriptor)
+std::string jllvm::mangleMethod(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor)
 {
-    return (className + "." + methodName + ":" + descriptor).str();
+    return (className + "." + methodName + ":" + descriptor.textual()).str();
 }
 
 std::string jllvm::mangleMethod(const MethodInfo& methodInfo, const ClassFile& classFile)
 {
     llvm::StringRef className = classFile.getThisClass();
     llvm::StringRef methodName = methodInfo.getName(classFile);
-    llvm::StringRef descriptor = methodInfo.getDescriptor(classFile);
+    MethodType descriptor = methodInfo.getDescriptor(classFile);
 
     return mangleMethod(className, methodName, descriptor);
 }

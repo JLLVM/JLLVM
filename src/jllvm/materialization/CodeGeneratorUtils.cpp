@@ -25,12 +25,12 @@ namespace
 /// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' and
 /// 'zeroext' attribute we tell LLVM that if due to ABI, it has to extend these registers, which extension to use.
 /// This attribute list can be applied to either a call or a function itself.
-llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodType& methodType, bool isStatic)
+llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, MethodType methodType, bool isStatic)
 {
     llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.size());
     for (auto&& [param, attrs] : llvm::zip(methodType.parameters(), paramAttrs))
     {
-        const auto baseType = get_if<BaseType>(&param);
+        auto baseType = get_if<BaseType>(&param);
         if (!baseType || !baseType->isIntegerType())
         {
             continue;
@@ -40,7 +40,7 @@ llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, const MethodTyp
 
     llvm::AttributeSet retAttrs;
     FieldType returnType = methodType.returnType();
-    if (const auto baseType = get_if<BaseType>(&returnType); baseType && baseType->isIntegerType())
+    if (auto baseType = get_if<BaseType>(&returnType); baseType && baseType->isIntegerType())
     {
         retAttrs =
             retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
@@ -315,11 +315,11 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                     typeStack.pop_back();
                 }
 
-                FieldType descriptor = parseFieldType(PoolIndex<FieldRefInfo>{get.index}
-                                                          .resolve(m_classFile)
-                                                          ->nameAndTypeIndex.resolve(m_classFile)
-                                                          ->descriptorIndex.resolve(m_classFile)
-                                                          ->text);
+                auto descriptor = FieldType(PoolIndex<FieldRefInfo>{get.index}
+                                                .resolve(m_classFile)
+                                                ->nameAndTypeIndex.resolve(m_classFile)
+                                                ->descriptorIndex.resolve(m_classFile)
+                                                ->text);
 
                 llvm::Type* type = descriptorToType(descriptor, m_context);
                 if (type->isIntegerTy() && !type->isIntegerTy(64))
@@ -353,11 +353,11 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
             // TODO InvokeDynamic
             [&](OneOf<InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual> invoke)
             {
-                MethodType descriptor = parseMethodType(PoolIndex<RefInfo>{invoke.index}
-                                                            .resolve(m_classFile)
-                                                            ->nameAndTypeIndex.resolve(m_classFile)
-                                                            ->descriptorIndex.resolve(m_classFile)
-                                                            ->text);
+                auto descriptor = MethodType(PoolIndex<RefInfo>{invoke.index}
+                                                 .resolve(m_classFile)
+                                                 ->nameAndTypeIndex.resolve(m_classFile)
+                                                 ->descriptorIndex.resolve(m_classFile)
+                                                 ->text);
 
                 for (std::size_t i = 0; i < descriptor.size(); i++)
                 {
@@ -579,9 +579,8 @@ void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& bui
 }
 
 template <class F>
-llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder<>& builder,
-                                                                 llvm::Twine fieldDescriptor, llvm::Twine key, F&& f,
-                                                                 bool mustInitializeClassObject)
+llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
+                                                                 llvm::Twine key, F&& f, bool mustInitializeClassObject)
 {
     auto returnValueToIRConstant = [](llvm::IRBuilder<>& builder, const auto& retVal)
     {
@@ -598,13 +597,13 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
         return returnValueToIRConstant(builder, f(classObject));
     }
 
-    std::string stubSymbol = ("Class load " + fieldDescriptor + key).str();
+    std::string stubSymbol = ("Class load " + fieldDescriptor.textual() + key).str();
     if (!m_stubsManager.findStub(stubSymbol, true))
     {
         llvm::cantFail(m_stubsManager.createStub(
             stubSymbol,
             llvm::cantFail(m_callbackManager.getCompileCallback(
-                [=, *this, fieldDescriptor = fieldDescriptor.str()]
+                [=, *this]
                 {
                     const ClassObject& classObject = m_classLoader.forName(fieldDescriptor);
 
@@ -660,15 +659,14 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
 
 template <class F>
 llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                                         llvm::StringRef methodName, llvm::StringRef methodType,
+                                                         llvm::StringRef methodName, MethodType methodType,
                                                          bool isStatic, llvm::Twine key,
                                                          llvm::ArrayRef<llvm::Value*> args, F&& f)
 {
-    MethodType desc = parseMethodType(methodType);
-    llvm::FunctionType* functionType = descriptorToType(desc, isStatic, builder.getContext());
+    llvm::FunctionType* functionType = descriptorToType(methodType, isStatic, builder.getContext());
 
     std::string method = mangleMethod(className, methodName, methodType);
-    if (const ClassObject* classObject = m_classLoader.forNameLoaded("L" + className + ";"))
+    if (const ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(className)))
     {
         return f(builder, classObject, args);
     }
@@ -683,9 +681,9 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
         llvm::cantFail(m_stubsManager.createStub(
             stubName,
             llvm::cantFail(m_callbackManager.getCompileCallback(
-                [=, *this, desc = std::make_shared<MethodType>(std::move(desc))]
+                [=, *this]
                 {
-                    const ClassObject& classObject = m_classLoader.forName("L" + className + ";");
+                    const ClassObject& classObject = m_classLoader.forName(ObjectType(className));
 
                     auto context = std::make_unique<llvm::LLVMContext>();
                     auto module = std::make_unique<llvm::Module>(stubName, *context);
@@ -693,7 +691,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
                     module->setDataLayout(m_dataLayout);
                     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-                    auto* functionType = descriptorToType(*desc, isStatic, *context);
+                    auto* functionType = descriptorToType(methodType, isStatic, *context);
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, stubName,
                                                             module.get());
@@ -764,12 +762,12 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 
     llvm::Module* module = builder.GetInsertBlock()->getModule();
     auto* call = builder.CreateCall(module->getOrInsertFunction(stubName, functionType), args);
-    call->setAttributes(getABIAttributes(builder.getContext(), parseMethodType(methodType), isStatic));
+    call->setAttributes(getABIAttributes(builder.getContext(), methodType, isStatic));
     return call;
 }
 
 const jllvm::Method* LazyClassLoaderHelper::methodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                                             llvm::StringRef methodType)
+                                                             MethodType methodType)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
 
@@ -820,8 +818,7 @@ const jllvm::Method* LazyClassLoaderHelper::methodResolution(const ClassObject* 
 }
 
 const jllvm::Method* LazyClassLoaderHelper::interfaceMethodResolution(const ClassObject* classObject,
-                                                                      llvm::StringRef methodName,
-                                                                      llvm::StringRef methodType,
+                                                                      llvm::StringRef methodName, MethodType methodType,
                                                                       ClassLoader& classLoader)
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
@@ -837,8 +834,7 @@ const jllvm::Method* LazyClassLoaderHelper::interfaceMethodResolution(const Clas
     // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
     // set, method lookup succeeds.
     {
-        constexpr llvm::StringLiteral className = "java/lang/Object";
-        ClassObject& object = classLoader.forName("L" + className + ";");
+        ClassObject& object = classLoader.forName("Ljava/lang/Object;");
         if (const Method* method =
                 object.getMethod(methodName, methodType,
                                  [](const Method& method)
@@ -864,9 +860,9 @@ const jllvm::Method* LazyClassLoaderHelper::interfaceMethodResolution(const Clas
 }
 
 const jllvm::Method*
-    LazyClassLoaderHelper::specialMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                                   llvm::StringRef methodType, ClassLoader& classLoader,
-                                                   const ClassObject* currentClass, const ClassFile* currentClassFile)
+    LazyClassLoaderHelper::specialMethodResolution(const ClassObject* classObject, llvm::StringRef methodName, MethodType methodType,
+                                                                    ClassLoader& classLoader,
+                                                                    const ClassObject* currentClass, const ClassFile* currentClassFile)
 {
     // The named method is resolved (§5.4.3.3, §5.4.3.4).
     const Method* resolvedMethod = classObject->isInterface() ?
@@ -896,14 +892,12 @@ const jllvm::Method*
 }
 
 llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                                 llvm::StringRef methodName, llvm::StringRef methodType,
+                                                 llvm::StringRef methodName, MethodType methodType,
                                                  llvm::ArrayRef<llvm::Value*> args)
 {
     return doCallForClassObject(
         builder, className, methodName, methodType, /*isStatic=*/true, "Static Call Stub for", args,
-        [className = className.str(), methodName = methodName.str(), methodType = methodType.str(),
-         &classLoader = m_classLoader](llvm::IRBuilder<>& builder, const ClassObject* classObject,
-                                       llvm::ArrayRef<llvm::Value*> args)
+        [=, *this](llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
         {
             if (!classObject->isInitialized())
             {
@@ -911,23 +905,22 @@ llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llv
             }
 
             const Method* method = classObject->isInterface() ?
-                                       interfaceMethodResolution(classObject, methodName, methodType, classLoader) :
+                                       interfaceMethodResolution(classObject, methodName, methodType, m_classLoader) :
                                        methodResolution(classObject, methodName, methodType);
 
-            MethodType desc = parseMethodType(methodType);
-            llvm::FunctionType* functionType = descriptorToType(desc, /*isStatic=*/true, builder.getContext());
+            llvm::FunctionType* functionType = descriptorToType(methodType, /*isStatic=*/true, builder.getContext());
 
             llvm::Module* module = builder.GetInsertBlock()->getModule();
             llvm::CallInst* call =
                 builder.CreateCall(module->getOrInsertFunction(mangleMethod(method), functionType), args);
-            call->setAttributes(getABIAttributes(builder.getContext(), parseMethodType(methodType), /*isStatic=*/true));
+            call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/true));
 
             return call;
         });
 }
 
 llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                                   llvm::StringRef methodName, llvm::StringRef methodType,
+                                                   llvm::StringRef methodName, MethodType methodType,
                                                    llvm::ArrayRef<llvm::Value*> args, MethodResolution resolution)
 {
     llvm::StringRef key;
@@ -939,25 +932,22 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
     }
     return doCallForClassObject(
         builder, className, methodName, methodType, false, key, args,
-        [className = className.str(), methodName = methodName.str(), methodType = methodType.str(), resolution,
-         &classLoader = m_classLoader, currentClass = m_currentClass, currentClassFile = m_currentClassFile](
-            llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
+        [=, *this](llvm::IRBuilder<>& builder, const ClassObject* classObject, llvm::ArrayRef<llvm::Value*> args)
         {
             const Method* resolvedMethod;
             switch (resolution)
             {
                 case Virtual: resolvedMethod = methodResolution(classObject, methodName, methodType); break;
                 case Interface:
-                    resolvedMethod = interfaceMethodResolution(classObject, methodName, methodType, classLoader);
+                    resolvedMethod = interfaceMethodResolution(classObject, methodName, methodType, m_classLoader);
                     break;
                 case Special:
-                    resolvedMethod = specialMethodResolution(classObject, methodName, methodType, classLoader,
-                                                             currentClass, currentClassFile);
+                    resolvedMethod = specialMethodResolution(classObject, methodName, methodType, m_classLoader,
+                                                             m_currentClass, m_currentClassFile);
                     break;
             }
 
-            MethodType desc = parseMethodType(methodType);
-            llvm::FunctionType* functionType = descriptorToType(desc, false, builder.getContext());
+            llvm::FunctionType* functionType = descriptorToType(methodType, false, builder.getContext());
 
             // 'invokespecial' does not do method selection like the others.
             // The spec mentions it as explicitly invoking the resolved method.
@@ -966,7 +956,7 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
                 llvm::Module* module = builder.GetInsertBlock()->getModule();
                 llvm::CallInst* call =
                     builder.CreateCall(module->getOrInsertFunction(mangleMethod(resolvedMethod), functionType), args);
-                call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+                call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
 
                 return call;
             }
@@ -982,7 +972,7 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
                 llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+                call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
                 return call;
             }
 
@@ -1024,32 +1014,32 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
 
             auto* call = builder.CreateCall(functionType, callee, args);
-            call->setAttributes(getABIAttributes(builder.getContext(), desc, /*isStatic=*/false));
+            call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
             return call;
         });
 }
 
 llvm::Value* LazyClassLoaderHelper::getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                                           llvm::StringRef fieldName, llvm::StringRef fieldType)
+                                                           llvm::StringRef fieldName, FieldType fieldType)
 {
     return returnConstantForClassObject(
-        builder, "L" + className + ";", fieldName + ";" + fieldType,
+        builder, ObjectType(className), fieldName + ";" + fieldType.textual(),
         [=](const ClassObject* classObject)
         { return classObject->getInstanceField(fieldName, fieldType)->getOffset(); },
         /*mustInitializeClassObject=*/false);
 }
 
 llvm::Value* LazyClassLoaderHelper::getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                                          llvm::StringRef fieldName, llvm::StringRef fieldType)
+                                                          llvm::StringRef fieldName, FieldType fieldType)
 {
     return returnConstantForClassObject(
-        builder, "L" + className + ";", fieldName + ";" + fieldType,
+        builder, ObjectType(className), fieldName + ";" + fieldType.textual(),
         [=](const ClassObject* classObject)
         { return classObject->getStaticField(fieldName, fieldType)->getAddressOfStatic(); },
         /*mustInitializeClassObject=*/true);
 }
 
-llvm::Value* LazyClassLoaderHelper::getClassObject(llvm::IRBuilder<>& builder, llvm::Twine fieldDescriptor,
+llvm::Value* LazyClassLoaderHelper::getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
                                                    bool mustInitializeClassObject)
 {
     return returnConstantForClassObject(

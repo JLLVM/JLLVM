@@ -20,7 +20,7 @@
 
 namespace jllvm
 {
-std::string mangleMethod(llvm::StringRef className, llvm::StringRef methodName, llvm::StringRef descriptor);
+std::string mangleMethod(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor);
 
 std::string mangleMethod(const Method* method);
 

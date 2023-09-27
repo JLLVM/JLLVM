@@ -218,22 +218,6 @@ public:
     constexpr bool operator==(const ArrayType&) const = default;
 };
 
-/// Parses a field descriptor string to a more convenient object representation.
-/// The lifetime of any strings (basically any contained 'ObjectType's) is equal to the lifetime of the string passed
-/// in.
-/// Note: This function does not allow error handling at this point in time and either exhibits UB or asserts
-/// on invalid strings.
-inline FieldType parseFieldType(llvm::StringRef string)
-{
-    return FieldType(string);
-}
-
-/// Returns true if the string descriptor indicates a reference type.
-inline bool isReferenceDescriptor(llvm::StringRef string)
-{
-    return string.front() == 'L' || string.front() == '[';
-}
-
 /// <MethodType> ::= '(' { <FieldType> } ')' <FieldType>
 class MethodType
 {
@@ -382,13 +366,6 @@ public:
         return m_retBegin == rhs.m_retBegin && m_parameterCount == rhs.m_parameterCount && textual() == rhs.textual();
     }
 };
-
-/// Parses a method descriptor string to a more convenient object representation.
-/// Same notes about lifetimes and error handling apply as in 'parseFieldType'.
-inline MethodType parseMethodType(llvm::StringRef string)
-{
-    return MethodType(string);
-}
 
 /// Visitor implementation for 'FieldType' analogous to 'std::visit'.
 /// Can be used together with 'match'.

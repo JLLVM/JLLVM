@@ -22,8 +22,8 @@ namespace jllvm
 {
 class StringInterner
 {
-    static constexpr auto stringDescriptor = "Ljava/lang/String;";
-    static constexpr auto byteArrayDescriptor = "[B";
+    static constexpr FieldType stringDescriptor = "Ljava/lang/String;";
+    static constexpr FieldType byteArrayDescriptor = "[B";
 
     llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_contentToStringMap;
     llvm::BumpPtrAllocator m_allocator;

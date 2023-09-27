@@ -25,8 +25,9 @@ namespace jllvm
 /// Applies the JNI name mangling to create the corresponding C symbol name for the given 'methodName' inside of
 /// 'className'. If 'methodDescriptor' is non empty, it must be a valid method descriptor whose parameter types are
 /// then also encoded in the symbol name (to allow overloading).
-std::string formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName,
-                              llvm::StringRef methodDescriptor = {});
+std::string formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName, MethodType methodType);
+
+std::string formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName);
 
 /// Layer implementing all JIT functionality related to the Java Native Interface. It is also where any JNI symbols
 /// must be registered to be called at runtime. Its implementation roughly boils down to creating compile stubs for any

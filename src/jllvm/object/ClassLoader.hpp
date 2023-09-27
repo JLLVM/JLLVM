@@ -33,7 +33,7 @@ namespace jllvm
 class ClassLoader
 {
     llvm::BumpPtrAllocator m_classAllocator;
-    llvm::StringMap<ClassObject*> m_mapping;
+    llvm::DenseMap<FieldType, ClassObject*> m_mapping;
 
     llvm::BumpPtrAllocator m_stringAllocator;
     llvm::StringSaver m_stringSaver{m_stringAllocator};
@@ -80,11 +80,11 @@ public:
 
     /// Returns the class object for 'fieldDescriptor', which must be a valid field descriptor, loading it and
     /// transitive dependencies if required. Currently aborts if a class file could not be loaded.
-    ClassObject& forName(llvm::Twine fieldDescriptor);
+    ClassObject& forName(FieldType fieldType);
 
     /// Returns the class object for 'fieldDescriptor', which must be a valid field descriptor,
     /// if it has been loaded previously. Null otherwise.
-    ClassObject* forNameLoaded(llvm::Twine fieldDescriptor);
+    ClassObject* forNameLoaded(FieldType fieldType);
 
     /// Loads java classes required to boot up the VM. This a separate method and not executed as part of the
     /// constructor as it requires the VM to already be ready to execute JVM Bytecode (one that does not depend on the

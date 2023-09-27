@@ -73,7 +73,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     ClassFile& classFile = m_classFiles.emplace_back(ClassFile::parseFromFile({raw.begin(), raw.end()}, m_stringSaver));
 
     llvm::StringRef className = classFile.getThisClass();
-    if (ClassObject* result = forNameLoaded("L" + className + ";"))
+    if (ClassObject* result = forNameLoaded(ObjectType(className)))
     {
         return *result;
     }
@@ -88,13 +88,13 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     ClassObject* superClass = nullptr;
     if (std::optional<llvm::StringRef> superClassName = classFile.getSuperClass())
     {
-        superClass = &forName("L" + *superClassName + ";");
+        superClass = &forName(ObjectType(*superClassName));
     }
 
     llvm::SmallVector<ClassObject*> interfaces;
     for (llvm::StringRef iter : classFile.getInterfaces())
     {
-        interfaces.push_back(&forName("L" + iter + ";"));
+        interfaces.push_back(&forName(ObjectType(iter)));
     }
 
     TableAssignment vTableAssignment = assignTableSlots(classFile, superClass);
@@ -119,8 +119,8 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     {
         if (fieldInfo.isStatic())
         {
-            llvm::StringRef descriptor = fieldInfo.getDescriptor(classFile);
-            if (isReferenceDescriptor(descriptor))
+            FieldType descriptor = fieldInfo.getDescriptor(classFile);
+            if (descriptor.isReference())
             {
                 fields.emplace_back(fieldInfo.getName(classFile), descriptor, m_allocateStatic());
                 continue;
@@ -130,9 +130,8 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             continue;
         }
 
-        auto desc = parseFieldType(fieldInfo.getDescriptor(classFile));
         auto fieldSizeAndAlignment = match(
-            desc,
+            fieldInfo.getDescriptor(classFile),
             [](BaseType baseType) -> std::size_t
             {
                 switch (baseType.getValue())
@@ -173,25 +172,18 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
         result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.tableSize, instanceSize,
                                      methods, fields, interfaces, className, classFile.isAbstract());
     }
-    m_mapping.insert({("L" + className + ";").str(), result});
+    m_mapping.insert({ObjectType(className), result});
     m_prepareClassObject(&classFile, *result);
 
     return *result;
 }
 
-jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescriptor)
+jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(FieldType fieldType)
 {
-    llvm::SmallString<32> str;
-    llvm::StringRef classNameRef = fieldDescriptor.toStringRef(str);
-    auto result = m_mapping.find(classNameRef);
+    auto result = m_mapping.find(fieldType);
     if (result != m_mapping.end())
     {
         return result->second;
-    }
-
-    if (classNameRef.front() != '[')
-    {
-        return nullptr;
     }
 
     // Extra optimization for loading array types. Since creating the class object for an array type has essentially
@@ -199,8 +191,18 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescripto
     // component type has been loaded. This leads to better code generation as no stubs or other similar code has to be
     // generated to load array class objects.
     // Get the first component type that is not an array.
-    llvm::StringRef arrayTypesRemoved = classNameRef.drop_while([](char c) { return c == '['; });
-    result = m_mapping.find(arrayTypesRemoved);
+
+    std::size_t arrayTypesCount = 0;
+    while (auto arrayType = get_if<ArrayType>(&fieldType))
+    {
+        arrayTypesCount++;
+        fieldType = arrayType->getComponentType();
+    }
+    if (arrayTypesCount == 0)
+    {
+        return nullptr;
+    }
+    result = m_mapping.find(fieldType);
     if (result == m_mapping.end())
     {
         // If the component type is not loaded we have to lazy load the array object anyway.
@@ -209,41 +211,34 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(llvm::Twine fieldDescripto
 
     // Otherwise we now just need to create all array objects for all dimensions that we stripped above.
     ClassObject* curr = result->second;
-    std::size_t arrayTypesCount = classNameRef.size() - arrayTypesRemoved.size();
     for (std::size_t i = 1; i <= arrayTypesCount; i++)
     {
         curr = ClassObject::createArray(m_classAllocator, m_metaClassObject, curr, m_stringSaver);
-        // We are moving from right to left in the array type name, therefore always stripping one less array type
-        // descriptor ('['), from the class name.
-        m_mapping.insert({classNameRef.drop_front(arrayTypesCount - i), curr});
+        fieldType = ArrayType(fieldType);
+        m_mapping.insert({fieldType, curr});
     }
     return curr;
 }
 
-jllvm::ClassObject& jllvm::ClassLoader::forName(llvm::Twine fieldDescriptor)
+jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
 {
-    if (ClassObject* result = forNameLoaded(fieldDescriptor))
+    if (ClassObject* result = forNameLoaded(fieldType))
     {
         return *result;
     }
 
     llvm::StringRef className;
-    llvm::SmallString<32> twineStorage;
     {
-        fieldDescriptor.toVector(twineStorage);
         // Array type case.
-        if (twineStorage.front() == '[')
+        if (auto arrayTypeDesc = get_if<ArrayType>(&fieldType))
         {
-            const ClassObject& componentType = forName(llvm::StringRef(twineStorage).drop_front());
+            const ClassObject& componentType = forName(arrayTypeDesc->getComponentType());
             ClassObject* arrayType =
                 ClassObject::createArray(m_classAllocator, m_metaClassObject, &componentType, m_stringSaver);
-            m_mapping.insert({twineStorage, arrayType});
+            m_mapping.insert({fieldType, arrayType});
             return *arrayType;
         }
-        className = twineStorage;
-        // Drop both the leading 'L' and trailing ';'. Primitive types are preregistered so always succeed in
-        // 'forNameLoaded'. Array types are handled above, therefore only object types have to handled here.
-        className = className.drop_front().drop_back();
+        className = get<ObjectType>(fieldType).getClassName();
     }
 
     std::unique_ptr<llvm::MemoryBuffer> result;
@@ -278,15 +273,15 @@ jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
       m_prepareClassObject(std::move(prepareClassObject)),
       m_allocateStatic(std::move(allocateStatic))
 {
-    m_mapping.insert({"B", &m_byte});
-    m_mapping.insert({"C", &m_char});
-    m_mapping.insert({"D", &m_double});
-    m_mapping.insert({"F", &m_float});
-    m_mapping.insert({"I", &m_int});
-    m_mapping.insert({"J", &m_long});
-    m_mapping.insert({"S", &m_short});
-    m_mapping.insert({"Z", &m_boolean});
-    m_mapping.insert({"V", &m_void});
+    m_mapping.try_emplace("B", &m_byte);
+    m_mapping.try_emplace("C", &m_char);
+    m_mapping.try_emplace("D", &m_double);
+    m_mapping.try_emplace("F", &m_float);
+    m_mapping.try_emplace("I", &m_int);
+    m_mapping.try_emplace("J", &m_long);
+    m_mapping.try_emplace("S", &m_short);
+    m_mapping.try_emplace("Z", &m_boolean);
+    m_mapping.try_emplace("V", &m_void);
 }
 
 jllvm::ClassObject& jllvm::ClassLoader::loadBootstrapClasses()
