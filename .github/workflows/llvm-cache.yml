@@ -1,0 +1,59 @@
+name: Populate LLVM Cache
+
+permissions:
+  actions: write
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs every day at 00:00 UTC: https://crontab.guru/#0_0_*_*_*
+    - cron: '0 0 * * *'
+
+jobs:
+  Builds:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, cxx_compiler: clang++, c_compiler: clang, sanitizer: "address,undefined" }
+          - { os: ubuntu-22.04, cxx_compiler: g++-10, c_compiler: gcc-10 }
+          - { os: macos-12, cxx_compiler: clang++, c_compiler: clang }
+
+    runs-on: ${{matrix.os}}
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout JLLVM
+        uses: actions/checkout@v3
+        with:
+          path: JLLVM
+
+      - name: Calculate ccache key
+        id: ccache-key
+        shell: pwsh
+        run: |
+          $key = '${{runner.os}}'
+
+          if ('${{matrix.sanitizer}}') {
+            $key += '-${{matrix.sanitizer}}'.Replace(',', '_and_')
+          }
+
+          "key=$key" >> $Env:GITHUB_OUTPUT
+
+      - name: Install Dependencies
+        id: dep-install
+        uses: ./JLLVM/.github/actions/dependencies
+        with:
+          cxx-compiler: ${{matrix.cxx_compiler}}
+          ccache-key: ${{steps.ccache-key.outputs.key}}
+
+      - name: Build LLVM
+        id: llvm-build
+        uses: ./JLLVM/.github/actions/llvm-build
+        with:
+          c-compiler: ${{matrix.c_compiler}}
+          cpp-compiler: ${{matrix.cxx_compiler}}
+          sanitizers: ${{matrix.sanitizer}}
+          cache-key: LLVM-${{steps.dep-install.outputs.key}}
