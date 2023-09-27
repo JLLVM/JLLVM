@@ -4,8 +4,6 @@ permissions:
   actions: write
 
 on:
-  # TODO: Remove before landing, just run once as part of the PR as a test.
-  pull_request:
   workflow_dispatch:
   schedule:
     # Runs every day at 00:00 UTC: https://crontab.guru/#0_0_*_*_*
