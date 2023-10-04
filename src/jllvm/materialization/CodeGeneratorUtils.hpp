@@ -135,11 +135,10 @@ public:
         m_topOfStack = state.size();
     }
 
-    void setHandlerStack(llvm::Value* value)
+    /// Returns the bottom-most stack slot of the operand stack.
+    llvm::AllocaInst* getBottomOfStack() const
     {
-        llvm::AllocaInst* alloc = m_values.front();
-        m_types.front() = value->getType();
-        m_builder.CreateStore(value, alloc);
+        return m_values.front();
     }
 };
 

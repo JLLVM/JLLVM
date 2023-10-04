@@ -1480,7 +1480,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
             // Catch all used to implement 'finally'.
             // Set exception object as only object on the stack and clear the active exception.
             m_builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(m_function->getParent()));
-            m_operandStack.setHandlerStack(phi);
+            m_builder.CreateStore(phi, m_operandStack.getBottomOfStack());
             m_builder.CreateBr(handlerBB);
             return ehHandler;
         }
@@ -1508,7 +1508,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
 
         m_builder.SetInsertPoint(jumpToHandler);
         // Set exception object as only object on the stack and clear the active exception.
-        m_operandStack.setHandlerStack(phi);
+        m_builder.CreateStore(phi, m_operandStack.getBottomOfStack());
         m_builder.CreateStore(llvm::ConstantPointerNull::get(ty), activeException(m_function->getParent()));
         m_builder.CreateBr(handlerBB);
 
