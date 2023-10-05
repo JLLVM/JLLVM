@@ -51,9 +51,9 @@ public:
                                    { m_impl.setLinkOrder(dylibSearchOrder); });
     }
 
-    llvm::Error tryToGenerate(llvm::orc::LookupState& LS, llvm::orc::LookupKind K, llvm::orc::JITDylib& JD,
-                              llvm::orc::JITDylibLookupFlags JDLookupFlags,
-                              const llvm::orc::SymbolLookupSet& LookupSet) override;
+    llvm::Error tryToGenerate(llvm::orc::LookupState&, llvm::orc::LookupKind, llvm::orc::JITDylib& dylib,
+                              llvm::orc::JITDylibLookupFlags,
+                              const llvm::orc::SymbolLookupSet& symbolLookupSet) override;
 };
 
 } // namespace jllvm

@@ -142,20 +142,21 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     return function;
 }
 
-llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& module, jllvm::MethodResolution resolution,
-                                                        const ClassObject& classObject, llvm::StringRef fieldName,
-                                                        jllvm::MethodType descriptor)
+llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& /*module*/,
+                                                        jllvm::MethodResolution /*resolution*/,
+                                                        const ClassObject& /*classObject*/,
+                                                        llvm::StringRef /*fieldName*/, jllvm::MethodType /*descriptor*/)
 {
     llvm_unreachable("not yet implemented");
 }
 
-llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassObject& classObject,
-                                              llvm::StringRef methodName, jllvm::MethodType descriptor)
+llvm::Function* jllvm::generateStaticCallStub(llvm::Module& /*module*/, const ClassObject& /*classObject*/,
+                                              llvm::StringRef /*methodName*/, jllvm::MethodType /*descriptor*/)
 {
     llvm_unreachable("not yet implemented");
 }
 
-llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject)
+llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& /*module*/, const ClassObject& /*classObject*/)
 {
     llvm_unreachable("not yet implemented");
 }
