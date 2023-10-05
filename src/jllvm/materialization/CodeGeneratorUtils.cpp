@@ -16,6 +16,7 @@
 #include <llvm/IR/DIBuilder.h>
 
 #include "ByteCodeLayer.hpp"
+#include "ClassObjectStubMangling.hpp"
 #include "LambdaMaterialization.hpp"
 
 using namespace jllvm;
@@ -665,7 +666,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 {
     llvm::FunctionType* functionType = descriptorToType(methodType, isStatic, builder.getContext());
 
-    std::string method = mangleMethod(className, methodName, methodType);
+    std::string method = mangleDirectMethodCall(className, methodName, methodType);
     if (const ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(className)))
     {
         return f(builder, classObject, args);
@@ -859,10 +860,11 @@ const jllvm::Method* LazyClassLoaderHelper::interfaceMethodResolution(const Clas
     llvm_unreachable("method not found");
 }
 
-const jllvm::Method*
-    LazyClassLoaderHelper::specialMethodResolution(const ClassObject* classObject, llvm::StringRef methodName, MethodType methodType,
+const jllvm::Method* LazyClassLoaderHelper::specialMethodResolution(const ClassObject* classObject,
+                                                                    llvm::StringRef methodName, MethodType methodType,
                                                                     ClassLoader& classLoader,
-                                                                    const ClassObject* currentClass, const ClassFile* currentClassFile)
+                                                                    const ClassObject* currentClass,
+                                                                    const ClassFile* currentClassFile)
 {
     // The named method is resolved (§5.4.3.3, §5.4.3.4).
     const Method* resolvedMethod = classObject->isInterface() ?
@@ -912,7 +914,7 @@ llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llv
 
             llvm::Module* module = builder.GetInsertBlock()->getModule();
             llvm::CallInst* call =
-                builder.CreateCall(module->getOrInsertFunction(mangleMethod(method), functionType), args);
+                builder.CreateCall(module->getOrInsertFunction(mangleDirectMethodCall(method), functionType), args);
             call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/true));
 
             return call;
@@ -954,8 +956,8 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             if (resolution == Special || !resolvedMethod->getTableSlot())
             {
                 llvm::Module* module = builder.GetInsertBlock()->getModule();
-                llvm::CallInst* call =
-                    builder.CreateCall(module->getOrInsertFunction(mangleMethod(resolvedMethod), functionType), args);
+                llvm::CallInst* call = builder.CreateCall(
+                    module->getOrInsertFunction(mangleDirectMethodCall(resolvedMethod), functionType), args);
                 call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
 
                 return call;
@@ -1022,21 +1024,21 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
 llvm::Value* LazyClassLoaderHelper::getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                                            llvm::StringRef fieldName, FieldType fieldType)
 {
-    return returnConstantForClassObject(
-        builder, ObjectType(className), fieldName + ";" + fieldType.textual(),
-        [=](const ClassObject* classObject)
-        { return classObject->getInstanceField(fieldName, fieldType)->getOffset(); },
-        /*mustInitializeClassObject=*/false);
+    llvm::Module* module = builder.GetInsertBlock()->getModule();
+    llvm::FunctionCallee function =
+        module->getOrInsertFunction(mangleFieldAccess(className, fieldName, fieldType),
+                                    llvm::FunctionType::get(builder.getIntNTy(sizeof(std::size_t) * 8), false));
+    return builder.CreateCall(function);
 }
 
 llvm::Value* LazyClassLoaderHelper::getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                                           llvm::StringRef fieldName, FieldType fieldType)
 {
-    return returnConstantForClassObject(
-        builder, ObjectType(className), fieldName + ";" + fieldType.textual(),
-        [=](const ClassObject* classObject)
-        { return classObject->getStaticField(fieldName, fieldType)->getAddressOfStatic(); },
-        /*mustInitializeClassObject=*/true);
+    llvm::Module* module = builder.GetInsertBlock()->getModule();
+    llvm::FunctionCallee function =
+        module->getOrInsertFunction(mangleFieldAccess(className, fieldName, fieldType),
+                                    llvm::FunctionType::get(llvm::PointerType::get(builder.getContext(), 0), false));
+    return builder.CreateCall(function);
 }
 
 llvm::Value* LazyClassLoaderHelper::getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,

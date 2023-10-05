@@ -16,6 +16,7 @@
 #include <llvm/IR/Verifier.h>
 
 #include "ByteCodeCompileUtils.hpp"
+#include "ClassObjectStubMangling.hpp"
 #include "CodeGenerator.hpp"
 
 #define DEBUG_TYPE "jvm"
@@ -24,7 +25,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
                                        const MethodInfo* methodInfo, const ClassFile* classFile, const Method* method,
                                        const ClassObject* classObject)
 {
-    std::string methodName = mangleMethod(*methodInfo, *classFile);
+    std::string methodName = mangleDirectMethodCall(*methodInfo, *classFile);
     LLVM_DEBUG({ llvm::dbgs() << "Emitting LLVM IR for " << methodName << '\n'; });
 
     auto context = std::make_unique<llvm::LLVMContext>();
@@ -32,9 +33,9 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     MethodType descriptor = methodInfo->getDescriptor(*classFile);
 
-    auto* function =
-        llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
-                               llvm::GlobalValue::ExternalLinkage, mangleMethod(*methodInfo, *classFile), module.get());
+    auto* function = llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
+                                            llvm::GlobalValue::ExternalLinkage,
+                                            mangleDirectMethodCall(*methodInfo, *classFile), module.get());
     function->setGC("coreclr");
 
     applyJavaMethodAttributes(function, {classObject, method});

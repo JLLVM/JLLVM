@@ -29,6 +29,7 @@
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
 #include <jllvm/materialization/ByteCodeOnDemandLayer.hpp>
+#include <jllvm/materialization/ClassObjectStubMangling.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
@@ -47,6 +48,7 @@ class JIT
     std::unique_ptr<llvm::orc::EPCIndirectionUtils> m_epciu;
     std::unique_ptr<llvm::TargetMachine> m_targetMachine;
     std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
+    ClassLoader& m_classLoader;
 
     llvm::DataLayout m_dataLayout;
 
@@ -161,7 +163,8 @@ public:
     llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef className, llvm::StringRef methodName,
                                                     MethodType methodDescriptor)
     {
-        return m_session->lookup({&m_main}, m_interner(mangleMethod(className, methodName, methodDescriptor)));
+        return m_session->lookup({&m_main},
+                                 m_interner(mangleDirectMethodCall(className, methodName, methodDescriptor)));
     }
 };
 } // namespace jllvm

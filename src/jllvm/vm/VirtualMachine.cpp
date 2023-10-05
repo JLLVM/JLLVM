@@ -17,6 +17,8 @@
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Support/Debug.h>
 
+#include <jllvm/materialization/ClassObjectStubMangling.hpp>
+
 #include "NativeImplementation.hpp"
 
 #define DEBUG_TYPE "jvm"
@@ -327,8 +329,8 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
     }
 
     LLVM_DEBUG({
-        llvm::dbgs() << "Executing class initializer " << mangleMethod(classObject.getClassName(), "<clinit>", "()V")
-                     << '\n';
+        llvm::dbgs() << "Executing class initializer "
+                     << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
     reinterpret_cast<void (*)()>(classInitializer->getAddress())();
 }

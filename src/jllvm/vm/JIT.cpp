@@ -28,10 +28,12 @@
 #include <llvm/Transforms/Instrumentation/AddressSanitizer.h>
 #include <llvm/Transforms/Scalar/RewriteStatepointsForGC.h>
 
+#include <jllvm/materialization/ClassObjectStubDefinitionsGenerator.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 
 #include <utility>
 
+#include "ClassObjectStubImportPass.hpp"
 #include "MarkSanitizersGCLeafs.hpp"
 #include "StackMapRegistrationPlugin.hpp"
 
@@ -98,6 +100,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
       m_callbackManager(llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
           llvm::Triple(LLVM_HOST_TRIPLE), *m_session,
           llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
+      m_classLoader(classLoader),
       m_dataLayout(layout),
       m_interner(*m_session, m_dataLayout),
       m_objectLayer(*m_session),
@@ -117,6 +120,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                  m_dataLayout, jniFunctions, m_implementation)
 {
     m_main.addToLinkOrder(m_implementation);
+    m_main.addGenerator(std::make_unique<ClassObjectStubDefinitionsGenerator>(
+        m_epciu->createIndirectStubsManager(), *m_callbackManager, m_optimizeLayer, m_dataLayout, m_main, classLoader));
 
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
@@ -178,7 +183,7 @@ void jllvm::JIT::add(const jllvm::ClassFile* classFile, const ClassObject* class
             continue;
         }
 
-        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleMethod(&method) << " to JIT Link graph\n"; });
+        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleDirectMethodCall(&method) << " to JIT Link graph\n"; });
 
         if (info.isNative())
         {
@@ -204,6 +209,10 @@ void jllvm::JIT::optimize(llvm::Module& module)
     options.SLPVectorization = true;
     options.MergeFunctions = true;
     llvm::PassBuilder passBuilder(m_targetMachine.get(), options, std::nullopt);
+
+    passBuilder.registerPipelineStartEPCallback(
+        [&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
+        { modulePassManager.addPass(ClassObjectStubImportPass{m_classLoader}); });
 
     passBuilder.registerOptimizerLastEPCallback(
         [&](llvm::ModulePassManager& modulePassManager, llvm::OptimizationLevel)
