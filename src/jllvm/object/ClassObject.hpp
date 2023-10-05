@@ -618,10 +618,24 @@ public:
     /// Returns a range containing all direct and indirect interfaces of this class in an unspecified order.
     auto getAllInterfaces() const;
 
-    /// Returns the name of this class as descriptor.
+    /// Returns the name of this class. This is the descriptor of the class if the class object represents an array
+    /// or primitive type.
     llvm::StringRef getClassName() const
     {
         return m_className;
+    }
+
+    /// Returns the field descriptor of this class. The lifetime of the returned 'FieldType' is equal to the class
+    /// object itself.
+    FieldType getDescriptor() const
+    {
+        // Arrays and primitives use the descriptor syntax as name already while classes and interfaces use just the
+        // name of the class.
+        if (isPrimitive() || isArray())
+        {
+            return FieldType(m_className);
+        }
+        return ObjectType(m_className);
     }
 
     /// Returns the name of the package this class is defined in.

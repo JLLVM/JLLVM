@@ -34,11 +34,11 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             continue;
         }
 
+        // These optimizations are only valid and proper if the class object is already loaded.
         llvm::Function* definition = match(
             variant,
             [&](const DemangledFieldAccess& fieldAccess) -> llvm::Function*
             {
-                // This optimization is only valid and proper if the class object is already loaded.
                 ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(fieldAccess.className));
                 if (!classObject)
                 {
@@ -46,7 +46,16 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                 }
                 return generateFieldAccessStub(module, *classObject, fieldAccess.fieldName, fieldAccess.descriptor);
             },
-            [](auto) -> llvm::Function* { return nullptr; });
+            [&](FieldType fieldType) -> llvm::Function*
+            {
+                ClassObject* classObject = m_classLoader.forNameLoaded(fieldType);
+                if (!classObject)
+                {
+                    return nullptr;
+                }
+                return generateClassObjectAccessStub(module, *classObject);
+            },
+            [](...) -> llvm::Function* { return nullptr; });
         if (!definition)
         {
             continue;

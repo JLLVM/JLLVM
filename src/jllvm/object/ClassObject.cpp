@@ -118,12 +118,8 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         arrayFieldAreaSize = llvm::alignTo(arrayFieldAreaSize, sizeof(void*));
     }
 
-    llvm::StringRef className = componentType->getClassName();
-    auto* result =
-        create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
-               stringSaver.save(componentType->isClass() || componentType->isInterface() ? "[L" + className + ";" :
-                                                                                           "[" + className),
-               false);
+    auto* result = create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
+                          stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()), false);
     result->m_componentTypeOrInterfaceId = componentType;
     result->m_initialized = true;
     return result;

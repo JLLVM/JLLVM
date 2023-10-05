@@ -552,84 +552,6 @@ void LazyClassLoaderHelper::buildClassInitializerInitStub(llvm::IRBuilder<>& bui
 }
 
 template <class F>
-llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
-                                                                 llvm::Twine key, F&& f, bool mustInitializeClassObject)
-{
-    auto returnValueToIRConstant = [](llvm::IRBuilder<>& builder, const auto& retVal)
-    {
-        using RetType = std::decay_t<decltype(retVal)>;
-        return CppToLLVMType<RetType>::getConstant(retVal, builder);
-    };
-
-    if (const ClassObject* classObject = m_classLoader.forNameLoaded(fieldDescriptor))
-    {
-        if (mustInitializeClassObject && !classObject->isInitialized())
-        {
-            buildClassInitializerInitStub(builder, *classObject);
-        }
-        return returnValueToIRConstant(builder, f(classObject));
-    }
-
-    std::string stubSymbol = ("Class load " + fieldDescriptor.textual() + key).str();
-    if (!m_stubsManager.findStub(stubSymbol, true))
-    {
-        llvm::cantFail(m_stubsManager.createStub(
-            stubSymbol,
-            llvm::cantFail(m_callbackManager.getCompileCallback(
-                [=, *this]
-                {
-                    const ClassObject& classObject = m_classLoader.forName(fieldDescriptor);
-
-                    auto context = std::make_unique<llvm::LLVMContext>();
-                    auto module = std::make_unique<llvm::Module>(stubSymbol, *context);
-
-                    module->setDataLayout(m_dataLayout);
-                    module->setTargetTriple(LLVM_HOST_TRIPLE);
-
-                    auto* functionType = llvm::FunctionType::get(
-                        CppToLLVMType<typename llvm::function_traits<std::decay_t<F>>::result_t>::get(context.get()),
-                        false);
-
-                    auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
-                                                            stubSymbol, module.get());
-                    applyABIAttributes(function);
-                    TrivialDebugInfoBuilder debugInfoBuilder(function);
-                    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
-
-                    if (mustInitializeClassObject && !classObject.isInitialized())
-                    {
-                        buildClassInitializerInitStub(builder, classObject);
-                    }
-
-                    builder.CreateRet(returnValueToIRConstant(builder, f(&classObject)));
-
-                    debugInfoBuilder.finalize();
-
-                    llvm::cantFail(m_baseLayer.add(m_implDylib,
-                                                   llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
-
-                    auto address =
-                        llvm::cantFail(m_implDylib.getExecutionSession().lookup({&m_implDylib}, m_interner(stubSymbol)))
-                            .getAddress();
-
-                    llvm::cantFail(m_stubsManager.updatePointer(stubSymbol, address));
-
-                    return address;
-                })),
-            llvm::JITSymbolFlags::Exported));
-        llvm::cantFail(m_mainDylib.define(
-            llvm::orc::absoluteSymbols({{m_interner(stubSymbol), m_stubsManager.findStub(stubSymbol, true)}})));
-    }
-
-    auto* functionType = llvm::FunctionType::get(
-        CppToLLVMType<typename llvm::function_traits<std::decay_t<F>>::result_t>::get(&builder.getContext()), false);
-
-    llvm::Module* module = builder.GetInsertBlock()->getModule();
-    llvm::FunctionCallee function = module->getOrInsertFunction(stubSymbol, functionType);
-    return builder.CreateCall(function);
-}
-
-template <class F>
 llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className,
                                                          llvm::StringRef methodName, MethodType methodType,
                                                          bool isStatic, llvm::Twine key,
@@ -929,7 +851,8 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             if (resolution == Special || !resolvedMethod->getTableSlot())
             {
                 llvm::Module* module = builder.GetInsertBlock()->getModule();
-                llvm::FunctionCallee callee = module->getOrInsertFunction(mangleDirectMethodCall(resolvedMethod), functionType);
+                llvm::FunctionCallee callee =
+                    module->getOrInsertFunction(mangleDirectMethodCall(resolvedMethod), functionType);
                 applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), methodType, /*isStatic=*/false);
                 llvm::CallInst* call = builder.CreateCall(callee, args);
                 applyABIAttributes(call, methodType, /*isStatic=*/false);
@@ -1014,10 +937,10 @@ llvm::Value* LazyClassLoaderHelper::getStaticFieldAddress(llvm::IRBuilder<>& bui
     return builder.CreateCall(function);
 }
 
-llvm::Value* LazyClassLoaderHelper::getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
-                                                   bool mustInitializeClassObject)
+llvm::Value* LazyClassLoaderHelper::getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor)
 {
-    return returnConstantForClassObject(
-        builder, fieldDescriptor, "", [=](const ClassObject* classObject) { return classObject; },
-        mustInitializeClassObject);
+    llvm::Module* module = builder.GetInsertBlock()->getModule();
+    llvm::FunctionCallee function = module->getOrInsertFunction(
+        mangleClassObjectAccess(fieldDescriptor), llvm::FunctionType::get(referenceType(builder.getContext()), false));
+    return builder.CreateCall(function);
 }

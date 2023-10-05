@@ -214,8 +214,7 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(FieldType fieldType)
     for (std::size_t i = 1; i <= arrayTypesCount; i++)
     {
         curr = ClassObject::createArray(m_classAllocator, m_metaClassObject, curr, m_stringSaver);
-        fieldType = ArrayType(fieldType);
-        m_mapping.insert({fieldType, curr});
+        m_mapping.insert({curr->getDescriptor(), curr});
     }
     return curr;
 }
@@ -235,7 +234,7 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
             const ClassObject& componentType = forName(arrayTypeDesc->getComponentType());
             ClassObject* arrayType =
                 ClassObject::createArray(m_classAllocator, m_metaClassObject, &componentType, m_stringSaver);
-            m_mapping.insert({fieldType, arrayType});
+            m_mapping.insert({arrayType->getDescriptor(), arrayType});
             return *arrayType;
         }
         className = get<ObjectType>(fieldType).getClassName();

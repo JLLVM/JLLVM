@@ -164,10 +164,6 @@ class LazyClassLoaderHelper
     static void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject);
 
     template <class F>
-    llvm::Value* returnConstantForClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor, llvm::Twine key,
-                                              F&& f, bool mustInitializeClassObject);
-
-    template <class F>
     llvm::Value* doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
                                       MethodType methodType, bool isStatic, llvm::Twine key,
                                       llvm::ArrayRef<llvm::Value*> args, F&& f);
@@ -234,7 +230,6 @@ public:
                                        FieldType fieldType);
 
     /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
-    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor,
-                                bool mustInitializeClassObject = false);
+    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor);
 };
 } // namespace jllvm
