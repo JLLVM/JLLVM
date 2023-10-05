@@ -20,6 +20,9 @@
 
 llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& module, llvm::ModuleAnalysisManager&)
 {
+    ClassObject* objectClass = m_classLoader.forNameLoaded(ObjectType("java/lang/Object"));
+    assert(objectClass && "java/lang/Object must have been loaded prior to any code ever executing");
+
     // Early increment range as 'function' is potentially deleted.
     for (llvm::Function& function : llvm::make_early_inc_range(module.functions()))
     {
@@ -54,6 +57,16 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                     return nullptr;
                 }
                 return generateClassObjectAccessStub(module, *classObject);
+            },
+            [&](const DemangledStaticCall& staticCall) -> llvm::Function*
+            {
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(staticCall.className));
+                if (!classObject)
+                {
+                    return nullptr;
+                }
+                return generateStaticCallStub(module, *classObject, staticCall.methodName, staticCall.descriptor,
+                                              *objectClass);
             },
             [](...) -> llvm::Function* { return nullptr; });
         if (!definition)

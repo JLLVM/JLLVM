@@ -986,11 +986,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* call = m_helper.doInstanceCall(
                 m_builder, className, methodName, methodType, args,
                 match(
-                    operation,
-                    [](...) -> LazyClassLoaderHelper::MethodResolution { llvm_unreachable("unexpected op"); },
-                    [](InvokeInterface) { return LazyClassLoaderHelper::Interface; },
-                    [](InvokeVirtual) { return LazyClassLoaderHelper::Virtual; },
-                    [](InvokeSpecial) { return LazyClassLoaderHelper::Special; }));
+                    operation, [](...) -> MethodResolution { llvm_unreachable("unexpected op"); },
+                    [](InvokeInterface) { return MethodResolution::Interface; },
+                    [](InvokeVirtual) { return MethodResolution::Virtual; },
+                    [](InvokeSpecial) { return MethodResolution::Special; }));
 
             generateEHDispatch();
 

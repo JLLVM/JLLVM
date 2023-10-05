@@ -37,8 +37,11 @@ llvm::Function* generateMethodResolutionCallStub(llvm::Module& module, MethodRes
                                                  const ClassObject& classObject, llvm::StringRef fieldName,
                                                  MethodType descriptor);
 
+/// Generates a new LLVM function with the name returned by 'mangleStaticCall' implementing the method resolution and
+/// method selection of a static call before then calling the found method.
+/// It is undefined behaviour if method resolution does not find a method to call.
 llvm::Function* generateStaticCallStub(llvm::Module& module, const ClassObject& classObject, llvm::StringRef methodName,
-                                       MethodType descriptor);
+                                       MethodType descriptor, const ClassObject& objectClass);
 
 llvm::Function* generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject);
 

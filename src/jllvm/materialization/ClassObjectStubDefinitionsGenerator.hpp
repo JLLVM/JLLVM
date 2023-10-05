@@ -34,6 +34,7 @@ class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerato
     llvm::orc::JITDylib& m_impl;
     llvm::DataLayout m_dataLayout;
     ClassLoader& m_classLoader;
+    ClassObject* m_objectClassCache = nullptr;
 
 public:
     explicit ClassObjectStubDefinitionsGenerator(std::unique_ptr<llvm::orc::IndirectStubsManager> stubsManager,
