@@ -123,9 +123,10 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 auto* function = llvm::Function::Create(descriptorToType(methodType, methodInfo->isStatic(), *context),
                                                         llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
                 function->setSubprogram(subprogram);
-                function->addFnAttr(llvm::Attribute::UWTable);
 
-                applyJavaMethodAttributes(function, {classObject, method});
+                applyABIAttributes(function, methodType, methodInfo->isStatic());
+                function->clearGC();
+                addJavaMethodMetadata(function, {classObject, method});
 
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 

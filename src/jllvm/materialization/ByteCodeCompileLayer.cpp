@@ -36,14 +36,8 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     auto* function = llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
                                             llvm::GlobalValue::ExternalLinkage,
                                             mangleDirectMethodCall(*methodInfo, *classFile), module.get());
-    function->setGC("coreclr");
-
-    applyJavaMethodAttributes(function, {classObject, method});
-
-    function->addFnAttr(llvm::Attribute::UWTable);
-#ifdef LLVM_ADDRESS_SANITIZER_BUILD
-    function->addFnAttr(llvm::Attribute::SanitizeAddress);
-#endif
+    addJavaMethodMetadata(function, {classObject, method});
+    applyABIAttributes(function);
 
     auto code = methodInfo->getAttributes().find<Code>();
     assert(code);
