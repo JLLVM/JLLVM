@@ -19,7 +19,7 @@
 #include <llvm/ExecutionEngine/Orc/Mangling.h>
 
 #include <jllvm/object/ClassLoader.hpp>
-#include <jllvm/vm/StringInterner.hpp>
+#include <jllvm/object/StringInterner.hpp>
 
 #include "ByteCodeLayer.hpp"
 
