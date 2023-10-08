@@ -104,6 +104,14 @@ if ((NOT (${CMAKE_SYSTEM_NAME} MATCHES "AIX")) AND
     endif ()
 endif ()
 
+string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=" SAN_INDEX)
+# Pass -Wl,-z,defs. This makes sure all symbols are defined. Otherwise a DSO build might work on ELF but fail on
+# MachO/COFF. Sanitizers are generally incompatible with this option.
+if (NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin|FreeBSD|OpenBSD|DragonFly|AIX|OS390" OR
+        WIN32 OR CYGWIN) AND SAN_INDEX EQUAL -1)
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,defs")
+endif ()
+
 add_subdirectory(src)
 add_subdirectory(tools)
 

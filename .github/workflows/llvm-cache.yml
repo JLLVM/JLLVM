@@ -16,6 +16,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, cxx_compiler: clang++, c_compiler: clang, sanitizer: "address,undefined" }
+          - { os: ubuntu-22.04, cxx_compiler: clang++, c_compiler: clang, shared_libs: "ON" }
           - { os: ubuntu-22.04, cxx_compiler: g++-10, c_compiler: gcc-10 }
           - { os: macos-12, cxx_compiler: clang++, c_compiler: clang }
 
@@ -39,6 +40,10 @@ jobs:
           if ('${{matrix.sanitizer}}') {
             $key += '-${{matrix.sanitizer}}'.Replace(',', '_and_')
           }
+          
+          if ('${{matrix.shared_libs}}' -eq 'ON') {
+            $key += '-shared'
+          }
 
           "key=$key" >> $Env:GITHUB_OUTPUT
 
@@ -57,3 +62,4 @@ jobs:
           cpp-compiler: ${{matrix.cxx_compiler}}
           sanitizers: ${{matrix.sanitizer}}
           cache-key: LLVM-${{steps.dep-install.outputs.key}}
+          shared_libs: ${{matrix.shared_libs}}
