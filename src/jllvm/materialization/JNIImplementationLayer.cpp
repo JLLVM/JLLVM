@@ -21,6 +21,7 @@
 #include <jllvm/class/Descriptors.hpp>
 
 #include "ByteCodeCompileUtils.hpp"
+#include "ClassObjectStubMangling.hpp"
 
 namespace
 {
@@ -77,7 +78,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
     llvm::orc::SymbolFlagsMap map = mr->getSymbols();
 
-    std::string key = mangleMethod(*methodInfo, *classFile);
+    std::string key = mangleDirectMethodCall(*methodInfo, *classFile);
     llvm::cantFail(m_stubsManager->createStub(
         key,
         llvm::cantFail(m_callbackManager.getCompileCallback(

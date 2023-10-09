@@ -19,5 +19,8 @@ add_library(JLLVMMaterialization
         ByteCodeOnDemandLayer.cpp
         JNIImplementationLayer.cpp
         CodeGenerator.cpp
-        CodeGeneratorUtils.cpp)
+        CodeGeneratorUtils.cpp
+        ClassObjectStubDefinitionsGenerator.cpp
+        ClassObjectStubCodeGenerator.cpp
+        ClassObjectStubMangling.cpp)
 target_link_libraries(JLLVMMaterialization PUBLIC JLLVMVirtualMachine JLLVMObject LLVMCore LLVMOrcJIT)

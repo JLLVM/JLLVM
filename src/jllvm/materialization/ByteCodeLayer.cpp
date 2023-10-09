@@ -18,25 +18,7 @@
 #define DEBUG_TYPE "jvm"
 
 #include "ByteCodeMaterializationUnit.hpp"
-
-std::string jllvm::mangleMethod(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor)
-{
-    return (className + "." + methodName + ":" + descriptor.textual()).str();
-}
-
-std::string jllvm::mangleMethod(const MethodInfo& methodInfo, const ClassFile& classFile)
-{
-    llvm::StringRef className = classFile.getThisClass();
-    llvm::StringRef methodName = methodInfo.getName(classFile);
-    MethodType descriptor = methodInfo.getDescriptor(classFile);
-
-    return mangleMethod(className, methodName, descriptor);
-}
-
-std::string jllvm::mangleMethod(const jllvm::Method* method)
-{
-    return mangleMethod(method->getClassObject()->getClassName(), method->getName(), method->getType());
-}
+#include "ClassObjectStubMangling.hpp"
 
 llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo,
                                       const ClassFile* classFile, const Method* method, const ClassObject* classObject)
@@ -49,7 +31,7 @@ llvm::orc::MaterializationUnit::Interface jllvm::ByteCodeLayer::getSymbolsProvid
                                                                                    const ClassFile* classFile)
 {
     llvm::orc::SymbolFlagsMap result;
-    auto name = mangleMethod(*methodInfo, *classFile);
+    auto name = mangleDirectMethodCall(*methodInfo, *classFile);
     result[m_interner(name)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
     return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
 }
