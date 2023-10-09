@@ -13,11 +13,16 @@
 
 #include "Unwinder.hpp"
 
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/Format.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <utility>
 
 #include <unwind.h>
+
+#define DEBUG_TYPE "unwinder"
 
 bool jllvm::detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, UnwindFrame))
 {
@@ -52,12 +57,66 @@ void jllvm::UnwindFrame::setIntegerRegister(int registerNumber, std::uintptr_t v
     _Unwind_SetGR(reinterpret_cast<_Unwind_Context*>(m_impl), registerNumber, value);
 }
 
-std::uintptr_t jllvm::UnwindFrame::getStackPointer() const
-{
-    return _Unwind_GetCFA(reinterpret_cast<_Unwind_Context*>(m_impl));
-}
-
 std::uintptr_t jllvm::UnwindFrame::getFunctionPointer() const
 {
     return _Unwind_GetRegionStart(reinterpret_cast<_Unwind_Context*>(m_impl));
+}
+
+namespace
+{
+
+/// Walks through a 'eh_frame', finding all DWARF FDEs to register them in the unwinder.
+/// Taken from
+/// https://github.com/llvm/llvm-project/blob/aa5158cd1ee01625fbbe6fb106b0f2598b0fdf72/llvm/lib/ExecutionEngine/Orc/TargetProcess/RegisterEHFrames.cpp#L91
+template <typename HandleFDEFn>
+void walkLibunwindEHFrameSection(const char* const sectionStart, std::size_t sectionSize, HandleFDEFn handleFDE)
+{
+    const char* curCfiRecord = sectionStart;
+    const char* end = sectionStart + sectionSize;
+    std::uint64_t size = *reinterpret_cast<const uint32_t*>(curCfiRecord);
+
+    while (curCfiRecord != end && size != 0)
+    {
+        const char* offsetField = curCfiRecord + (size == 0xffffffff ? 12 : 4);
+        if (size == 0xffffffff)
+        {
+            size = *reinterpret_cast<const std::uint64_t*>(curCfiRecord + 4) + 12;
+        }
+        else
+        {
+            size += 4;
+        }
+        auto offset = *reinterpret_cast<const std::uint32_t*>(offsetField);
+
+        LLVM_DEBUG({
+            llvm::dbgs() << "Registering eh-frame section:\n";
+            llvm::dbgs() << "Processing " << (offset ? "FDE" : "CIE") << " @" << (void*)curCfiRecord << ": [";
+            for (unsigned I = 0; I < size; ++I)
+            {
+                llvm::dbgs() << llvm::format(" 0x%02" PRIx8, *(curCfiRecord + I));
+            }
+            llvm::dbgs() << " ]\n";
+        });
+
+        if (offset != 0)
+        {
+            handleFDE(curCfiRecord);
+        }
+
+        curCfiRecord += size;
+
+        size = *reinterpret_cast<const uint32_t*>(curCfiRecord);
+    }
+}
+
+} // namespace
+
+void jllvm::registerEHSection(llvm::ArrayRef<char> section)
+{
+    walkLibunwindEHFrameSection(section.data(), section.size(), [](const char* fde) { __register_frame(fde); });
+}
+
+void jllvm::deregisterEHSection(llvm::ArrayRef<char> section)
+{
+    walkLibunwindEHFrameSection(section.data(), section.size(), [](const char* fde) { __deregister_frame(fde); });
 }

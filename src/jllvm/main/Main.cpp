@@ -59,13 +59,6 @@ struct TrivialPrinter<jllvm::String>
 int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 {
     llvm::SmallVector<const char*> llvmArgs{"jllvm"};
-#ifndef __APPLE__
-    // libunwind (from LLVM), seemingly does not properly write to caller saved registers. We therefore disable this
-    // optimization.
-    llvmArgs.push_back("-fixup-allow-gcptr-in-csr");
-    llvmArgs.push_back("-max-registers-for-gc-values=1000");
-#endif
-
     CommandLine commandLine(args);
 
 #ifndef NDEBUG

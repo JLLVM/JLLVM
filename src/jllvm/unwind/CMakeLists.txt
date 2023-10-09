@@ -12,4 +12,4 @@
 # see <http://www.gnu.org/licenses/>.
 
 add_library(JLLVMUnwinder Unwinder.cpp)
-target_link_libraries(JLLVMUnwinder PRIVATE LLVMSupport)
+target_link_libraries(JLLVMUnwinder PRIVATE LLVMSupport unwind_static unwind-headers)

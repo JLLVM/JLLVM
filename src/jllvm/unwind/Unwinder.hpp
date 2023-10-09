@@ -13,9 +13,11 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
+
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
-#include <concepts>
 
 namespace jllvm
 {
@@ -62,9 +64,6 @@ public:
     /// This is only guaranteed to work with callee-saved registers.
     void setIntegerRegister(int registerNumber, std::uintptr_t value);
 
-    /// Returns the value of the stack pointer in the current frame, at the current program counter.
-    std::uintptr_t getStackPointer() const;
-
     /// Returns a pointer to the function being executed in this frame.
     std::uintptr_t getFunctionPointer() const;
 };
@@ -92,4 +91,12 @@ bool unwindStack(F&& f)
             }
         });
 }
+
+/// Registers a dynamically generated 'eh_section' in the unwinder, making it capable of unwinding through it. This is
+/// only required for JIT compiled sections, not any code statically part of the executable.
+void registerEHSection(llvm::ArrayRef<char> section);
+
+/// Deregisters a dynamically generated 'eh_section' previously generated with 'registerEHSection'. This deallocates any
+/// data and caches associated with that section and should be used prior to deallocating the memory of that section.
+void deregisterEHSection(llvm::ArrayRef<char> section);
 } // namespace jllvm
