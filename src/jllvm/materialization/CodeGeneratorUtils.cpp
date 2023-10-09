@@ -15,6 +15,7 @@
 
 #include <llvm/IR/DIBuilder.h>
 
+#include "ByteCodeCompileUtils.hpp"
 #include "ByteCodeLayer.hpp"
 #include "ClassObjectStubMangling.hpp"
 #include "LambdaMaterialization.hpp"
@@ -23,35 +24,6 @@ using namespace jllvm;
 
 namespace
 {
-/// X86 ABI essentially always uses the 32 bit register names for passing along integers. Using the 'signext' and
-/// 'zeroext' attribute we tell LLVM that if due to ABI, it has to extend these registers, which extension to use.
-/// This attribute list can be applied to either a call or a function itself.
-llvm::AttributeList getABIAttributes(llvm::LLVMContext& context, MethodType methodType, bool isStatic)
-{
-    llvm::SmallVector<llvm::AttributeSet> paramAttrs(methodType.size());
-    for (auto&& [param, attrs] : llvm::zip(methodType.parameters(), paramAttrs))
-    {
-        auto baseType = get_if<BaseType>(&param);
-        if (!baseType || !baseType->isIntegerType())
-        {
-            continue;
-        }
-        attrs = attrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
-    }
-
-    llvm::AttributeSet retAttrs;
-    FieldType returnType = methodType.returnType();
-    if (auto baseType = get_if<BaseType>(&returnType); baseType && baseType->isIntegerType())
-    {
-        retAttrs =
-            retAttrs.addAttribute(context, baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
-    }
-    if (!isStatic)
-    {
-        paramAttrs.insert(paramAttrs.begin(), llvm::AttributeSet().addAttribute(context, llvm::Attribute::NonNull));
-    }
-    return llvm::AttributeList::get(context, llvm::AttributeSet{}, retAttrs, paramAttrs);
-}
 
 class TrivialDebugInfoBuilder
 {
@@ -620,8 +592,7 @@ llvm::Value* LazyClassLoaderHelper::returnConstantForClassObject(llvm::IRBuilder
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
                                                             stubSymbol, module.get());
-                    function->addFnAttr(llvm::Attribute::UWTable);
-                    function->setGC("coreclr");
+                    applyABIAttributes(function);
                     TrivialDebugInfoBuilder debugInfoBuilder(function);
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
@@ -696,8 +667,7 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
 
                     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, stubName,
                                                             module.get());
-                    function->addFnAttr(llvm::Attribute::UWTable);
-                    function->setGC("coreclr");
+                    applyABIAttributes(function, methodType, isStatic);
                     TrivialDebugInfoBuilder debugInfoBuilder(function);
 
                     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
@@ -762,8 +732,10 @@ llvm::Value* LazyClassLoaderHelper::doCallForClassObject(llvm::IRBuilder<>& buil
     }
 
     llvm::Module* module = builder.GetInsertBlock()->getModule();
-    auto* call = builder.CreateCall(module->getOrInsertFunction(stubName, functionType), args);
-    call->setAttributes(getABIAttributes(builder.getContext(), methodType, isStatic));
+    llvm::FunctionCallee callee = module->getOrInsertFunction(stubName, functionType);
+    applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), methodType, isStatic);
+    auto* call = builder.CreateCall(callee, args);
+    applyABIAttributes(call, methodType, isStatic);
     return call;
 }
 
@@ -913,9 +885,10 @@ llvm::Value* LazyClassLoaderHelper::doStaticCall(llvm::IRBuilder<>& builder, llv
             llvm::FunctionType* functionType = descriptorToType(methodType, /*isStatic=*/true, builder.getContext());
 
             llvm::Module* module = builder.GetInsertBlock()->getModule();
-            llvm::CallInst* call =
-                builder.CreateCall(module->getOrInsertFunction(mangleDirectMethodCall(method), functionType), args);
-            call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/true));
+            llvm::FunctionCallee callee = module->getOrInsertFunction(mangleDirectMethodCall(method), functionType);
+            applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), methodType, /*isStatic=*/true);
+            llvm::CallInst* call = builder.CreateCall(callee, args);
+            applyABIAttributes(call, methodType, /*isStatic=*/true);
 
             return call;
         });
@@ -956,10 +929,10 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             if (resolution == Special || !resolvedMethod->getTableSlot())
             {
                 llvm::Module* module = builder.GetInsertBlock()->getModule();
-                llvm::CallInst* call = builder.CreateCall(
-                    module->getOrInsertFunction(mangleDirectMethodCall(resolvedMethod), functionType), args);
-                call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
-
+                llvm::FunctionCallee callee = module->getOrInsertFunction(mangleDirectMethodCall(resolvedMethod), functionType);
+                applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), methodType, /*isStatic=*/false);
+                llvm::CallInst* call = builder.CreateCall(callee, args);
+                applyABIAttributes(call, methodType, /*isStatic=*/false);
                 return call;
             }
 
@@ -974,7 +947,7 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
                 llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
 
                 auto* call = builder.CreateCall(functionType, callee, args);
-                call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
+                applyABIAttributes(call, methodType, /*isStatic=*/false);
                 return call;
             }
 
@@ -1016,7 +989,7 @@ llvm::Value* LazyClassLoaderHelper::doInstanceCall(llvm::IRBuilder<>& builder, l
             llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
 
             auto* call = builder.CreateCall(functionType, callee, args);
-            call->setAttributes(getABIAttributes(builder.getContext(), methodType, /*isStatic=*/false));
+            applyABIAttributes(call, methodType, /*isStatic=*/false);
             return call;
         });
 }

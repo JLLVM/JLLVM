@@ -14,6 +14,7 @@
 #pragma once
 
 #include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/LLVMContext.h>
 
 #include <jllvm/class/Descriptors.hpp>
@@ -52,5 +53,18 @@ struct JavaMethodMetadata
     const Method* method;
 };
 
-void applyJavaMethodAttributes(llvm::Function* function, const JavaMethodMetadata& metadata);
+/// Adds the given Java method metadata to the function.
+void addJavaMethodMetadata(llvm::Function* function, const JavaMethodMetadata& metadata);
+
+/// Applies all ABI relevant attributes to the function which must have a signature matching the output of
+/// 'descriptorToType' when called with the given 'methodType' and 'isStatic'.
+void applyABIAttributes(llvm::Function* function, MethodType methodType, bool isStatic);
+
+/// Applies all ABI relevant attributes to the function that do not depend on its signature.
+/// This is e.g. used for stubs.
+void applyABIAttributes(llvm::Function* function);
+
+/// Applies all ABI relevant attributes to the call which must call a function with the signature matching the output of
+/// 'descriptorToType' when called with the given 'methodType' and 'isStatic'.
+void applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool isStatic);
 } // namespace jllvm
