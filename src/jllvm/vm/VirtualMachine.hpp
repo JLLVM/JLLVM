@@ -19,13 +19,13 @@
 #include <jllvm/class/ClassFile.hpp>
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/object/ClassObject.hpp>
+#include <jllvm/object/StringInterner.hpp>
 
 #include <memory>
 #include <random>
 
 #include "InteropHelpers.hpp"
 #include "JIT.hpp"
-#include "StringInterner.hpp"
 
 namespace jllvm
 {

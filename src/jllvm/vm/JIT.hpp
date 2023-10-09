@@ -33,10 +33,9 @@
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
+#include <jllvm/object/StringInterner.hpp>
 
 #include <memory>
-
-#include "StringInterner.hpp"
 
 namespace jllvm
 {

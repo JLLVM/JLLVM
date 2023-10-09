@@ -11,5 +11,5 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-add_library(JLLVMObject ClassLoader.cpp ClassObject.cpp Object.cpp)
+add_library(JLLVMObject ClassLoader.cpp ClassObject.cpp Object.cpp StringInterner.cpp)
 target_link_libraries(JLLVMObject PUBLIC JLLVMClassParser)

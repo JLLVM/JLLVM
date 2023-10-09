@@ -15,8 +15,9 @@
 
 #include <llvm/Support/raw_ostream.h>
 
-#include <jllvm/object/ClassLoader.hpp>
 #include <jllvm/support/Encoding.hpp>
+
+#include "ClassLoader.hpp"
 
 namespace jllvm
 {

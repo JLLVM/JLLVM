@@ -16,7 +16,7 @@
 #include <llvm/IR/DIBuilder.h>
 
 #include <jllvm/class/ByteCodeIterator.hpp>
-#include <jllvm/vm/StringInterner.hpp>
+#include <jllvm/object/StringInterner.hpp>
 
 #include "CodeGeneratorUtils.hpp"
 
