@@ -4,6 +4,7 @@
 class Test
 {
     public static native void print(float f);
+    public static native void print(String s);
 
     public static void main(String[] args)
     {
@@ -23,5 +24,37 @@ class Test
         print(arr[3]);
         // CHECK: 4
         print(arr.length);
+
+        arr = null;
+
+        try
+        {
+            var f = arr[0];
+        }
+        catch(NullPointerException e)
+        {
+            // CHECK: load null
+            print("load null");
+        }
+
+        try
+        {
+            arr[0] = 1.0f;
+        }
+        catch(NullPointerException e)
+        {
+            // CHECK: store null
+            print("store null");
+        }
+
+        try
+        {
+            var l = arr.length;
+        }
+        catch(NullPointerException e)
+        {
+            // CHECK: length null
+            print("length null");
+        }
     }
 }
