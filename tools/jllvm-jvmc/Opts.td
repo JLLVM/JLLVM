@@ -17,3 +17,4 @@ class F<string letter, string help> : Flag<["--"], letter>, HelpText<help>;
 
 def help : F<"help", "Displays this help text">;
 def method : Separate<["--"], "method">, MetaVarName<"<name-and-descriptor>">;
+def osr : Separate<["--"], "osr">, MetaVarName<"<byte-code-offset>">;

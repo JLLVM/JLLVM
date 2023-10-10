@@ -22,18 +22,17 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
     const ClassObject* classObject = method.getClassObject();
     const ClassFile* classFile = classObject->getClassFile();
 
-    MethodType descriptor = methodInfo.getDescriptor(*classFile);
-
-    auto* function = llvm::Function::Create(descriptorToType(descriptor, methodInfo.isStatic(), module.getContext()),
-                                            llvm::GlobalValue::ExternalLinkage,
-                                            mangleDirectMethodCall(methodInfo, *classFile), module);
+    auto* function = llvm::Function::Create(
+        descriptorToType(method.getType(), methodInfo.isStatic(), module.getContext()),
+        llvm::GlobalValue::ExternalLinkage, mangleDirectMethodCall(methodInfo, *classFile), module);
     addJavaMethodMetadata(function, {classObject, &method});
     applyABIAttributes(function);
 
-    std::optional code = methodInfo.getAttributes().find<Code>();
+    auto* code = methodInfo.getAttributes().find<Code>();
     assert(code && "method to compile must have a code attribute");
-    compileMethodBody(function, *classFile, *classObject, stringInterner, descriptor, *code,
-                      [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack&)
+    compileMethodBody(function, *classObject, stringInterner, method.getType(), *code,
+                      [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack&,
+                          const ByteCodeTypeInfo&)
                       {
                           // Arguments are put into the locals. According to the specification, i64s and doubles are
                           // split into two locals. We don't actually do that, we just put them into the very first
@@ -48,6 +47,61 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
                               }
                           }
                       });
+
+    return function;
+}
+
+llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
+                                        StringInterner& stringInterner)
+{
+    const MethodInfo& methodInfo = method.getMethodInfo();
+    const ClassObject* classObject = method.getClassObject();
+
+    auto* function =
+        llvm::Function::Create(osrMethodSignature(method.getType(), module.getContext()),
+                               llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(&method, offset), module);
+    addJavaMethodMetadata(function, {classObject, &method});
+    applyABIAttributes(function);
+
+    auto* code = methodInfo.getAttributes().find<Code>();
+    assert(code && "method to compile must have a code attribute");
+
+    llvm::Value* operandStackInput = function->getArg(0);
+    llvm::Value* localsInput = function->getArg(1);
+
+    compileMethodBody(
+        function, *classObject, stringInterner, method.getType(), *code,
+        [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack& operandStack,
+            const ByteCodeTypeInfo& typeInfo)
+        {
+            // Initialize the operand stack and the local variables from the two input arrays. Using the type info from
+            // the type checker, it is possible to load the exact types required.
+            for (auto&& [index, type] : llvm::enumerate(typeInfo.operandStack))
+            {
+                assert(type.is<llvm::Type*>()
+                       && "OSR into frame containing 'returnAddress' instances is not supported");
+                llvm::Value* gep = builder.CreateConstGEP1_32(operandStackInput->getType(), operandStackInput, index);
+                llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
+                operandStack.push_back(load);
+            }
+
+            for (auto&& [index, pair] : llvm::enumerate(llvm::zip(typeInfo.locals, locals)))
+            {
+                auto&& [type, local] = pair;
+                // If the local variable has no type, it is uninitialized at that point in time. There is no code for us
+                // to generate in this case.
+                if (!type)
+                {
+                    continue;
+                }
+                assert(type.is<llvm::Type*>()
+                       && "OSR into frame containing 'returnAddress' instances is not supported");
+                llvm::Value* gep = builder.CreateConstGEP1_32(localsInput->getType(), localsInput, index);
+                llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
+                builder.CreateStore(load, local);
+            }
+        },
+        offset);
 
     return function;
 }

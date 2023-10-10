@@ -232,30 +232,48 @@ LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 ///
 /// Attributes are contained in their unparsed raw byte form within the map
 /// and only deserialized on lookup. See 'find' for more details.
-class AttributeMap : private llvm::DenseMap<llvm::StringRef, llvm::ArrayRef<char>>
+class AttributeMap
 {
-    using Base = llvm::DenseMap<llvm::StringRef, llvm::ArrayRef<char>>;
+    using AttributePointer = std::unique_ptr<void, void (*)(void*)>;
+    mutable llvm::DenseMap<llvm::StringRef, std::pair<llvm::ArrayRef<char>, AttributePointer>> m_map;
 
 public:
-    using Base::insert;
+    AttributeMap() = default;
+    ~AttributeMap() = default;
+    AttributeMap(const AttributeMap&) = delete;
+    AttributeMap& operator=(const AttributeMap&) = delete;
+    AttributeMap(AttributeMap&&) noexcept = default;
+    AttributeMap& operator=(AttributeMap&&) noexcept = default;
+
+    void insert(llvm::StringRef name, llvm::ArrayRef<char> bytes)
+    {
+        m_map.try_emplace(name, bytes, AttributePointer(nullptr, nullptr));
+    }
 
     /// Looks up an attribute in the attribute map and parses it if present.
     ///
     /// Attributes are represented by types which are required to have following structure:
     ///     * a static constexpr string called 'identifier' which is the name of the attribute
-    ///     * a static 'parse(ArrayRef<char>)' method which returns a parsed instance of the attribute class.
+    ///     * a static 'parse(ArrayRef<char>, const ClassFile&)' method which returns a parsed instance of the attribute
+    ///       class.
     ///
-    /// 'T' of this method must be such a class. If the attribute is not present within the map, an empty optional
+    /// 'T' of this method must be such a class. If the attribute is not present within the map a null pointer is
     /// returned.
     template <class T>
-    std::optional<T> find() const
+    T* find() const
     {
-        auto result = Base::find(T::identifier);
-        if (result == end())
+        auto result = m_map.find(T::identifier);
+        if (result == m_map.end())
         {
-            return std::nullopt;
+            return nullptr;
         }
-        return T::parse(result->second);
+
+        if (!result->second.second)
+        {
+            result->second.second = std::unique_ptr<void, void (*)(void*)>(
+                new T(T::parse(result->second.first)), +[](void* pointer) { delete reinterpret_cast<T*>(pointer); });
+        }
+        return reinterpret_cast<T*>(result->second.second.get());
     }
 };
 

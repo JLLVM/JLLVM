@@ -24,4 +24,9 @@ namespace jllvm
 
 /// Compiles 'method' to a new LLVM function inside of 'module' and returns it.
 llvm::Function* compileMethod(llvm::Module& module, const Method& method, StringInterner& stringInterner);
+
+/// Compiles 'method' to a LLVM function suitable for OSR entry at the bytecode offset 'offset'. The function is placed
+/// into 'module' and returned.
+llvm::Function* compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
+                                 StringInterner& stringInterner);
 } // namespace jllvm

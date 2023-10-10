@@ -150,7 +150,21 @@ int main(int argc, char** argv)
     llvm::LLVMContext context;
     llvm::Module module(name, context);
 
-    compileMethod(module, *method, stringInterner);
+    if (llvm::opt::Arg* arg = args.getLastArg(OPT_osr))
+    {
+        llvm::StringRef ref = arg->getValue();
+        unsigned offset;
+        if (ref.consumeInteger(0, offset))
+        {
+            llvm::errs() << "invalid integer '" << ref << "' as argument to '--osr'\n";
+            return -1;
+        }
+        compileOSRMethod(module, offset, *method, stringInterner);
+    }
+    else
+    {
+        compileMethod(module, *method, stringInterner);
+    }
     if (llvm::verifyModule(module, &llvm::dbgs()))
     {
         std::abort();

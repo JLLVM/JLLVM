@@ -179,3 +179,10 @@ void jllvm::applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool
 {
     call->setAttributes(getABIAttributes(call->getContext(), methodType, isStatic));
 }
+
+llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, llvm::LLVMContext& context)
+{
+    auto* pointerType = llvm::PointerType::get(context, 0);
+    return llvm::FunctionType::get(descriptorToType(methodType.returnType(), context), {pointerType, pointerType},
+                                   /*isVarArg=*/false);
+}

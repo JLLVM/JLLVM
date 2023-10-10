@@ -13,6 +13,7 @@
 
 #include "CodeGenerator.hpp"
 
+#include <llvm/ADT/IntervalTree.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ModRef.h>
 
@@ -170,7 +171,7 @@ ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& b
 
 } // namespace
 
-void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologue)
+void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset)
 {
     llvm::DIFile* file = m_debugBuilder.createFile("temp.java", ".");
     llvm::DICompileUnit* cu = m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
@@ -190,16 +191,42 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     // We need pointer size bytes, since that is the largest type we may store in a local.
     std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
 
-    generatePrologue(m_builder, m_locals, m_operandStack);
+    // Perform the type check as the information is potentially required in the prologue generation.
+    ByteCodeTypeInfo typeInfo;
+    typeInfo.offset = offset;
+    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_functionMethodType, typeInfo};
 
-    createBasicBlocks(code);
-    generateCodeBody(code);
+    generatePrologue(m_builder, m_locals, m_operandStack, typeInfo);
+
+    createBasicBlocks(checker);
+    // If no basic block exists for the offset compilation is started at, create it. This effectively splits the basic
+    // block that the offset is contained in and allows the entry block of this function and the instructions prior to
+    // offset to jump to the basic block corresponding to 'offset'.
+    auto [iter, inserted] = m_basicBlocks.insert({offset, {}});
+    if (inserted)
+    {
+        iter->second.block = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
+        iter->second.block->moveAfter(&m_function->getEntryBlock());
+        iter->second.state.resize(typeInfo.operandStack.size());
+        llvm::transform(typeInfo.operandStack, iter->second.state.begin(), [&](ByteCodeTypeChecker::JVMType type)
+                        { return type.is<llvm::Type*>() ? type.get<llvm::Type*>() : m_builder.getPtrTy(); });
+    }
+
+    generateCodeBody(code, offset);
+
+    // 'createBasicBlocks' conservatively creates all basic blocks of the code even if some are not reachable if
+    // 'offset' is not 0. Delete these basic blocks by detecting them having never been inserted into.
+    for (const BasicBlockData& basicBlockData : llvm::make_second_range(m_basicBlocks))
+    {
+        if (basicBlockData.block->empty())
+        {
+            basicBlockData.block->eraseFromParent();
+        }
+    }
 }
 
-void CodeGenerator::createBasicBlocks(const Code& code)
+void CodeGenerator::createBasicBlocks(const ByteCodeTypeChecker& checker)
 {
-    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code};
-
     for (const auto& [offset, state] : checker.getBasicBlocks())
     {
         OperandStack::State stack{state.size()};
@@ -215,72 +242,141 @@ void CodeGenerator::createBasicBlocks(const Code& code)
     m_retToMap = checker.makeRetToMap();
 }
 
-void CodeGenerator::generateCodeBody(const Code& code)
+void CodeGenerator::generateCodeBody(const Code& code, std::uint16_t startOffset)
 {
+    // IntervalTree used to find all active exception handlers at a given offset. Due to the value type needing to be a
+    // primitive type, an index into the exception table is used.
+    using IntervalTree = llvm::IntervalTree<std::uint16_t, std::size_t>;
+    IntervalTree::Allocator allocator;
+    IntervalTree intervalTree(allocator);
+
     llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
-    for (const auto& iter : code.getExceptionTable())
+    for (auto&& [index, iter] : llvm::enumerate(code.getExceptionTable()))
     {
-        startHandlers[iter.startPc].push_back(iter);
-    }
-
-    bool isReachable = false;
-
-    llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
-    for (ByteCodeOp operation : byteCodeRange(code.getCode()))
-    {
-        std::size_t offset = getOffset(operation);
-        if (auto result = endHandlers.find(offset); result != endHandlers.end())
-        {
-            for (auto iter : result->second)
-            {
-                m_activeHandlers.erase(iter);
-            }
-            // No longer needed.
-            endHandlers.erase(result);
-        }
-
-        if (auto result = startHandlers.find(offset); result != startHandlers.end())
-        {
-            for (const Code::ExceptionTable& iter : result->second)
-            {
-                m_activeHandlers.emplace_back(iter.handlerPc, iter.catchType);
-                endHandlers[iter.endPc].push_back(std::prev(m_activeHandlers.end()));
-            }
-            // No longer needed.
-            startHandlers.erase(result);
-        }
-
-        if (auto result = m_basicBlocks.find(offset); result != m_basicBlocks.end())
-        {
-            // Without any branches, there will not be a terminator at the end of the basic block. Thus, we need to
-            // set this manually to the new insert point. This essentially implements implicit fallthrough from JVM
-            // bytecode.
-            if (m_builder.GetInsertBlock()->getTerminator() == nullptr)
-            {
-                m_builder.CreateBr(result->second.block);
-            }
-            m_builder.SetInsertPoint(result->second.block);
-            m_operandStack.setState(result->second.state);
-            isReachable = true;
-        }
-
-        if (isReachable)
-        {
-            if (generateInstruction(std::move(operation)))
-            {
-                isReachable = false;
-            }
-        }
-        else
+        if (iter.startPc == iter.endPc)
         {
             continue;
+        }
+        startHandlers[iter.startPc].push_back(iter);
+        // The interval tree is inclusive while the exception table is exclusive.
+        intervalTree.insert(iter.startPc, iter.endPc - 1, index);
+    }
+    intervalTree.create();
+
+    // Branch from the entry block to the first basic block implementing JVM bytecode.
+    m_builder.CreateBr(m_basicBlocks.find(startOffset)->second.block);
+
+    // Loop implementing compilation of at least one basic block. A worklist is used to enqueue all basic blocks that
+    // require compilation as discovered during compilation. The inner loop implements compilation of at least one
+    // basic block but will fall through and start compiling basic blocks afterwards if that code is an immediate
+    // successor of the current block. This is an optimization reducing the amount of times the active exception
+    // handlers have to be constructed and the type stack explicitly set.
+    m_workList.insert(startOffset);
+    while (!m_workList.empty())
+    {
+        std::uint16_t start = m_workList.pop_back_val();
+        {
+            auto result = m_basicBlocks.find(start);
+            assert(result != m_basicBlocks.end());
+            llvm::BasicBlock* block = result->second.block;
+            // If the block already has a terminator, then it has been compiled previously and there is nothing to do.
+            if (block->getTerminator())
+            {
+                continue;
+            }
+            // Move the block after the one that was compiled last to make the basic block order more akin to the
+            // order of instructions in bytecode.
+            block->moveAfter(m_builder.GetInsertBlock());
+            m_builder.SetInsertPoint(block);
+            m_operandStack.setState(result->second.state);
+        }
+
+        // Compute the exception handlers active right before the new offset.
+        m_activeHandlers.clear();
+        llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
+        if (start != 0 && !intervalTree.empty())
+        {
+            llvm::SmallVector<std::size_t> handlerIndices = llvm::to_vector(
+                llvm::map_range(intervalTree.getContaining(start - 1),
+                                [](const IntervalTree::DataType* pointer) { return pointer->value(); }));
+            // Order of the entries is the exception table is significant as earlier entries are handled first. Sorting
+            // the indices restores this order.
+            llvm::sort(handlerIndices);
+            for (std::size_t index : handlerIndices)
+            {
+                const Code::ExceptionTable& entry = code.getExceptionTable()[index];
+                m_activeHandlers.emplace_back(entry.handlerPc, entry.catchType);
+                endHandlers[entry.endPc].push_back(std::prev(m_activeHandlers.end()));
+            }
+        }
+
+        llvm::ArrayRef<char> bytes = code.getCode();
+        for (auto curr = ByteCodeIterator(bytes.drop_front(start).begin(), start), end = ByteCodeIterator(bytes.end());
+             curr != end;)
+        {
+            ByteCodeOp operation = *curr;
+            std::size_t offset = getOffset(operation);
+            if (auto result = endHandlers.find(offset); result != endHandlers.end())
+            {
+                for (auto iter : result->second)
+                {
+                    m_activeHandlers.erase(iter);
+                }
+                // No longer needed.
+                endHandlers.erase(result);
+            }
+
+            if (auto result = startHandlers.find(offset); result != startHandlers.end())
+            {
+                for (const Code::ExceptionTable& iter : result->second)
+                {
+                    m_activeHandlers.emplace_back(iter.handlerPc, iter.catchType);
+                    endHandlers[iter.endPc].push_back(std::prev(m_activeHandlers.end()));
+                }
+            }
+
+            // Break out of the current straight-line code if the instruction does not fallthrough.
+            if (!generateInstruction(std::move(operation)))
+            {
+                break;
+            }
+
+            ++curr;
+
+            if (curr == end)
+            {
+                break;
+            }
+
+            // Check if the instruction afterward is part of a new basic block whose insertion point may have to be
+            // set.
+            auto result = m_basicBlocks.find(curr.getOffset());
+            if (result == m_basicBlocks.end())
+            {
+                continue;
+            }
+
+            llvm::BasicBlock* nextBlock = result->second.block;
+            if (!m_builder.GetInsertBlock()->getTerminator())
+            {
+                // If the last instruction of the previous block is not a terminator, then implement implicit
+                // fall-through by branching to the basic block right after.
+                m_builder.CreateBr(nextBlock);
+            }
+            // Break out of the straight-line compilation if the next basic block was already compiled.
+            if (nextBlock->getTerminator())
+            {
+                break;
+            }
+            nextBlock->moveAfter(m_builder.GetInsertBlock());
+            m_builder.SetInsertPoint(nextBlock);
         }
     }
 }
 
 bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 {
-    bool blockEnd = false;
+    bool fallsThrough = true;
 
     auto generateRet = [&](auto& ret)
     {
@@ -291,7 +387,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             indirectBr->addDestination(m_basicBlocks[location].block);
         }
-        blockEnd = true;
+        fallsThrough = false;
     };
 
     match(
@@ -431,7 +527,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 });
 
             m_builder.CreateRet(value);
-            blockEnd = true;
+            fallsThrough = false;
         },
         [&](ArrayLength)
         {
@@ -467,7 +563,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
             m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
-            blockEnd = true;
+            fallsThrough = false;
         },
         [&](BIPush biPush)
         {
@@ -858,8 +954,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](OneOf<Goto, GotoW> gotoOp)
         {
-            m_builder.CreateBr(m_basicBlocks[gotoOp.offset + gotoOp.target].block);
-            blockEnd = true;
+            m_builder.CreateBr(getBasicBlock(gotoOp.offset + gotoOp.target));
+            fallsThrough = false;
         },
         [&](I2B)
         {
@@ -904,8 +1000,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                   IfGe, IfGt, IfLe, IfNonNull, IfNull>
                 cmpOp)
         {
-            llvm::BasicBlock* target = m_basicBlocks[cmpOp.offset + cmpOp.target].block;
-            llvm::BasicBlock* next = m_basicBlocks[cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t)].block;
+            llvm::BasicBlock* target = getBasicBlock(cmpOp.offset + cmpOp.target);
+            llvm::BasicBlock* next = getBasicBlock(cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t));
 
             llvm::Value* rhs;
             llvm::Value* lhs;
@@ -940,7 +1036,6 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* cond = m_builder.CreateICmp(predicate, lhs, rhs);
             m_builder.CreateCondBr(cond, target, next);
-            blockEnd = true;
         },
         [&](IInc iInc)
         {
@@ -1051,18 +1146,19 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](OneOf<JSR, JSRw> jsr)
         {
-            llvm::BasicBlock* target = m_basicBlocks[jsr.offset + jsr.target].block;
+            llvm::BasicBlock* target = getBasicBlock(jsr.offset + jsr.target);
             std::uint16_t retAddress =
                 jsr.offset + sizeof(OpCodes)
                 + (holds_alternative<JSRw>(operation) ? sizeof(std::int32_t) : sizeof(std::int16_t));
 
             if (auto iter = m_basicBlocks.find(retAddress); iter != m_basicBlocks.end())
             {
+                m_workList.insert(retAddress);
                 m_operandStack.push_back(llvm::BlockAddress::get(iter->second.block));
             }
 
             m_builder.CreateBr(target);
-            blockEnd = true;
+            fallsThrough = false;
         },
         [&](L2I)
         {
@@ -1111,17 +1207,17 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* key = m_operandStack.pop_back();
 
-            llvm::BasicBlock* defaultBlock = m_basicBlocks[switchOp.offset + switchOp.defaultOffset].block;
+            llvm::BasicBlock* defaultBlock = getBasicBlock(switchOp.offset + switchOp.defaultOffset);
 
             auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
 
             for (auto [match, target] : switchOp.matchOffsetsPairs)
             {
-                llvm::BasicBlock* targetBlock = m_basicBlocks[switchOp.offset + target].block;
+                llvm::BasicBlock* targetBlock = getBasicBlock(switchOp.offset + target);
 
                 switchInst->addCase(m_builder.getInt32(match), targetBlock);
             }
-            blockEnd = true;
+            fallsThrough = false;
         },
         [&](OneOf<LShl, LShr, LUShr>)
         {
@@ -1376,7 +1472,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](Return)
         {
             m_builder.CreateRetVoid();
-            blockEnd = true;
+            fallsThrough = false;
         },
         [&](SIPush siPush) { m_operandStack.push_back(m_builder.getInt32(siPush.value)); },
         [&](Swap)
@@ -1444,7 +1540,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[wide.index]));
         });
 
-    return blockEnd;
+    return fallsThrough;
 }
 
 void CodeGenerator::generateEHDispatch()
@@ -1537,7 +1633,7 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
 
     for (auto [handlerPC, catchType] : m_activeHandlers)
     {
-        llvm::BasicBlock* handlerBB = m_basicBlocks[handlerPC].block;
+        llvm::BasicBlock* handlerBB = getBasicBlock(handlerPC);
 
         llvm::PointerType* ty = referenceType(m_builder.getContext());
 
