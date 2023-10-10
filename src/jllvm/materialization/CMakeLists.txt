@@ -23,4 +23,4 @@ add_library(JLLVMMaterialization
         ClassObjectStubDefinitionsGenerator.cpp
         ClassObjectStubCodeGenerator.cpp
         ClassObjectStubMangling.cpp)
-target_link_libraries(JLLVMMaterialization PUBLIC JLLVMVirtualMachine JLLVMObject LLVMCore LLVMOrcJIT)
+target_link_libraries(JLLVMMaterialization PUBLIC JLLVMObject LLVMCore LLVMOrcJIT PRIVATE LLVMTargetParser)

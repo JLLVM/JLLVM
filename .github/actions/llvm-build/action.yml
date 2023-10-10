@@ -15,6 +15,10 @@ inputs:
   cache-key:
     description: 'Key to use to cache LLVM compilation. Should encode build config details'
     required: true
+  shared_libs:
+    description: 'Whether to build shared libraries. Probably only works on Linux'
+    required: false
+    default: 'OFF'
 
 outputs:
   install-dir:
@@ -96,6 +100,7 @@ runs:
         -DCMAKE_BUILD_TYPE=Release `
         -DCMAKE_CXX_COMPILER=${{inputs.cpp-compiler}} `
         -DCMAKE_C_COMPILER=${{inputs.c-compiler}} `
+        -DBUILD_SHARED_LIBS=${{inputs.shared_libs || 'OFF'}} `
         $assertions `
         -DLLVM_BUILD_TOOLS=OFF `
         -DLLVM_BUILD_UTILS=ON `
