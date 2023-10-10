@@ -61,6 +61,8 @@ class CodeGenerator
 
     void generateEHDispatch();
 
+    void generateNullPointerCheck(llvm::Value* object);
+
     llvm::BasicBlock* generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred);
 
     llvm::Value* loadClassObjectFromPool(PoolIndex<ClassInfo> index);

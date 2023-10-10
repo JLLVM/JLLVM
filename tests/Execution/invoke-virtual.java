@@ -7,6 +7,7 @@
 public class Test
 {
     public static native void print(int i);
+    public static native void print(String s);
 }
 
 //--- A.java
@@ -59,5 +60,17 @@ public class Other
         c.c();
         // CHECK: 4
         ((B)c).b(); // Even when casting, the method of the dynamic type shall be used
+
+        c = null;
+
+        try
+        {
+            c.c();
+        }
+        catch(NullPointerException e)
+        {
+            // CHECK: virtual null
+            Test.print("virtual null");
+        }
     }
 }

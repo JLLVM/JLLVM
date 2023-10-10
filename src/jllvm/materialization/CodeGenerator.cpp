@@ -319,8 +319,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](IALoad) { return m_builder.getInt32Ty(); }, [&](LALoad) { return m_builder.getInt64Ty(); });
 
             llvm::Value* index = m_operandStack.pop_back();
-            // TODO: throw NullPointerException if array is null
             llvm::Value* array = m_operandStack.pop_back();
+
+            generateNullPointerCheck(array);
 
             // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
@@ -346,8 +347,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* index = m_operandStack.pop_back();
-            // TODO: throw NullPointerException if array is null
             llvm::Value* array = m_operandStack.pop_back();
+
+            generateNullPointerCheck(array);
 
             // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
@@ -444,6 +446,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* array = m_operandStack.pop_back();
 
+            generateNullPointerCheck(array);
+
             // The element type of the array type here is actually irrelevant.
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(referenceType(m_builder.getContext())), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(1)});
@@ -466,6 +470,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](AThrow)
         {
             llvm::Value* exception = m_operandStack.pop_back();
+
+            generateNullPointerCheck(exception);
 
             m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
@@ -816,6 +822,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* objectRef = m_operandStack.pop_back();
 
+            generateNullPointerCheck(objectRef);
+
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
@@ -961,6 +969,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             {
                 iter = m_operandStack.pop_back();
             }
+
+            generateNullPointerCheck(args[0]);
+
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
@@ -1140,7 +1151,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             // Pop object as is required by the instruction.
             // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
             //  (un)locking it.
-            m_operandStack.pop_back();
+            generateNullPointerCheck(m_operandStack.pop_back());
         },
         [&](MultiANewArray multiANewArray)
         {
@@ -1312,6 +1323,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Type* llvmFieldType = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* objectRef = m_operandStack.pop_back();
+
+            generateNullPointerCheck(objectRef);
+
             llvm::Value* fieldOffset = m_helper.getInstanceFieldOffset(m_builder, className, fieldName, fieldType);
             // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
             if (!llvm::isa<llvm::Constant>(fieldOffset))
@@ -1445,6 +1459,29 @@ void CodeGenerator::generateEHDispatch()
 
     auto* continueBlock = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
     m_builder.CreateCondBr(cond, continueBlock, generateHandlerChain(value, m_builder.GetInsertBlock()));
+
+    m_builder.SetInsertPoint(continueBlock);
+}
+
+void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
+{
+    llvm::PointerType* ty = referenceType(m_builder.getContext());
+    llvm::Value* null = llvm::ConstantPointerNull::get(ty);
+    llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
+
+    auto* continueBlock = llvm::BasicBlock::Create(m_builder.getContext(), "next", m_function);
+    auto* nullBlock = llvm::BasicBlock::Create(m_builder.getContext(), "null", m_function);
+    m_builder.CreateCondBr(isNull, nullBlock, continueBlock);
+    m_builder.SetInsertPoint(nullBlock);
+
+    llvm::Value* exception =
+        m_builder.CreateCall(m_function->getParent()->getOrInsertFunction("jllvm_build_null_pointer_exception",
+                                                                          llvm::FunctionType::get(ty, {}, false)),
+                             {});
+
+    m_builder.CreateStore(exception, activeException(m_function->getParent()));
+
+    m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
 
     m_builder.SetInsertPoint(continueBlock);
 }

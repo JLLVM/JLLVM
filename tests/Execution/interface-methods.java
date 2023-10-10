@@ -7,6 +7,7 @@
 public class Test
 {
     public static native void print(int i);
+    public static native void print(String s);
 }
 
 //--- A.java
@@ -59,5 +60,17 @@ public class Other
         c.b();
         // CHECK: 6
         c.c();
+
+        c = null;
+
+        try
+        {
+            c.a();
+        }
+        catch(NullPointerException e)
+        {
+            // CHECK: interface null
+            Test.print("interface null");
+        }
     }
 }

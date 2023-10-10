@@ -219,6 +219,14 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
                       return root;
                   }},
+        std::pair{"jllvm_build_null_pointer_exception",
+                  [&]() -> Object*
+                  {
+                      GCUniqueRoot root =
+                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/NullPointerException;")));
+                      executeObjectConstructor(root, "()V");
+                      return root;
+                  }},
         std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
         std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }});
 
