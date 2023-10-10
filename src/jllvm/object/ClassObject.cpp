@@ -309,7 +309,7 @@ const jllvm::Method* jllvm::ClassObject::interfaceMethodResolution(llvm::StringR
 
 const jllvm::Method* jllvm::ClassObject::specialMethodResolution(llvm::StringRef methodName, MethodType methodType,
                                                                  const ClassObject* objectClass,
-                                                                 const ClassObject* callContext, bool superFlag) const
+                                                                 const ClassObject* callContext) const
 {
     // The named method is resolved (§5.4.3.3, §5.4.3.4).
     const Method* resolvedMethod = isInterface() ? interfaceMethodResolution(methodName, methodType, objectClass) :
@@ -323,7 +323,7 @@ const jllvm::Method* jllvm::ClassObject::specialMethodResolution(llvm::StringRef
     // The symbolic reference names a class (not an interface), and that class is a superclass of the current class.
     //
     // The ACC_SUPER flag is set for the class file (§4.1).
-    if (!superFlag || resolvedMethod->isObjectConstructor() || !resolvedClass->isClass()
+    if (!callContext || resolvedMethod->isObjectConstructor() || !resolvedClass->isClass()
         || !llvm::is_contained(callContext->getSuperClasses(/*includeThis=*/false), resolvedClass))
     {
         return resolvedMethod;

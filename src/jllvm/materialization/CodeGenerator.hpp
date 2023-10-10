@@ -18,6 +18,8 @@
 #include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/StringInterner.hpp>
 
+#include <map>
+
 #include "CodeGeneratorUtils.hpp"
 
 namespace jllvm
@@ -34,7 +36,7 @@ class CodeGenerator
 
     llvm::Function* m_function;
     const ClassFile& m_classFile;
-    LazyClassLoaderHelper m_helper;
+    const ClassObject& m_classObject;
     StringInterner& m_stringInterner;
     MethodType m_functionMethodType;
     llvm::IRBuilder<> m_builder;
@@ -76,13 +78,41 @@ class CodeGenerator
 
     llvm::Value* generateAllocArray(ArrayType descriptor, llvm::Value* classObject, llvm::Value* size);
 
+    /// Creates a non-virtual call to the static function 'methodName' of the type 'methodType' within
+    /// 'className' using 'args'. This is used to implement `invokestatic`.
+    llvm::Value* doStaticCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
+                              MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
+
+    /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
+    /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.
+    llvm::Value* doInstanceCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
+                                MethodType methodType, llvm::ArrayRef<llvm::Value*> args, MethodResolution resolution);
+
+    /// Creates an 'invokespecial' call to the function 'methodName' of the type 'methodType' within 'className' using
+    /// 'args'.
+    llvm::Value* doSpecialCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
+                               MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
+
+    /// Returns an LLVM integer constant which contains the offset of the 'fieldName' with the type 'fieldType'
+    /// within the class 'className'.
+    llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
+                                        llvm::StringRef fieldName, FieldType fieldType);
+
+    /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
+    /// within the class 'className'.
+    llvm::Value* getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef fieldName,
+                                       FieldType fieldType);
+
+    /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
+    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor);
+
 public:
-    CodeGenerator(llvm::Function* function, const ClassFile& classFile, LazyClassLoaderHelper helper,
+    CodeGenerator(llvm::Function* function, const ClassFile& classFile, const ClassObject& classObject,
                   StringInterner& stringInterner, MethodType methodType, std::uint16_t maxStack,
                   std::uint16_t maxLocals)
         : m_function{function},
           m_classFile{classFile},
-          m_helper{std::move(helper)},
+          m_classObject(classObject),
           m_stringInterner{stringInterner},
           m_functionMethodType{methodType},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},

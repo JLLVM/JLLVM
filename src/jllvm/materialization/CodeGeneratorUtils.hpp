@@ -13,9 +13,6 @@
 
 #pragma once
 
-#include <llvm/ExecutionEngine/Orc/Core.h>
-#include <llvm/ExecutionEngine/Orc/IndirectionUtils.h>
-#include <llvm/ExecutionEngine/Orc/Layer.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 
@@ -143,72 +140,4 @@ public:
     }
 };
 
-/// Helper class to fetch properties about a class while still doing lazy class loading.
-/// This works by taking callbacks which are either called immediately if a class object is already loaded, leading
-/// to better code generation, or otherwise creating stubs that when called load the given class object and return
-/// the value given by the callback.
-class LazyClassLoaderHelper
-{
-    ClassLoader& m_classLoader;
-    llvm::orc::JITDylib& m_mainDylib;
-    llvm::orc::JITDylib& m_implDylib;
-    llvm::orc::IndirectStubsManager& m_stubsManager;
-    llvm::orc::JITCompileCallbackManager& m_callbackManager;
-    llvm::orc::IRLayer& m_baseLayer;
-    llvm::orc::MangleAndInterner& m_interner;
-    llvm::DataLayout m_dataLayout;
-
-    // Class object of the enclosing class of the method currently being compiled.
-    const ClassObject* m_currentClass;
-    const ClassFile* m_currentClassFile;
-
-    template <class F>
-    llvm::Value* doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                                      MethodType methodType, bool isStatic, llvm::Twine key,
-                                      llvm::ArrayRef<llvm::Value*> args, F&& f);
-
-public:
-    LazyClassLoaderHelper(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib, llvm::orc::JITDylib& implDylib,
-                          llvm::orc::IndirectStubsManager& stubsManager,
-                          llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::IRLayer& baseLayer,
-                          llvm::orc::MangleAndInterner& interner, const llvm::DataLayout& dataLayout,
-                          const ClassObject* currentClass, const ClassFile* currentClassFile)
-        : m_mainDylib(mainDylib),
-          m_implDylib(implDylib),
-          m_stubsManager(stubsManager),
-          m_callbackManager(callbackManager),
-          m_baseLayer(baseLayer),
-          m_dataLayout(dataLayout),
-          m_classLoader(classLoader),
-          m_interner(interner),
-          m_currentClass(currentClass),
-          m_currentClassFile(currentClassFile)
-    {
-        m_mainDylib.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
-                                    { m_implDylib.setLinkOrder(dylibSearchOrder); });
-    }
-
-    /// Creates a non-virtual call to the static function 'methodName' of the type 'methodType' within
-    /// 'className' using 'args'. This is used to implement `invokestatic`.
-    llvm::Value* doStaticCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                              MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
-
-    /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
-    /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.
-    llvm::Value* doInstanceCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
-                                MethodType methodType, llvm::ArrayRef<llvm::Value*> args, MethodResolution resolution);
-
-    /// Returns an LLVM integer constant which contains the offset of the 'fieldName' with the type 'fieldType'
-    /// within the class 'className'.
-    llvm::Value* getInstanceFieldOffset(llvm::IRBuilder<>& builder, llvm::StringRef className,
-                                        llvm::StringRef fieldName, FieldType fieldType);
-
-    /// Returns an LLVM Pointer which points to the static field 'fieldName' with the type 'fieldType'
-    /// within the class 'className'.
-    llvm::Value* getStaticFieldAddress(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef fieldName,
-                                       FieldType fieldType);
-
-    /// Returns an LLVM Pointer which points to the class object of the type with the given field descriptor.
-    llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor);
-};
 } // namespace jllvm

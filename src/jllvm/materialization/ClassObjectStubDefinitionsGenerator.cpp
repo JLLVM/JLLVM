@@ -47,6 +47,24 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
             ClassObject& classObject = classLoader.forName(ObjectType(staticCall.className));
             generateStaticCallStub(*module, classObject, staticCall.methodName, staticCall.descriptor, *objectClass);
         },
+        [&](const DemangledMethodResolutionCall& methodResolutionCall)
+        {
+            ClassObject& classObject = classLoader.forName(ObjectType(methodResolutionCall.className));
+            generateMethodResolutionCallStub(*module, methodResolutionCall.resolution, classObject,
+                                             methodResolutionCall.methodName, methodResolutionCall.descriptor,
+                                             *objectClass);
+        },
+        [&](const DemangledSpecialCall& specialCall)
+        {
+            ClassObject& classObject = classLoader.forName(ObjectType(specialCall.className));
+            ClassObject* callerClass = nullptr;
+            if (specialCall.callerClass)
+            {
+                callerClass = &classLoader.forName(*specialCall.callerClass);
+            }
+            generateSpecialMethodCallStub(*module, classObject, specialCall.methodName, specialCall.descriptor,
+                                          callerClass, *objectClass);
+        },
         [](...) { llvm_unreachable("Not yet implemented"); });
     return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 }

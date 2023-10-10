@@ -133,8 +133,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                           tsm.withModuleDo([&](llvm::Module& module) { optimize(module); });
                           return std::move(tsm);
                       }),
-      m_byteCodeCompileLayer(classLoader, stringInterner, m_main, m_epciu->createIndirectStubsManager(),
-                             *m_callbackManager, m_optimizeLayer, m_interner, m_dataLayout),
+      m_byteCodeCompileLayer(stringInterner, m_optimizeLayer, m_interner, m_dataLayout),
       m_byteCodeOnDemandLayer(m_byteCodeCompileLayer, *m_session, m_interner,
                               llvm::orc::createLocalIndirectStubsManagerBuilder(llvm::Triple(LLVM_HOST_TRIPLE)),
                               m_epciu->getLazyCallThroughManager()),

@@ -41,15 +41,8 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     auto code = methodInfo->getAttributes().find<Code>();
     assert(code);
-    CodeGenerator codeGenerator{function,
-                                *classFile,
-                                LazyClassLoaderHelper(m_classLoader, m_mainDylib, m_stubsImplDylib, *m_stubsManager,
-                                                      m_callbackManager, m_baseLayer, m_interner, m_dataLayout,
-                                                      classObject, classFile),
-                                m_stringInterner,
-                                descriptor,
-                                code->getMaxStack(),
-                                code->getMaxLocals()};
+    CodeGenerator codeGenerator{function,   *classFile,          *classObject,        m_stringInterner,
+                                descriptor, code->getMaxStack(), code->getMaxLocals()};
 
     codeGenerator.generateCode(*code);
 

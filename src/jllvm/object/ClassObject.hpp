@@ -793,11 +793,10 @@ public:
     /// This method performs the method resolution and selection of an `invokespecial` instruction as described here:
     /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-6.html#jvms-6.5.invokespecial
     /// `invokespecial` has the special case of having different semantics based on in which class file it is contained
-    /// in. `callContext` represents the class object of the class file the `invokespecial` occurs in while `superFlag`
-    /// corresponds to whether that class file has the `ACC_SUPER` flag set.
+    /// in. `callContext` represents the class object of the class file the `invokespecial` occurs in if the
+    /// corresponding class file had the `ACC_SUPER` flag set. If not it should be null.
     const Method* specialMethodResolution(llvm::StringRef methodName, MethodType methodType,
-                                          const ClassObject* objectClass, const ClassObject* callContext,
-                                          bool superFlag) const;
+                                          const ClassObject* objectClass, const ClassObject* callContext) const;
 };
 
 static_assert(std::is_trivially_destructible_v<ClassObject>);
