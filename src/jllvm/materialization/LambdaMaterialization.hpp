@@ -17,9 +17,8 @@
 #include <llvm/ExecutionEngine/Orc/Layer.h>
 #include <llvm/IR/IRBuilder.h>
 
+#include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/object/Object.hpp>
-
-#include "ByteCodeCompileUtils.hpp"
 
 namespace jllvm
 {

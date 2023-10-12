@@ -17,7 +17,7 @@
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Support/Debug.h>
 
-#include <jllvm/materialization/ClassObjectStubMangling.hpp>
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
 
 #include "NativeImplementation.hpp"
 

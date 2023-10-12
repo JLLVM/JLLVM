@@ -11,5 +11,13 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-add_subdirectory(jllvm)
-add_subdirectory(jllvm-jvmc)
+add_library(JLLVMCompiler
+        ByteCodeCompileUtils.cpp
+        CodeGenerator.cpp
+        CodeGeneratorUtils.cpp
+        ClassObjectStubCodeGenerator.cpp
+        ClassObjectStubMangling.cpp
+        Compiler.cpp
+        Compiler.hpp)
+target_link_libraries(JLLVMCompiler PUBLIC JLLVMObject LLVMCore)
+

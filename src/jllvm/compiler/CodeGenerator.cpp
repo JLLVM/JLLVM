@@ -13,6 +13,7 @@
 
 #include "CodeGenerator.hpp"
 
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ModRef.h>
 
 using namespace jllvm;
@@ -169,7 +170,7 @@ ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& b
 
 } // namespace
 
-void CodeGenerator::generateCode(const Code& code)
+void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologue)
 {
     llvm::DIFile* file = m_debugBuilder.createFile("temp.java", ".");
     llvm::DICompileUnit* cu = m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
@@ -179,6 +180,7 @@ void CodeGenerator::generateCode(const Code& code)
                                       m_debugBuilder.createSubroutineType(m_debugBuilder.getOrCreateTypeArray({})), 1,
                                       llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
     m_function->setSubprogram(subprogram);
+    auto onExit = llvm::make_scope_exit([&] { m_debugBuilder.finalizeSubprogram(subprogram); });
 
     // Dummy debug location until we generate proper debug location. This is required by LLVM as it requires any call
     // to a function that has debug info and is eligible to be inlined to have debug locations on the call.
@@ -188,24 +190,10 @@ void CodeGenerator::generateCode(const Code& code)
     // We need pointer size bytes, since that is the largest type we may store in a local.
     std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
 
-    // Arguments are put into the locals. According to the specification, i64s and doubles are split into two
-    // locals. We don't actually do that, we just put them into the very first local, but we still have to skip over
-    // the following local as if we didn't.
-    auto nextLocal = m_locals.begin();
-    for (auto& arg : m_function->args())
-    {
-        m_builder.CreateStore(&arg, *nextLocal++);
-        if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
-        {
-            nextLocal++;
-        }
-    }
+    generatePrologue(m_builder, m_locals, m_operandStack);
 
     createBasicBlocks(code);
     generateCodeBody(code);
-
-    m_debugBuilder.finalizeSubprogram(subprogram);
-    m_debugBuilder.finalize();
 }
 
 void CodeGenerator::createBasicBlocks(const Code& code)

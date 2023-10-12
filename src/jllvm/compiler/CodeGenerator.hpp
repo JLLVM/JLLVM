@@ -122,8 +122,37 @@ public:
     {
     }
 
+    ~CodeGenerator()
+    {
+        m_debugBuilder.finalize();
+    }
+    CodeGenerator(const CodeGenerator&) = delete;
+    CodeGenerator& operator=(const CodeGenerator&) = delete;
+    CodeGenerator(CodeGenerator&&) = delete;
+    CodeGenerator& operator=(CodeGenerator&&) = delete;
+
+    using PrologueGenFn = llvm::function_ref<void(llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals,
+                                                  OperandStack& operandStack)>;
+
     /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
     /// and have at most 'maxLocals' local variables.
-    void generateCode(const Code& code);
+    void generateBody(const Code& code, PrologueGenFn generatePrologue);
 };
+
+/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'classFile' is the class
+/// file containing 'code', 'classObject' the corresponding class object of the class file, 'stringInterner' the
+/// interner used to create string object instances from literals and 'methodType' the JVM Type of the method being
+/// compiled.
+/// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
+/// the newly created code.
+inline void compileMethodBody(llvm::Function* function, const ClassFile& classFile, const ClassObject& classObject,
+                              StringInterner& stringInterner, MethodType methodType, const Code& code,
+                              CodeGenerator::PrologueGenFn generatePrologue)
+{
+    CodeGenerator codeGenerator{function,   classFile,          classObject,        stringInterner,
+                                methodType, code.getMaxStack(), code.getMaxLocals()};
+
+    codeGenerator.generateBody(code, generatePrologue);
+}
+
 } // namespace jllvm

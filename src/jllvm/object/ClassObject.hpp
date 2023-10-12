@@ -26,6 +26,7 @@
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TrailingObjects.h>
 
+#include <jllvm/class/ClassFile.hpp>
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/support/NonOwningFrozenSet.hpp>
 
@@ -136,6 +137,9 @@ public:
     {
         return m_classObject;
     }
+
+    /// Returns the method info corresponding to this method object.
+    const MethodInfo& getMethodInfo() const;
 
     void setClassObject(const ClassObject* classObject)
     {
@@ -411,7 +415,7 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     // directly form Java code or on the GC we can extend the layout given by the JDK.
     std::int32_t m_fieldAreaSize;
     // V-Table size for classes, I-Table size for Interfaces.
-    std::int32_t m_tableSize;
+    std::int32_t m_tableSize{};
     NonOwningFrozenSet<Method> m_methods;
     NonOwningFrozenSet<Field> m_fields;
     // Contains all the bases of this class object. For classes, this contains the superclass (except for 'Object')
@@ -422,16 +426,16 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::StringRef m_className;
     bool m_isPrimitive = false;
     bool m_initialized = false;
-    bool m_isAbstract = false;
+    const ClassFile* m_classFile = nullptr;
 
     ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                 const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables, llvm::StringRef className,
-                bool isAbstract, llvm::ArrayRef<std::uint32_t> gcMask);
+                const ClassFile& classFile, llvm::ArrayRef<std::uint32_t> gcMask);
 
     ClassObject(const ClassObject* metaClass, std::size_t interfaceId, const NonOwningFrozenSet<Method>& methods,
                 const NonOwningFrozenSet<Field>& fields, llvm::ArrayRef<ClassObject*> interfaces,
-                llvm::StringRef className);
+                llvm::StringRef className, const ClassFile& m_classFile);
 
     class SuperclassIterator
         : public llvm::iterator_facade_base<SuperclassIterator, std::forward_iterator_tag, const ClassObject*,
@@ -473,7 +477,7 @@ public:
     static ClassObject* create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                std::uint32_t vTableSlots, std::uint32_t fieldAreaSize, llvm::ArrayRef<Method> methods,
                                llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> bases,
-                               llvm::StringRef className, bool isAbstract);
+                               const ClassFile& classFile);
 
     /// Function to create a new class object for an interface. The class object is allocated within 'allocator'.
     /// 'interfaceId' is the globally unique id of this interface.
@@ -482,7 +486,7 @@ public:
     static ClassObject* createInterface(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                         std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                                         llvm::ArrayRef<Field> fields, llvm::ArrayRef<ClassObject*> interfaces,
-                                        llvm::StringRef className);
+                                        const ClassFile& classFile);
 
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
@@ -492,6 +496,10 @@ public:
 
     /// Constructor for creating the class objects for primitive types with a size and name.
     ClassObject(std::uint32_t instanceSize, llvm::StringRef name);
+
+    /// Constructs a class object for a class type with the given 'metaClass', 'fieldAreaSize' and 'className'. The class
+    /// object has no methods, no v-table slots and implements no interfaces. Mostly used for testing purposes.
+    ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::StringRef className);
 
     /// Byte offset from the start of the class object to the field area size member.
     constexpr static std::size_t getFieldAreaSizeOffset()
@@ -638,6 +646,13 @@ public:
         return ObjectType(m_className);
     }
 
+    /// Returns the class file corresponding to this class object or null if this was class object was not derived from
+    /// a class file.
+    const ClassFile* getClassFile() const
+    {
+        return m_classFile;
+    }
+
     /// Returns the name of the package this class is defined in.
     /// Note: This is not properly checked whether that is how the JVM spec actually defines, but we currently define
     /// it as the part before the last '/'.
@@ -706,7 +721,7 @@ public:
     /// Returns true if this class object represents an abstract Java class.
     bool isAbstract() const
     {
-        return m_isAbstract;
+        return m_classFile && m_classFile->isAbstract();
     }
 
     /// Returns true if an instance of this class object would also be an instance of 'other'.
@@ -954,4 +969,16 @@ const jllvm::Field* jllvm::ClassObject::getField(llvm::StringRef name, FieldType
         }
     }
     return nullptr;
+}
+
+inline const jllvm::MethodInfo& jllvm::Method::getMethodInfo() const
+{
+    const ClassFile* classFile = getClassObject()->getClassFile();
+    assert(classFile && "Class objects with methods must come from a class file");
+    assert(classFile->getMethods().size() == getClassObject()->getMethods().keys().size()
+           && "Code assumes 1:1 correspondence of method info list and method list");
+    const MethodInfo& methodInfo = classFile->getMethods()[this - getClassObject()->getMethods().begin()];
+    assert(methodInfo.getName(*classFile) == getName() && methodInfo.getDescriptor(*classFile) == getType()
+           && "Code assumes 1:1 correspondence of method info list and method list");
+    return methodInfo;
 }

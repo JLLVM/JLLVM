@@ -70,7 +70,7 @@ tool_dirs = [
 tools = [
     ToolSubst('jllvm', extra_args=[
         '%{JLLVM_EXTRA_ARGS}'
-    ]), 'javac', ToolSubst('jasmin', f'java -jar {config.jasmin_src}/jasmin.jar')
+    ]), 'jllvm-jvmc', 'javac', ToolSubst('jasmin', f'java -jar {config.jasmin_src}/jasmin.jar')
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

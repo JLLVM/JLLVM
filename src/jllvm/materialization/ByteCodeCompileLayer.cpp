@@ -15,9 +15,10 @@
 
 #include <llvm/IR/Verifier.h>
 
-#include "ByteCodeCompileUtils.hpp"
-#include "ClassObjectStubMangling.hpp"
-#include "CodeGenerator.hpp"
+#include <jllvm/compiler/ByteCodeCompileUtils.hpp>
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
+#include <jllvm/compiler/CodeGenerator.hpp>
+#include <jllvm/compiler/Compiler.hpp>
 
 #define DEBUG_TYPE "jvm"
 
@@ -31,20 +32,7 @@ void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module = std::make_unique<llvm::Module>(methodName, *context);
 
-    MethodType descriptor = methodInfo->getDescriptor(*classFile);
-
-    auto* function = llvm::Function::Create(descriptorToType(descriptor, methodInfo->isStatic(), module->getContext()),
-                                            llvm::GlobalValue::ExternalLinkage,
-                                            mangleDirectMethodCall(*methodInfo, *classFile), module.get());
-    addJavaMethodMetadata(function, {classObject, method});
-    applyABIAttributes(function);
-
-    auto code = methodInfo->getAttributes().find<Code>();
-    assert(code);
-    CodeGenerator codeGenerator{function,   *classFile,          *classObject,        m_stringInterner,
-                                descriptor, code->getMaxStack(), code->getMaxLocals()};
-
-    codeGenerator.generateCode(*code);
+    compileMethod(*module, *method, m_stringInterner);
 
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);

@@ -29,9 +29,9 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
 jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                                std::uint32_t vTableSlots, std::uint32_t fieldAreaSize,
                                                llvm::ArrayRef<Method> methods, llvm::ArrayRef<Field> fields,
-                                               llvm::ArrayRef<ClassObject*> bases, llvm::StringRef className,
-                                               bool isAbstract)
+                                               llvm::ArrayRef<ClassObject*> bases, const ClassFile& classFile)
 {
+    bool isAbstract = classFile.isAbstract();
     llvm::SmallVector<ITable*> iTables;
     if (!isAbstract)
     {
@@ -77,7 +77,7 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
     auto* result = new (storage)
         ClassObject(metaClass, vTableSlots, fieldAreaSize, NonOwningFrozenSet(methodsAlloc, allocator),
                     NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator), arrayRefAlloc(allocator, bases),
-                    arrayRefAlloc(allocator, iTables), className, isAbstract, arrayRefAlloc(allocator, gcMask));
+        arrayRefAlloc(allocator, iTables), classFile.getThisClass(), classFile, arrayRefAlloc(allocator, gcMask));
     for (Method& method : methodsAlloc)
     {
         method.setClassObject(result);
@@ -90,7 +90,8 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
                                 const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
                                 llvm::ArrayRef<ClassObject*> bases, llvm::ArrayRef<ITable*> iTables,
-                                llvm::StringRef className, bool isAbstract, llvm::ArrayRef<std::uint32_t> gcMask)
+                                llvm::StringRef className, const ClassFile& classFile,
+                                llvm::ArrayRef<std::uint32_t> gcMask)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(fieldAreaSize),
       m_tableSize(vTableSlots),
@@ -100,7 +101,13 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::uint32_t vTab
       m_iTables(iTables),
       m_className(className),
       m_gcMask(gcMask),
-      m_isAbstract(isAbstract)
+      m_classFile(&classFile)
+{
+}
+
+jllvm::ClassObject::ClassObject(const jllvm::ClassObject* metaClass, std::int32_t fieldAreaSize,
+                                llvm::StringRef className)
+    : m_objectHeader(metaClass), m_fieldAreaSize(fieldAreaSize), m_className(className)
 {
 }
 
@@ -118,15 +125,16 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         arrayFieldAreaSize = llvm::alignTo(arrayFieldAreaSize, sizeof(void*));
     }
 
-    auto* result = create(allocator, metaClass, 0, arrayFieldAreaSize, {}, {}, {},
-                          stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()), false);
+    auto* result = new (allocator.Allocate<ClassObject>())
+        ClassObject(metaClass, arrayFieldAreaSize,
+                    stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()));
     result->m_componentTypeOrInterfaceId = componentType;
     result->m_initialized = true;
     return result;
 }
 
 jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name)
-    : ClassObject(nullptr, 0, instanceSize - sizeof(ObjectHeader), {}, {}, {}, {}, name, false, {})
+    : ClassObject(nullptr, instanceSize - sizeof(ObjectHeader), name)
 {
     // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
     m_isPrimitive = true;
@@ -136,7 +144,8 @@ jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name
 
 jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interfaceId,
                                 const NonOwningFrozenSet<Method>& methods, const NonOwningFrozenSet<Field>& fields,
-                                llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className)
+                                llvm::ArrayRef<ClassObject*> interfaces, llvm::StringRef className,
+                                const ClassFile& classFile)
     : m_objectHeader(metaClass),
       m_fieldAreaSize(0),
       m_tableSize(llvm::count_if(methods, [](const Method& method) { return method.getTableSlot(); })),
@@ -144,7 +153,8 @@ jllvm::ClassObject::ClassObject(const ClassObject* metaClass, std::size_t interf
       m_fields(fields),
       m_bases(interfaces),
       m_className(className),
-      m_componentTypeOrInterfaceId(interfaceId)
+      m_componentTypeOrInterfaceId(interfaceId),
+      m_classFile(&classFile)
 {
 }
 
@@ -152,13 +162,13 @@ jllvm::ClassObject* jllvm::ClassObject::createInterface(llvm::BumpPtrAllocator& 
                                                         std::size_t interfaceId, llvm::ArrayRef<Method> methods,
                                                         llvm::ArrayRef<Field> fields,
                                                         llvm::ArrayRef<ClassObject*> interfaces,
-                                                        llvm::StringRef className)
+                                                        const ClassFile& classFile)
 {
     llvm::MutableArrayRef<jllvm::Method> methodsAllocated = arrayRefAlloc(allocator, methods);
     auto* result = new (allocator.Allocate<ClassObject>())
         ClassObject(metaClass, interfaceId, NonOwningFrozenSet(methodsAllocated, allocator),
                     NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator),
-                    arrayRefAlloc(allocator, interfaces), className);
+                    arrayRefAlloc(allocator, interfaces), classFile.getThisClass(), classFile);
     for (Method& method : methodsAllocated)
     {
         method.setClassObject(result);

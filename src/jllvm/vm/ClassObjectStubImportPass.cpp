@@ -15,8 +15,8 @@
 
 #include <llvm/IR/Verifier.h>
 
-#include <jllvm/materialization/ClassObjectStubCodeGenerator.hpp>
-#include <jllvm/materialization/ClassObjectStubMangling.hpp>
+#include <jllvm/compiler/ClassObjectStubCodeGenerator.hpp>
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
 
 llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& module, llvm::ModuleAnalysisManager&)
 {
