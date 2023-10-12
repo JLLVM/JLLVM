@@ -38,7 +38,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
                           // Arguments are put into the locals. According to the specification, i64s and doubles are
                           // split into two locals. We don't actually do that, we just put them into the very first
                           // local, but we still have to skip over the following local as if we didn't.
-                          auto nextLocal = locals.begin();
+                          const auto* nextLocal = locals.begin();
                           for (auto& arg : function->args())
                           {
                               builder.CreateStore(&arg, *nextLocal++);

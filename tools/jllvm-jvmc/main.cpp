@@ -38,8 +38,6 @@ enum ID
 #include "Opts.inc"
 #undef PREFIX
 
-using llvm::opt::HelpHidden;
-
 static constexpr llvm::opt::OptTable::Info INFO_TABLE[] = {
 #define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS, PARAM, HELPTEXT, METAVAR, VALUES) \
     {PREFIX, NAME,  HELPTEXT,    METAVAR,     OPT_##ID,  llvm::opt::Option::KIND##Class,                 \
