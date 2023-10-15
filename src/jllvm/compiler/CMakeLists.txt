@@ -19,5 +19,5 @@ add_library(JLLVMCompiler
         ClassObjectStubMangling.cpp
         Compiler.cpp
         Compiler.hpp)
-target_link_libraries(JLLVMCompiler PUBLIC JLLVMObject LLVMCore)
+target_link_libraries(JLLVMCompiler PUBLIC JLLVMObject LLVMCore PRIVATE LLVMTargetParser)
 
