@@ -228,7 +228,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       return root;
                   }},
         std::pair{"jllvm_build_array_index_out_of_bounds_exception",
-                  [&](int index, int size) -> Object*
+                  [&](std::int32_t index, std::int32_t size) -> Object*
                   {
                       String* string = m_stringInterner.intern(
                           llvm::formatv("Index {0} out of bounds for length {1}", index, size).str());
