@@ -112,11 +112,8 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     auto* function =
         llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
                                mangleFieldAccess(classObject.getClassName(), fieldName, descriptor), module);
-#ifdef LLVM_ADDRESS_SANITIZER_BUILD
-    function->addFnAttr(llvm::Attribute::SanitizeAddress);
-#endif
-    function->addFnAttr(llvm::Attribute::UWTable);
-    function->setGC("coreclr");
+    applyABIAttributes(function);
+
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
@@ -156,7 +153,20 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& /*module*/, const Cl
     llvm_unreachable("not yet implemented");
 }
 
-llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& /*module*/, const ClassObject& /*classObject*/)
+llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject)
 {
-    llvm_unreachable("not yet implemented");
+    auto* functionType = llvm::FunctionType::get(referenceType(module.getContext()), /*isVarArg=*/false);
+
+    auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
+                                            mangleClassObjectAccess(classObject.getDescriptor()), module);
+    applyABIAttributes(function);
+
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+
+    llvm::Value* pointer = builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(&classObject)),
+                                                  function->getReturnType());
+    builder.CreateRet(pointer);
+
+    return function;
 }

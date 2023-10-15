@@ -37,7 +37,12 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
             ClassObject& classObject = classLoader.forName(ObjectType(fieldAccess.className));
             generateFieldAccessStub(*module, classObject, fieldAccess.fieldName, fieldAccess.descriptor);
         },
-        [](auto) { llvm_unreachable("Not yet implemented"); });
+        [&](FieldType fieldType)
+        {
+            ClassObject& classObject = classLoader.forName(fieldType);
+            generateClassObjectAccessStub(*module, classObject);
+        },
+        [](...) { llvm_unreachable("Not yet implemented"); });
     return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 }
 
