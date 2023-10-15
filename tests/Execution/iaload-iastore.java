@@ -56,5 +56,27 @@ class Test
             // CHECK: length null
             print("length null");
         }
+
+        arr = new int[3];
+
+        try
+        {
+            var i = arr[-30];
+        }
+        catch(ArrayIndexOutOfBoundsException e)
+        {
+            // CHECK: load under
+            print("load under");
+        }
+
+        try
+        {
+            arr[20] = 9;
+        }
+        catch(ArrayIndexOutOfBoundsException e)
+        {
+            // CHECK: store over
+            print("store over");
+        }
     }
 }
