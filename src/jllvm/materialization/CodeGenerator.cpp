@@ -323,7 +323,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             generateNullPointerCheck(array);
 
-            // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+            generateArrayIndexCheck(array, index);
+
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(2), index});
             llvm::Value* value = m_builder.CreateLoad(type, gep);
@@ -351,7 +352,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             generateNullPointerCheck(array);
 
-            // TODO: throw ArrayIndexOutOfBoundsException if index is not within the bounds
+            generateArrayIndexCheck(array, index);
+
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(2), index});
             match(
@@ -1478,6 +1480,38 @@ void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
         m_builder.CreateCall(m_function->getParent()->getOrInsertFunction("jllvm_build_null_pointer_exception",
                                                                           llvm::FunctionType::get(ty, {}, false)),
                              {});
+
+    m_builder.CreateStore(exception, activeException(m_function->getParent()));
+
+    m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+
+    m_builder.SetInsertPoint(continueBlock);
+}
+
+void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* index)
+{
+    // The element type of the array type here is actually irrelevant.
+    llvm::PointerType* type = referenceType(m_builder.getContext());
+    llvm::Value* gep =
+        m_builder.CreateGEP(arrayStructType(type), array, {m_builder.getInt32(0), m_builder.getInt32(1)});
+    llvm::Value* size = m_builder.CreateLoad(m_builder.getInt32Ty(), gep);
+
+    llvm::Value* ltZero = m_builder.CreateICmpSLT(index, m_builder.getInt32(0));
+
+    llvm::Value* geSize = m_builder.CreateICmpSGE(index, size);
+
+    llvm::Value* outOfBounds = m_builder.CreateOr(ltZero, geSize);
+
+    auto* continueBlock = llvm::BasicBlock::Create(m_builder.getContext(), "next", m_function);
+    auto* exceptBlock = llvm::BasicBlock::Create(m_builder.getContext(), "outOfBounds", m_function);
+    m_builder.CreateCondBr(outOfBounds, exceptBlock, continueBlock);
+    m_builder.SetInsertPoint(exceptBlock);
+
+    llvm::Value* exception = m_builder.CreateCall(
+        m_function->getParent()->getOrInsertFunction(
+            "jllvm_build_array_index_out_of_bounds_exception",
+            llvm::FunctionType::get(type, {m_builder.getInt32Ty(), m_builder.getInt32Ty()}, false)),
+        {index, size});
 
     m_builder.CreateStore(exception, activeException(m_function->getParent()));
 

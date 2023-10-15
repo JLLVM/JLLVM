@@ -63,6 +63,8 @@ class CodeGenerator
 
     void generateNullPointerCheck(llvm::Value* object);
 
+    void generateArrayIndexCheck(llvm::Value* array, llvm::Value* index);
+
     llvm::BasicBlock* generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred);
 
     llvm::Value* loadClassObjectFromPool(PoolIndex<ClassInfo> index);

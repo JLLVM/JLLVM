@@ -8,7 +8,7 @@ class Test
 
     public static void main(String[] args)
     {
-        var t = new Test[0];
+        var t = new Test[1];
         // Causes garbage collection inbetween 't' and storing it. The dead store elimination
         // would previously falsely delete storing 'Test[].class' into 't'.
         new Object();
