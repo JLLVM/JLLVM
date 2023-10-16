@@ -112,6 +112,7 @@ if (NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin|FreeBSD|OpenBSD|DragonFly|AIX|OS390" 
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,defs")
 endif ()
 
+add_subdirectory(3rdParty)
 add_subdirectory(src)
 add_subdirectory(tools)
 

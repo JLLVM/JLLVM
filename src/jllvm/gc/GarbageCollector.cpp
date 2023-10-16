@@ -130,11 +130,11 @@ void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                     }
                     case jllvm::StackMapEntry::Indirect:
                     {
-                        auto rp = context.getStackPointer();
+                        std::uintptr_t rp = context.getIntegerRegister(iter.registerNumber);
                         auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
                         for (std::size_t i = 0; i < iter.count; i++)
                         {
-                            auto* object = ptr[i];
+                            ObjectRepr* object = ptr[i];
                             if (!shouldBeAddedToWorkList(object, from, to))
                             {
                                 continue;
@@ -180,11 +180,11 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                     }
                     case jllvm::StackMapEntry::Indirect:
                     {
-                        auto rp = context.getStackPointer();
+                        std::uintptr_t rp = context.getIntegerRegister(iter.registerNumber);
                         auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
                         for (std::size_t i = 0; i < iter.count; i++)
                         {
-                            auto* object = ptr[i];
+                            ObjectRepr* object = ptr[i];
                             if (!object)
                             {
                                 continue;

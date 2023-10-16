@@ -30,6 +30,7 @@
 
 #include <jllvm/materialization/ClassObjectStubDefinitionsGenerator.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
+#include <jllvm/unwind/Unwinder.hpp>
 
 #include <utility>
 
@@ -86,6 +87,27 @@ public:
             });
     }
 };
+
+/// Custom 'EHFrameRegistrar' which registers the 'eh_frame' sections in our unwinder. This is very similar to
+/// 'llvm::jitlink::InProcessEHFrameRegistrar' except that the latter hardcodes the use of either 'libgcc' or
+/// 'libunwind' based on what LLVM was built with. Since LLVM is almost certainly built with 'libgcc' on Linux, we have
+/// to provide our own implementation that can work with 'libunwind'.
+class EHRegistration : public llvm::jitlink::EHFrameRegistrar
+{
+public:
+    llvm::Error registerEHFrames(llvm::orc::ExecutorAddrRange EHFrameSection) override
+    {
+        jllvm::registerEHSection({EHFrameSection.Start.toPtr<const char*>(), EHFrameSection.size()});
+        return llvm::Error::success();
+    }
+
+    llvm::Error deregisterEHFrames(llvm::orc::ExecutorAddrRange EHFrameSection) override
+    {
+        jllvm::deregisterEHSection({EHFrameSection.Start.toPtr<const char*>(), EHFrameSection.size()});
+        return llvm::Error::success();
+    }
+};
+
 } // namespace
 
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
@@ -126,8 +148,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
                         *m_session, llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderGDBWrapper))));
-    m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
-        *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
+    m_objectLayer.addPlugin(
+        std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(*m_session, std::make_unique<EHRegistration>()));
     m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc));
     m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
 
