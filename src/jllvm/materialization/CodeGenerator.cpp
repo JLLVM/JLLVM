@@ -398,11 +398,12 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](ANewArray aNewArray)
         {
             auto index = PoolIndex<ClassInfo>{aNewArray.index};
-            // TODO: throw NegativeArraySizeException
             llvm::Value* count = m_operandStack.pop_back();
 
             llvm::Value* classObject = m_helper.getClassObject(
                 m_builder, ArrayType(ObjectType(index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text)));
+
+            generateNegativeArraySizeCheck(count);
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -1175,9 +1176,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             std::generate(loopEnds.rbegin(), loopEnds.rend(),
                           [&] { return llvm::BasicBlock::Create(m_builder.getContext(), "end", m_function); });
 
-            std::generate(loopCounts.rbegin(), loopCounts.rend(),
-                          // TODO: throw NegativeArraySizeException
-                          [&] { return m_operandStack.pop_back(); });
+            std::generate(loopCounts.rbegin(), loopCounts.rend(), [&] { return m_operandStack.pop_back(); });
 
             {
                 FieldType copy = descriptor;
@@ -1197,6 +1196,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 // Can throw class loader or linkage related errors.
                 generateEHDispatch();
             }
+
+            llvm::for_each(loopCounts, [&](llvm::Value* count) { generateNegativeArraySizeCheck(count); });
 
             llvm::BasicBlock* done = llvm::BasicBlock::Create(m_builder.getContext(), "done", m_function);
 
@@ -1272,7 +1273,6 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](NewArray newArray)
         {
             auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray.atype, m_builder);
-            // TODO: throw NegativeArraySizeException
             llvm::Value* count = m_operandStack.pop_back();
 
             llvm::Value* classObject = m_helper.getClassObject(m_builder, ArrayType(descriptor));
@@ -1283,6 +1283,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 // Can throw class loader or linkage related errors.
                 generateEHDispatch();
             }
+
+            generateNegativeArraySizeCheck(count);
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -1465,27 +1467,38 @@ void CodeGenerator::generateEHDispatch()
     m_builder.SetInsertPoint(continueBlock);
 }
 
-void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
+void CodeGenerator::generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
+                                                  llvm::ArrayRef<llvm::Value*> builderArgs)
 {
-    llvm::PointerType* ty = referenceType(m_builder.getContext());
-    llvm::Value* null = llvm::ConstantPointerNull::get(ty);
-    llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
+    llvm::PointerType* exceptionType = referenceType(m_builder.getContext());
 
     auto* continueBlock = llvm::BasicBlock::Create(m_builder.getContext(), "next", m_function);
-    auto* nullBlock = llvm::BasicBlock::Create(m_builder.getContext(), "null", m_function);
-    m_builder.CreateCondBr(isNull, nullBlock, continueBlock);
-    m_builder.SetInsertPoint(nullBlock);
+    auto* exceptionBlock = llvm::BasicBlock::Create(m_builder.getContext(), "exception", m_function);
+    m_builder.CreateCondBr(condition, exceptionBlock, continueBlock);
+    m_builder.SetInsertPoint(exceptionBlock);
+
+    std::vector<llvm::Type*> argTypes{builderArgs.size()};
+
+    llvm::transform(builderArgs, argTypes.begin(), [](llvm::Value* arg) { return arg->getType(); });
 
     llvm::Value* exception =
-        m_builder.CreateCall(m_function->getParent()->getOrInsertFunction("jllvm_build_null_pointer_exception",
-                                                                          llvm::FunctionType::get(ty, {}, false)),
-                             {});
+        m_builder.CreateCall(m_function->getParent()->getOrInsertFunction(
+                                 builderName, llvm::FunctionType::get(exceptionType, argTypes, false)),
+                             builderArgs);
 
     m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
     m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
 
     m_builder.SetInsertPoint(continueBlock);
+}
+
+void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
+{
+    llvm::Value* null = llvm::ConstantPointerNull::get(referenceType(m_builder.getContext()));
+    llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
+
+    generateBuiltinExceptionThrow(isNull, "jllvm_build_null_pointer_exception", {});
 }
 
 void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* index)
@@ -1496,28 +1509,18 @@ void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* ind
         m_builder.CreateGEP(arrayStructType(type), array, {m_builder.getInt32(0), m_builder.getInt32(1)});
     llvm::Value* size = m_builder.CreateLoad(m_builder.getInt32Ty(), gep);
 
-    llvm::Value* ltZero = m_builder.CreateICmpSLT(index, m_builder.getInt32(0));
+    llvm::Value* isNegative = m_builder.CreateICmpSLT(index, m_builder.getInt32(0));
+    llvm::Value* isBigger = m_builder.CreateICmpSGE(index, size);
+    llvm::Value* outOfBounds = m_builder.CreateOr(isNegative, isBigger);
 
-    llvm::Value* geSize = m_builder.CreateICmpSGE(index, size);
+    generateBuiltinExceptionThrow(outOfBounds, "jllvm_build_array_index_out_of_bounds_exception", {index, size});
+}
 
-    llvm::Value* outOfBounds = m_builder.CreateOr(ltZero, geSize);
+void CodeGenerator::generateNegativeArraySizeCheck(llvm::Value* size)
+{
+    llvm::Value* isNegative = m_builder.CreateICmpSLT(size, m_builder.getInt32(0));
 
-    auto* continueBlock = llvm::BasicBlock::Create(m_builder.getContext(), "next", m_function);
-    auto* exceptBlock = llvm::BasicBlock::Create(m_builder.getContext(), "outOfBounds", m_function);
-    m_builder.CreateCondBr(outOfBounds, exceptBlock, continueBlock);
-    m_builder.SetInsertPoint(exceptBlock);
-
-    llvm::Value* exception = m_builder.CreateCall(
-        m_function->getParent()->getOrInsertFunction(
-            "jllvm_build_array_index_out_of_bounds_exception",
-            llvm::FunctionType::get(type, {m_builder.getInt32Ty(), m_builder.getInt32Ty()}, false)),
-        {index, size});
-
-    m_builder.CreateStore(exception, activeException(m_function->getParent()));
-
-    m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
-
-    m_builder.SetInsertPoint(continueBlock);
+    generateBuiltinExceptionThrow(isNegative, "jllvm_build_negative_array_size_exception", {size});
 }
 
 llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred)
