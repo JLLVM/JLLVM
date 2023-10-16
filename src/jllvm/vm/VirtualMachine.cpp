@@ -237,6 +237,15 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
                       return root;
                   }},
+        std::pair{"jllvm_build_negative_array_size_exception",
+                  [&](std::int32_t size) -> Object*
+                  {
+                      String* string = m_stringInterner.intern(std::to_string(size));
+                      GCUniqueRoot root =
+                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/NegativeArraySizeException;")));
+                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
+                      return root;
+                  }},
         std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
         std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }});
 

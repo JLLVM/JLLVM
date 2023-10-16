@@ -61,9 +61,14 @@ class CodeGenerator
 
     void generateEHDispatch();
 
+    void generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
+                                       llvm::ArrayRef<llvm::Type*> argTypes, llvm::ArrayRef<llvm::Value*> args);
+
     void generateNullPointerCheck(llvm::Value* object);
 
     void generateArrayIndexCheck(llvm::Value* array, llvm::Value* index);
+
+    void generateNegativeArraySizeCheck(llvm::Value* size);
 
     llvm::BasicBlock* generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred);
 
