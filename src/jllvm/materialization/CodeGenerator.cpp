@@ -1197,8 +1197,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 generateEHDispatch();
             }
 
-            std::for_each(loopCounts.begin(), loopCounts.end(),
-                          [&](llvm::Value* count) { generateNegativeArraySizeCheck(count); });
+            llvm::for_each(loopCounts, [&](llvm::Value* count) { generateNegativeArraySizeCheck(count); });
 
             llvm::BasicBlock* done = llvm::BasicBlock::Create(m_builder.getContext(), "done", m_function);
 
@@ -1469,8 +1468,7 @@ void CodeGenerator::generateEHDispatch()
 }
 
 void CodeGenerator::generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
-                                                  llvm::ArrayRef<llvm::Type*> argTypes,
-                                                  llvm::ArrayRef<llvm::Value*> args)
+                                                  llvm::ArrayRef<llvm::Value*> builderArgs)
 {
     llvm::PointerType* exceptionType = referenceType(m_builder.getContext());
 
@@ -1479,10 +1477,14 @@ void CodeGenerator::generateBuiltinExceptionThrow(llvm::Value* condition, llvm::
     m_builder.CreateCondBr(condition, exceptionBlock, continueBlock);
     m_builder.SetInsertPoint(exceptionBlock);
 
+    std::vector<llvm::Type*> argTypes{builderArgs.size()};
+
+    llvm::transform(builderArgs, argTypes.begin(), [](llvm::Value* arg) { return arg->getType(); });
+
     llvm::Value* exception =
         m_builder.CreateCall(m_function->getParent()->getOrInsertFunction(
                                  builderName, llvm::FunctionType::get(exceptionType, argTypes, false)),
-                             args);
+                             builderArgs);
 
     m_builder.CreateStore(exception, activeException(m_function->getParent()));
 
@@ -1496,7 +1498,7 @@ void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
     llvm::Value* null = llvm::ConstantPointerNull::get(referenceType(m_builder.getContext()));
     llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
 
-    generateBuiltinExceptionThrow(isNull, "jllvm_build_null_pointer_exception", {}, {});
+    generateBuiltinExceptionThrow(isNull, "jllvm_build_null_pointer_exception", {});
 }
 
 void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* index)
@@ -1511,17 +1513,14 @@ void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* ind
     llvm::Value* isBigger = m_builder.CreateICmpSGE(index, size);
     llvm::Value* outOfBounds = m_builder.CreateOr(isNegative, isBigger);
 
-    generateBuiltinExceptionThrow(outOfBounds, "jllvm_build_array_index_out_of_bounds_exception",
-                                  {m_builder.getInt32Ty(), m_builder.getInt32Ty()}, {index, size});
+    generateBuiltinExceptionThrow(outOfBounds, "jllvm_build_array_index_out_of_bounds_exception", {index, size});
 }
 
 void CodeGenerator::generateNegativeArraySizeCheck(llvm::Value* size)
 {
-    llvm::PointerType* type = referenceType(m_builder.getContext());
     llvm::Value* isNegative = m_builder.CreateICmpSLT(size, m_builder.getInt32(0));
 
-    generateBuiltinExceptionThrow(isNegative, "jllvm_build_negative_array_size_exception", {m_builder.getInt32Ty()},
-                                  {size});
+    generateBuiltinExceptionThrow(isNegative, "jllvm_build_negative_array_size_exception", {size});
 }
 
 llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred)

@@ -62,7 +62,7 @@ class CodeGenerator
     void generateEHDispatch();
 
     void generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
-                                       llvm::ArrayRef<llvm::Type*> argTypes, llvm::ArrayRef<llvm::Value*> args);
+                                       llvm::ArrayRef<llvm::Value*> builderArgs);
 
     void generateNullPointerCheck(llvm::Value* object);
 
