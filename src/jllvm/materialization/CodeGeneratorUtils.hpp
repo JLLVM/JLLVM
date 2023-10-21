@@ -23,6 +23,7 @@
 #include <jllvm/object/ClassLoader.hpp>
 
 #include "ByteCodeCompileUtils.hpp"
+#include "ClassObjectStubMangling.hpp"
 
 namespace jllvm
 {
@@ -161,22 +162,10 @@ class LazyClassLoaderHelper
     const ClassObject* m_currentClass;
     const ClassFile* m_currentClassFile;
 
-    static void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const ClassObject& classObject);
-
     template <class F>
     llvm::Value* doCallForClassObject(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
                                       MethodType methodType, bool isStatic, llvm::Twine key,
                                       llvm::ArrayRef<llvm::Value*> args, F&& f);
-
-    static const Method* methodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                          MethodType methodType);
-
-    static const Method* interfaceMethodResolution(const ClassObject* classObject, llvm::StringRef methodName,
-                                                   MethodType methodType, ClassLoader& classLoader);
-
-    static const Method* specialMethodResolution(const ClassObject* referencedClassObject, llvm::StringRef methodName,
-                                                 MethodType methodType, ClassLoader& classLoader,
-                                                 const ClassObject* currentClass, const ClassFile* currentClassFile);
 
 public:
     LazyClassLoaderHelper(ClassLoader& classLoader, llvm::orc::JITDylib& mainDylib, llvm::orc::JITDylib& implDylib,
@@ -203,16 +192,6 @@ public:
     /// 'className' using 'args'. This is used to implement `invokestatic`.
     llvm::Value* doStaticCall(llvm::IRBuilder<>& builder, llvm::StringRef className, llvm::StringRef methodName,
                               MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
-
-    enum MethodResolution
-    {
-        /// 5.4.3.3. Method Resolution from the JVM Spec.
-        Virtual,
-        /// 5.4.3.4. Interface Method Resolution from the JVM Spec.
-        Interface,
-        /// 6.5 'invokespecial': Method resolution from the JVM Spec.
-        Special,
-    };
 
     /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
     /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.

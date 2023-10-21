@@ -147,10 +147,45 @@ llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& /*module*/
     llvm_unreachable("not yet implemented");
 }
 
-llvm::Function* jllvm::generateStaticCallStub(llvm::Module& /*module*/, const ClassObject& /*classObject*/,
-                                              llvm::StringRef /*methodName*/, jllvm::MethodType /*descriptor*/)
+llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassObject& classObject,
+                                              llvm::StringRef methodName, MethodType descriptor,
+                                              const ClassObject& objectClass)
 {
-    llvm_unreachable("not yet implemented");
+    auto* functionType = descriptorToType(descriptor, /*isStatic=*/true, module.getContext());
+
+    auto* function =
+        llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
+                               mangleStaticCall(classObject.getClassName(), methodName, descriptor), module);
+    applyABIAttributes(function, descriptor, /*isStatic=*/true);
+
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+
+    if (!classObject.isInitialized())
+    {
+        buildClassInitializerInitStub(builder, classObject);
+    }
+
+    const Method* method = classObject.isInterface() ?
+                               classObject.interfaceMethodResolution(methodName, descriptor, &objectClass) :
+                               classObject.methodResolution(methodName, descriptor);
+
+    llvm::FunctionCallee callee = module.getOrInsertFunction(mangleDirectMethodCall(method), functionType);
+    applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), descriptor, /*isStatic=*/true);
+    llvm::CallInst* call =
+        builder.CreateCall(callee, llvm::to_vector_of<llvm::Value*>(llvm::make_pointer_range(function->args())));
+    applyABIAttributes(call, descriptor, /*isStatic=*/true);
+
+    if (call->getType()->isVoidTy())
+    {
+        builder.CreateRetVoid();
+    }
+    else
+    {
+        builder.CreateRet(call);
+    }
+
+    return function;
 }
 
 llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject)

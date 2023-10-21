@@ -769,6 +769,35 @@ public:
     /// All subinterfaces are therefore guaranteed to appear before their base interface in this list.
     /// Note: This is an expensive operation and should only be used if a topological traversal order is required.
     auto maximallySpecificInterfaces() const;
+
+    /// Performs method resolution as described in the JVM Spec: https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
+    /// This is the low level procedure used to find a method within a class given a method name and type.
+    ///
+    /// Note that this is not equal to any specific `invoke` instruction as these also perform method selection after
+    /// resolution. This method instead is a low level tool to implement these instructions.
+    ///
+    /// Returns null if no method was found.
+    const Method* methodResolution(llvm::StringRef methodName, MethodType methodType) const;
+
+    /// Performs interface method resolution as described in the JVM Spec: https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
+    /// This is the low level procedure used to find a method within an interface given a method name and type.
+    /// 'objectClass' should be the class object of "java/lang/Object".
+    ///
+    /// Note that this is not equal to any specific `invoke` instruction as these also perform method selection after
+    /// resolution. This method instead is a low level tool to implement these instructions.
+    ///
+    /// Returns null if no method was found.
+    const Method* interfaceMethodResolution(llvm::StringRef methodName, MethodType methodType,
+                                            const ClassObject* objectClass) const;
+
+    /// This method performs the method resolution and selection of an `invokespecial` instruction as described here:
+    /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-6.html#jvms-6.5.invokespecial
+    /// `invokespecial` has the special case of having different semantics based on in which class file it is contained
+    /// in. `callContext` represents the class object of the class file the `invokespecial` occurs in while `superFlag`
+    /// corresponds to whether that class file has the `ACC_SUPER` flag set.
+    const Method* specialMethodResolution(llvm::StringRef methodName, MethodType methodType,
+                                          const ClassObject* objectClass, const ClassObject* callContext,
+                                          bool superFlag) const;
 };
 
 static_assert(std::is_trivially_destructible_v<ClassObject>);

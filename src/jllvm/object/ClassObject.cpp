@@ -218,3 +218,121 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
     }
     return llvm::is_contained(getSuperClasses(), other);
 }
+
+const jllvm::Method* jllvm::ClassObject::methodResolution(llvm::StringRef methodName, MethodType methodType) const
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
+
+    // Otherwise, method resolution attempts to locate the referenced method
+    // in C and its superclasses:
+
+    // Otherwise, if C declares a method with the name and descriptor
+    // specified by the method reference, method lookup succeeds.
+
+    // Otherwise, if C has a superclass, step 2 of method resolution is
+    // recursively invoked on the direct superclass of C.
+    if (const Method* iter = getMethod(methodName, methodType))
+    {
+        return iter;
+    }
+
+    // Otherwise, method resolution attempts to locate the referenced method
+    // in the superinterfaces of the specified class C:
+
+    // If the maximally-specific superinterface methods of C for the name
+    // and descriptor specified by the method reference include exactly one
+    // method that does not have its ACC_ABSTRACT flag set, then this method
+    // is chosen and method lookup succeeds.
+    for (const ClassObject* interface : maximallySpecificInterfaces())
+    {
+        if (const Method* method =
+                interface->getMethod(methodName, methodType, std::not_fn(std::mem_fn(&Method::isAbstract))))
+        {
+            return method;
+        }
+    }
+
+    // Otherwise, if any superinterface of C declares a method with the name and descriptor specified by the method
+    // reference that has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set, one of these is arbitrarily
+    // chosen and method lookup succeeds.
+    for (const ClassObject* interface : getAllInterfaces())
+    {
+        if (const Method* method =
+                interface->getMethod(methodName, methodType,
+                                     [](const Method& method)
+                                     { return !method.isStatic() && method.getVisibility() != Visibility::Private; }))
+        {
+            return method;
+        }
+    }
+
+    return nullptr;
+}
+
+const jllvm::Method* jllvm::ClassObject::interfaceMethodResolution(llvm::StringRef methodName, MethodType methodType,
+                                                                   const ClassObject* objectClass) const
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
+
+    // Otherwise, if C declares a method with the name and descriptor specified by the interface method
+    // reference, method lookup succeeds.
+    if (const Method* method = getMethod(methodName, methodType))
+    {
+        return method;
+    }
+
+    // Otherwise, if the class Object declares a method with the name and descriptor specified by the
+    // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
+    // set, method lookup succeeds.
+
+    if (const Method* method = objectClass->getMethod(
+            methodName, methodType,
+            [](const Method& method) { return !method.isStatic() && method.getVisibility() == Visibility::Public; }))
+    {
+        return method;
+    }
+
+    // Otherwise, if the maximally-specific superinterface methods (§5.4.3.3) of C for the name and
+    // descriptor specified by the method reference include exactly one method that does not have its
+    // ACC_ABSTRACT flag set, then this method is chosen and method lookup succeeds.
+    for (const ClassObject* interface : maximallySpecificInterfaces())
+    {
+        if (const Method* method =
+                interface->getMethod(methodName, methodType, std::not_fn(std::mem_fn(&Method::isAbstract))))
+        {
+            return method;
+        }
+    }
+
+    return nullptr;
+}
+
+const jllvm::Method* jllvm::ClassObject::specialMethodResolution(llvm::StringRef methodName, MethodType methodType,
+                                                                 const ClassObject* objectClass,
+                                                                 const ClassObject* callContext, bool superFlag) const
+{
+    // The named method is resolved (§5.4.3.3, §5.4.3.4).
+    const Method* resolvedMethod = isInterface() ? interfaceMethodResolution(methodName, methodType, objectClass) :
+                                                   methodResolution(methodName, methodType);
+    const ClassObject* resolvedClass = resolvedMethod->getClassObject();
+
+    // If all of the following are true, let C be the direct superclass of the current class:
+    //
+    // The resolved method is not an instance initialization method (§2.9.1).
+    //
+    // The symbolic reference names a class (not an interface), and that class is a superclass of the current class.
+    //
+    // The ACC_SUPER flag is set for the class file (§4.1).
+    if (!superFlag || resolvedMethod->isObjectConstructor() || !resolvedClass->isClass()
+        || !llvm::is_contained(callContext->getSuperClasses(/*includeThis=*/false), resolvedClass))
+    {
+        return resolvedMethod;
+    }
+
+    // What follows in the spec is essentially an interface or method resolution but with 'resolvedClass' as the new
+    // class.
+    resolvedClass = callContext->getSuperClass();
+    return resolvedClass->isInterface() ?
+               resolvedClass->interfaceMethodResolution(methodName, methodType, objectClass) :
+               resolvedClass->methodResolution(methodName, methodType);
+}
