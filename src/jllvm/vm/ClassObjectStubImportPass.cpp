@@ -98,7 +98,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                 return generateSpecialMethodCallStub(module, *classObject, specialCall.methodName,
                                                      specialCall.descriptor, callerClass, *objectClass);
             },
-            [](...) -> llvm::Function* { return nullptr; });
+            [](std::monostate) -> llvm::Function* { return nullptr; });
         if (!definition)
         {
             continue;

@@ -65,7 +65,7 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
             generateSpecialMethodCallStub(*module, classObject, specialCall.methodName, specialCall.descriptor,
                                           callerClass, *objectClass);
         },
-        [](...) { llvm_unreachable("Not yet implemented"); });
+        [](std::monostate) { llvm_unreachable("not possible"); });
     return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 }
 
