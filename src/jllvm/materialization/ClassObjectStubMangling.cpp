@@ -39,7 +39,6 @@ std::string jllvm::mangleFieldAccess(llvm::StringRef className, llvm::StringRef 
 
 constexpr llvm::StringLiteral virtualCallPrefix = "Virtual Call to ";
 constexpr llvm::StringLiteral interfaceCallPrefix = "Interface Call to ";
-constexpr llvm::StringLiteral specialCallPrefix = "Special Call to ";
 
 std::string jllvm::mangleMethodResolutionCall(MethodResolution resolution, llvm::StringRef className,
                                               llvm::StringRef methodName, MethodType descriptor)
@@ -49,9 +48,19 @@ std::string jllvm::mangleMethodResolutionCall(MethodResolution resolution, llvm:
     {
         case MethodResolution::Virtual: return (virtualCallPrefix + directMethodMangling).str();
         case MethodResolution::Interface: return (interfaceCallPrefix + directMethodMangling).str();
-        case MethodResolution::Special: return (specialCallPrefix + directMethodMangling).str();
     }
     LLVM_BUILTIN_UNREACHABLE;
+}
+
+constexpr llvm::StringLiteral specialCallPrefix = "Special Call to ";
+constexpr llvm::StringLiteral specialCallInfix = ":from ";
+
+std::string jllvm::mangleSpecialMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor,
+                                           std::optional<FieldType> callerClass)
+{
+    return (specialCallPrefix + mangleDirectMethodCall(className, methodName, descriptor)
+            + (callerClass ? specialCallInfix + callerClass->textual() : ""))
+        .str();
 }
 
 constexpr llvm::StringLiteral staticCallPrefix = "Static Call to ";
@@ -72,6 +81,7 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
 {
     bool isStatic = false;
     bool isClassObjectLoad = false;
+    bool isSpecialMethod = false;
     std::optional<MethodResolution> resolution;
     if (symbolName.consume_front(classObjectPrefix))
     {
@@ -91,7 +101,7 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
     }
     else if (symbolName.consume_front(specialCallPrefix))
     {
-        resolution = MethodResolution::Special;
+        isSpecialMethod = true;
     }
 
     // Find the string part prior to the dot.
@@ -137,6 +147,30 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
             return DemangledStaticCall{className, name, MethodType(symbolName)};
         }
         return DemangledMethodResolutionCall{*resolution, className, name, MethodType(symbolName)};
+    }
+
+    if (isSpecialMethod)
+    {
+        llvm::StringRef methodType = symbolName.take_until([](char c) { return c == ':'; });
+        symbolName = symbolName.drop_front(methodType.size());
+        if (symbolName.empty())
+        {
+            // Special method call did not have a caller appended at the back.
+            if (!MethodType::verify(methodType))
+            {
+                return std::monostate{};
+            }
+            return DemangledSpecialCall{className, name, MethodType(methodType), std::nullopt};
+        }
+        if (!symbolName.consume_front(specialCallInfix))
+        {
+            return std::monostate{};
+        }
+        if (!FieldType::verify(symbolName))
+        {
+            return std::monostate{};
+        }
+        return DemangledSpecialCall{className, name, MethodType(methodType), FieldType(symbolName)};
     }
 
     if (FieldType::verify(symbolName))

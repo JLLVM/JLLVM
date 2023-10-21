@@ -33,9 +33,23 @@ namespace jllvm
 llvm::Function* generateFieldAccessStub(llvm::Module& module, const ClassObject& classObject, llvm::StringRef fieldName,
                                         FieldType descriptor);
 
+/// Generates a new LLVM function with the name returned by 'mangleMethodResolutionCall' implementing the method
+/// resolution and method selection of either a virtual or interface call before calling the found method.
+/// The precise method resolution that should be used should be passed as the 'resolution' parameter.
+/// 'objectClass' must be the class object of 'java/lang/Object'.
+/// It is undefined behaviour if method resolution does not find a method to call.
 llvm::Function* generateMethodResolutionCallStub(llvm::Module& module, MethodResolution resolution,
-                                                 const ClassObject& classObject, llvm::StringRef fieldName,
-                                                 MethodType descriptor);
+                                                 const ClassObject& classObject, llvm::StringRef methodName,
+                                                 MethodType descriptor, const ClassObject& objectClass);
+
+/// Generates a new LLVM function with the name returned by 'mangleSpecialMethoCall' implementing the method
+/// resolution of 'invokespecial' before calling the found method. 'callerClass' must be the class object of the caller
+/// of this method if the caller has its 'ACC_SUPER' flag set or null otherwise.
+/// 'objectClass' must be the class object of 'java/lang/Object'.
+/// It is undefined behaviour if method resolution does not find a method to call.
+llvm::Function* generateSpecialMethodCallStub(llvm::Module& module, const ClassObject& classObject,
+                                              llvm::StringRef methodName, MethodType descriptor,
+                                              const ClassObject* callerClass, const ClassObject& objectClass);
 
 /// Generates a new LLVM function with the name returned by 'mangleStaticCall' implementing the method resolution and
 /// method selection of a static call before then calling the found method.

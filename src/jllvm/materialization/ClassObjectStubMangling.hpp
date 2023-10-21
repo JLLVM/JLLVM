@@ -58,9 +58,7 @@ enum class MethodResolution
     /// 5.4.3.3. Method Resolution from the JVM Spec.
     Virtual,
     /// 5.4.3.4. Interface Method Resolution from the JVM Spec.
-    Interface,
-    /// 6.5 'invokespecial': Method resolution from the JVM Spec.
-    Special,
+    Interface
 };
 
 /// Mangling for calling a function performing method resolution and then calling the resolved method.
@@ -68,9 +66,19 @@ enum class MethodResolution
 ///
 /// Syntax:
 /// <method-resolution-call> ::= <method-resolution> <direct-call>
-/// <method-resolution> ::= 'Virtual Call to ' | 'Interface Call to ' | 'Special Call to '
+/// <method-resolution> ::= 'Virtual Call to ' | 'Interface Call to '
 std::string mangleMethodResolutionCall(MethodResolution resolution, llvm::StringRef className,
                                        llvm::StringRef methodName, MethodType descriptor);
+
+/// Mangling for calling a function performing the method resolution and call of a 'invokespecial' instruction.
+/// 'callerClass' should be set to the descriptor of the calling class object if the caller's class file has
+/// its 'ACC_SUPER' flag set.
+/// The function signature of the call must match the method descriptor with the 'this' object as first argument.
+///
+/// Syntax:
+/// <special-method-call> ::= 'Special Call to ' <direct-call> [ ':from ' <descriptor> ]
+std::string mangleSpecialMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor,
+                                    std::optional<FieldType> callerClass);
 
 /// Mangling for calling a function performing static method resolution and then calling the resolved method.
 /// The function signature of the call must match the method descriptor exactly.
@@ -111,8 +119,17 @@ struct DemangledStaticCall
     MethodType descriptor;
 };
 
-using DemangledVariant =
-    swl::variant<std::monostate, DemangledFieldAccess, DemangledMethodResolutionCall, DemangledStaticCall, FieldType>;
+/// A call produced via 'mangleSpecialMethodCall'.
+struct DemangledSpecialCall
+{
+    llvm::StringRef className;
+    llvm::StringRef methodName;
+    MethodType descriptor;
+    std::optional<FieldType> callerClass;
+};
+
+using DemangledVariant = swl::variant<std::monostate, DemangledFieldAccess, DemangledMethodResolutionCall,
+                                      DemangledStaticCall, FieldType, DemangledSpecialCall>;
 
 /// Attempts to demangle a symbol produced by any of the 'mangle*' functions above with the exception of
 /// 'mangleDirectMethodCall'.

@@ -68,7 +68,37 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                 return generateStaticCallStub(module, *classObject, staticCall.methodName, staticCall.descriptor,
                                               *objectClass);
             },
-            [](...) -> llvm::Function* { return nullptr; });
+            [&](const DemangledMethodResolutionCall& methodResolutionCall) -> llvm::Function*
+            {
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(methodResolutionCall.className));
+                if (!classObject)
+                {
+                    return nullptr;
+                }
+                return generateMethodResolutionCallStub(module, methodResolutionCall.resolution, *classObject,
+                                                        methodResolutionCall.methodName,
+                                                        methodResolutionCall.descriptor, *objectClass);
+            },
+            [&](const DemangledSpecialCall& specialCall) -> llvm::Function*
+            {
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(specialCall.className));
+                if (!classObject)
+                {
+                    return nullptr;
+                }
+                ClassObject* callerClass = nullptr;
+                if (specialCall.callerClass)
+                {
+                    callerClass = m_classLoader.forNameLoaded(*specialCall.callerClass);
+                    if (!callerClass)
+                    {
+                        return nullptr;
+                    }
+                }
+                return generateSpecialMethodCallStub(module, *classObject, specialCall.methodName,
+                                                     specialCall.descriptor, callerClass, *objectClass);
+            },
+            [](std::monostate) -> llvm::Function* { return nullptr; });
         if (!definition)
         {
             continue;
