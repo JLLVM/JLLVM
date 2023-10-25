@@ -66,7 +66,7 @@ char *getFuncNameFromTBTable(uintptr_t pc, uint16_t &NameLen,
   // In 10.7.0 or later, libSystem.dylib implements this function.
   extern "C" bool _dyld_find_unwind_sections(void *, dyld_unwind_sections *);
 
-namespace libunwind {
+namespace jllvm_libunwind {
   bool findDynamicUnwindSections(void *, unw_dynamic_unwind_sections *);
 }
 

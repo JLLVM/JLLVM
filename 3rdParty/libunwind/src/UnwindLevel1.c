@@ -114,12 +114,12 @@ unwind_phase1(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
       unw_word_t pc;
-      __unw_get_reg(cursor, UNW_REG_IP, &pc);
+      jllvm__unw_get_reg(cursor, UNW_REG_IP, &pc);
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase1(ex_obj=%p): pc=0x%" PRIxPTR ", start_ip=0x%" PRIxPTR
           ", func=%s, lsda=0x%" PRIxPTR ", personality=0x%" PRIxPTR "",
@@ -222,16 +222,16 @@ unwind_phase2(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
-      _LIBUNWIND_TRACE_UNWINDING("unwind_phase2(ex_obj=%p): start_ip=0x%" PRIxPTR
-                                 ", func=%s, sp=0x%" PRIxPTR ", lsda=0x%" PRIxPTR
-                                 ", personality=0x%" PRIxPTR,
-                                 (void *)exception_object, frameInfo.start_ip,
-                                 functionName, sp, frameInfo.lsda,
-                                 frameInfo.handler);
+      _LIBUNWIND_TRACE_UNWINDING(
+          "unwind_phase2(ex_obj=%p): start_ip=0x%" PRIxPTR
+          ", func=%s, sp=0x%" PRIxPTR ", lsda=0x%" PRIxPTR
+          ", personality=0x%" PRIxPTR,
+          (void *)exception_object, frameInfo.start_ip, functionName, sp,
+          frameInfo.lsda, frameInfo.handler);
     }
 #endif
 

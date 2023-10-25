@@ -382,21 +382,21 @@ bool findDynamicUnwindSections(void *addr, unw_dynamic_unwind_sections *info) {
 
 } // namespace jllvm_libunwind
 
-int __unw_add_find_dynamic_unwind_sections(
+int jllvm__unw_add_find_dynamic_unwind_sections(
     unw_find_dynamic_unwind_sections find_dynamic_unwind_sections) {
   findDynamicUnwindSectionsLock.lock();
 
   // Check that we have enough space...
   if (numDynamicUnwindSectionsFinders == MAX_DYNAMIC_UNWIND_SECTIONS_FINDERS) {
     findDynamicUnwindSectionsLock.unlock();
-    return UNW_ENOMEM;
+    return jllvm_UNW_ENOMEM;
   }
 
   // Check for value already present...
   for (size_t i = 0; i != numDynamicUnwindSectionsFinders; ++i) {
     if (dynamicUnwindSectionsFinders[i] == find_dynamic_unwind_sections) {
       findDynamicUnwindSectionsLock.unlock();
-      return UNW_EINVAL;
+      return jllvm_UNW_EINVAL;
     }
   }
 
@@ -405,10 +405,10 @@ int __unw_add_find_dynamic_unwind_sections(
       find_dynamic_unwind_sections;
   findDynamicUnwindSectionsLock.unlock();
 
-  return UNW_ESUCCESS;
+  return jllvm_UNW_ESUCCESS;
 }
 
-int __unw_remove_find_dynamic_unwind_sections(
+int jllvm__unw_remove_find_dynamic_unwind_sections(
     unw_find_dynamic_unwind_sections find_dynamic_unwind_sections) {
   findDynamicUnwindSectionsLock.lock();
 
@@ -424,7 +424,7 @@ int __unw_remove_find_dynamic_unwind_sections(
   // If no such registration is present then error out.
   if (finderIdx == numDynamicUnwindSectionsFinders) {
     findDynamicUnwindSectionsLock.unlock();
-    return UNW_EINVAL;
+    return jllvm_UNW_EINVAL;
   }
 
   // Remove entry.
@@ -433,7 +433,7 @@ int __unw_remove_find_dynamic_unwind_sections(
   dynamicUnwindSectionsFinders[--numDynamicUnwindSectionsFinders] = nullptr;
 
   findDynamicUnwindSectionsLock.unlock();
-  return UNW_ESUCCESS;
+  return jllvm_UNW_ESUCCESS;
 }
 
 #endif // __APPLE__
