@@ -336,8 +336,8 @@ unwind_phase2_forced(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
       _LIBUNWIND_TRACE_UNWINDING(
