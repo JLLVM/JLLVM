@@ -17,9 +17,9 @@
 
 #include "cet_unwind.h"
 #include "config.h"
-#include "libunwind.h"
+#include "jllvm_libunwind.h"
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 // For emulating 128-bit registers
 struct v128 { uint32_t vec[4]; };
@@ -265,7 +265,7 @@ inline void Registers_x86::setVectorRegister(int, v128) {
 /// Registers_x86_64  holds the register state of a thread in a 64-bit intel
 /// process.
 class _LIBUNWIND_HIDDEN Registers_x86_64;
-extern "C" void __libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
+extern "C" void jllvm__libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
 
 #if defined(_LIBUNWIND_USE_CET)
 extern "C" void *__libunwind_cet_get_jump_target() {
@@ -288,7 +288,7 @@ public:
   v128        getVectorRegister(int num) const;
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
-  void        jumpto() { __libunwind_Registers_x86_64_jumpto(this); }
+  void        jumpto() { jllvm__libunwind_Registers_x86_64_jumpto(this); }
   static constexpr int lastDwarfRegNum() {
     return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64;
   }
@@ -345,7 +345,7 @@ private:
 };
 
 inline Registers_x86_64::Registers_x86_64(const void *registers) {
-  static_assert((check_fit<Registers_x86_64, unw_context_t>::does_fit),
+  static_assert((check_fit<Registers_x86_64, jllvm_unw_context_t>::does_fit),
                 "x86_64 registers do not fit into unw_context_t");
   memcpy(&_registers, registers, sizeof(_registers));
 }
@@ -2511,7 +2511,7 @@ inline const char *Registers_arm::getRegisterName(int regNum) {
 
 inline bool Registers_arm::validFloatRegister(int regNum) const {
   // NOTE: Consider the intel MMX registers floating points so the
-  // __unw_get_fpreg can be used to transmit the 64-bit data back.
+  // jllvm__unw_get_fpreg can be used to transmit the 64-bit data back.
   return ((regNum >= UNW_ARM_D0) && (regNum <= UNW_ARM_D31))
 #if defined(__ARM_WMMX)
       || ((regNum >= UNW_ARM_WR0) && (regNum <= UNW_ARM_WR15))

@@ -23,7 +23,7 @@
 #include "libunwind_ext.h"
 
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 
 /// DwarfInstructions maps abstract DWARF unwind instructions to a particular
@@ -271,7 +271,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
                 i, getSavedRegister(addressSpace, registers, cfa,
                                     prolog.savedRegisters[i]));
           else
-            return UNW_EBADREG;
+            return jllvm_UNW_EBADREG;
         } else if (i == (int)cieInfo.returnAddressRegister) {
             // Leaf function keeps the return address in register and there is no
             // explicit instructions how to restore it.
@@ -373,7 +373,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       return UNW_STEP_SUCCESS;
     }
   }
-  return UNW_EBADFRAME;
+  return jllvm_UNW_EBADFRAME;
 }
 
 template <typename A, typename R>

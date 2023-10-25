@@ -22,7 +22,7 @@
 #endif
 #endif
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 #if defined(_LIBUNWIND_HAS_NO_THREADS)
 

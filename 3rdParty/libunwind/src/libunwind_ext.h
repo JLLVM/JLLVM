@@ -13,8 +13,8 @@
 #define __LIBUNWIND_EXT__
 
 #include "config.h"
-#include <libunwind.h>
-#include <unwind.h>
+#include <jllvm_libunwind.h>
+#include <jllvm_unwind.h>
 
 #define UNW_STEP_SUCCESS 1
 #define UNW_STEP_END     0
@@ -23,40 +23,40 @@
 extern "C" {
 #endif
 
-extern int __unw_getcontext(unw_context_t *);
-extern int __unw_init_local(unw_cursor_t *, unw_context_t *);
-extern int __unw_step(unw_cursor_t *);
-extern int __unw_get_reg(unw_cursor_t *, unw_regnum_t, unw_word_t *);
-extern int __unw_get_fpreg(unw_cursor_t *, unw_regnum_t, unw_fpreg_t *);
-extern int __unw_set_reg(unw_cursor_t *, unw_regnum_t, unw_word_t);
-extern int __unw_set_fpreg(unw_cursor_t *, unw_regnum_t, unw_fpreg_t);
-extern int __unw_resume(unw_cursor_t *);
+extern int jllvm__unw_getcontext(jllvm_unw_context_t *);
+extern int jllvm__unw_init_local(jllvm_unw_cursor_t *, jllvm_unw_context_t *);
+extern int jllvm__unw_step(jllvm_unw_cursor_t *);
+extern int jllvm__unw_get_reg(jllvm_unw_cursor_t *, unw_regnum_t, unw_word_t *);
+extern int jllvm__unw_get_fpreg(jllvm_unw_cursor_t *, unw_regnum_t, unw_fpreg_t *);
+extern int jllvm__unw_set_reg(jllvm_unw_cursor_t *, unw_regnum_t, unw_word_t);
+extern int jllvm__unw_set_fpreg(jllvm_unw_cursor_t *, unw_regnum_t, unw_fpreg_t);
+extern int jllvm__unw_resume(jllvm_unw_cursor_t *);
 
 #ifdef __arm__
 /* Save VFP registers in FSTMX format (instead of FSTMD). */
 extern void __unw_save_vfp_as_X(unw_cursor_t *);
 #endif
 
-extern const char *__unw_regname(unw_cursor_t *, unw_regnum_t);
-extern int __unw_get_proc_info(unw_cursor_t *, unw_proc_info_t *);
-extern int __unw_is_fpreg(unw_cursor_t *, unw_regnum_t);
-extern int __unw_is_signal_frame(unw_cursor_t *);
-extern int __unw_get_proc_name(unw_cursor_t *, char *, size_t, unw_word_t *);
+extern const char *jllvm__unw_regname(jllvm_unw_cursor_t *, unw_regnum_t);
+extern int jllvm__unw_get_proc_info(jllvm_unw_cursor_t *, jllvm_unw_proc_info_t *);
+extern int jllvm__unw_is_fpreg(jllvm_unw_cursor_t *, unw_regnum_t);
+extern int jllvm__unw_is_signal_frame(jllvm_unw_cursor_t *);
+extern int jllvm__unw_get_proc_name(jllvm_unw_cursor_t *, char *, size_t, unw_word_t *);
 
 #if defined(_AIX)
 extern uintptr_t __unw_get_data_rel_base(unw_cursor_t *);
 #endif
 
 // SPI
-extern void __unw_iterate_dwarf_unwind_cache(void (*func)(
+extern void jllvm__unw_iterate_dwarf_unwind_cache(void (*func)(
     unw_word_t ip_start, unw_word_t ip_end, unw_word_t fde, unw_word_t mh));
 
 // IPI
-extern void __unw_add_dynamic_fde(unw_word_t fde);
-extern void __unw_remove_dynamic_fde(unw_word_t fde);
+extern void jllvm__unw_add_dynamic_fde(unw_word_t fde);
+extern void jllvm__unw_remove_dynamic_fde(unw_word_t fde);
 
-extern void __unw_add_dynamic_eh_frame_section(unw_word_t eh_frame_start);
-extern void __unw_remove_dynamic_eh_frame_section(unw_word_t eh_frame_start);
+extern void jllvm__unw_add_dynamic_eh_frame_section(unw_word_t eh_frame_start);
+extern void jllvm__unw_remove_dynamic_eh_frame_section(unw_word_t eh_frame_start);
 
 #ifdef __APPLE__
 
@@ -111,14 +111,14 @@ typedef int (*unw_find_dynamic_unwind_sections)(
 // Returns UNW_ESUCCESS for successful registrations. If the given callback
 // has already been registered then UNW_EINVAL will be returned. If all
 // available callback entries are in use then UNW_ENOMEM will be returned.
-extern int __unw_add_find_dynamic_unwind_sections(
+extern int jllvm__unw_add_find_dynamic_unwind_sections(
     unw_find_dynamic_unwind_sections find_dynamic_unwind_sections);
 
 // Deregister a dynacim unwind-info lookup callback.
 //
 // Returns UNW_ESUCCESS for successful deregistrations. If the given callback
 // has already been registered then UNW_EINVAL will be returned.
-extern int __unw_remove_find_dynamic_unwind_sections(
+extern int jllvm__unw_remove_find_dynamic_unwind_sections(
     unw_find_dynamic_unwind_sections find_dynamic_unwind_sections);
 
 #endif

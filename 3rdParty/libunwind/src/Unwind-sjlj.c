@@ -9,7 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <unwind.h>
+#include <jllvm_unwind.h>
 
 #include <inttypes.h>
 #include <stdint.h>

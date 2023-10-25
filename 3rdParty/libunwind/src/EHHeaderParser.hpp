@@ -12,11 +12,11 @@
 #ifndef __EHHEADERPARSER_HPP__
 #define __EHHEADERPARSER_HPP__
 
-#include "libunwind.h"
+#include "jllvm_libunwind.h"
 
 #include "DwarfParser.hpp"
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 /// \brief EHHeaderParser does basic parsing of an ELF .eh_frame_hdr section.
 ///

@@ -15,7 +15,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <libunwind.h>
+#include <jllvm_libunwind.h>
 #include <mach-o/compact_unwind_encoding.h>
 
 #include "Registers.hpp"
@@ -24,7 +24,7 @@
 #define EXTRACT_BITS(value, mask)                                              \
   ((value >> __builtin_ctz(mask)) & (((1 << __builtin_popcount(mask))) - 1))
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 #if defined(_LIBUNWIND_TARGET_I386)
 /// CompactUnwinder_x86 uses a compact unwind info to virtually "step" (aka

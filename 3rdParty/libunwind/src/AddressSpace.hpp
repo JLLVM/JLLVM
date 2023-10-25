@@ -17,11 +17,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "libunwind.h"
-#include "config.h"
-#include "dwarf2.h"
 #include "EHHeaderParser.hpp"
 #include "Registers.hpp"
+#include "config.h"
+#include "dwarf2.h"
+#include "jllvm_libunwind.h"
 
 #ifndef _LIBUNWIND_USE_DLADDR
   #if !(defined(_LIBUNWIND_IS_BAREMETAL) || defined(_WIN32) || defined(_AIX))
@@ -121,7 +121,7 @@ extern char __exidx_end;
 
 #endif
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 /// Used by findUnwindSections() to return info about needed sections.
 struct UnwindInfoSections {

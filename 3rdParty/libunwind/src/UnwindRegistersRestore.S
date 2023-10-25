@@ -23,7 +23,7 @@
 #if !defined(__USING_SJLJ_EXCEPTIONS__)
 
 #if defined(__i386__)
-DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_jumpto)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__libunwind_Registers_x86_jumpto)
 #
 # extern "C" void __libunwind_Registers_x86_jumpto(Registers_x86 *);
 #
@@ -68,7 +68,7 @@ DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_jumpto)
 
 #elif defined(__x86_64__)
 
-DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_x86_64_jumpto)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__libunwind_Registers_x86_64_jumpto)
 #
 # extern "C" void __libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
 #
@@ -636,7 +636,7 @@ Lnovec:
 //  thread_state pointer is in x0
 //
   .p2align 2
-DEFINE_LIBUNWIND_FUNCTION(__libunwind_Registers_arm64_jumpto)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__libunwind_Registers_arm64_jumpto)
   // skip restore of x0,x1 for now
   ldp    x2, x3,  [x0, #0x010]
   ldp    x4, x5,  [x0, #0x020]

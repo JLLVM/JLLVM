@@ -16,11 +16,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "config.h"
-#include "libunwind_ext.h"
-#include "libunwind.h"
 #include "Unwind-EHABI.h"
-#include "unwind.h"
+#include "config.h"
+#include "jllvm_libunwind.h"
+#include "jllvm_unwind.h"
+#include "libunwind_ext.h"
 
 #if defined(_AIX)
 #include <sys/debug.h>
@@ -37,55 +37,58 @@
 #endif
 
 ///  Called by __cxa_rethrow().
-_LIBUNWIND_EXPORT _Unwind_Reason_Code
-_Unwind_Resume_or_Rethrow(_Unwind_Exception *exception_object) {
+_LIBUNWIND_EXPORT jllvm_Unwind_Reason_Code
+jllvm_Unwind_Resume_or_Rethrow(jllvm_Unwind_Exception *exception_object) {
   _LIBUNWIND_TRACE_API(
-      "_Unwind_Resume_or_Rethrow(ex_obj=%p), private_1=%" PRIdPTR,
+      "jllvm_Unwind_Resume_or_Rethrow(ex_obj=%p), private_1=%" PRIdPTR,
       (void *)exception_object, (intptr_t)exception_object->PRIVATE_1);
 
   // If this is non-forced and a stopping place was found, then this is a
   // re-throw.
   // Call _Unwind_RaiseException() as if this was a new exception
   if (exception_object->PRIVATE_1 == 0) {
-    return _Unwind_RaiseException(exception_object);
+    return jllvm_Unwind_RaiseException(exception_object);
     // Will return if there is no catch clause, so that __cxa_rethrow can call
     // std::terminate().
   }
 
   // Call through to _Unwind_Resume() which distinguishes between forced and
   // regular exceptions.
-  _Unwind_Resume(exception_object);
-  _LIBUNWIND_ABORT("_Unwind_Resume_or_Rethrow() called _Unwind_RaiseException()"
-                   " which unexpectedly returned");
+  jllvm_Unwind_Resume(exception_object);
+  _LIBUNWIND_ABORT(
+      "jllvm_Unwind_Resume_or_Rethrow() called _Unwind_RaiseException()"
+      " which unexpectedly returned");
 }
 
 /// Called by personality handler during phase 2 to get base address for data
 /// relative encodings.
 _LIBUNWIND_EXPORT uintptr_t
-_Unwind_GetDataRelBase(struct _Unwind_Context *context) {
-  _LIBUNWIND_TRACE_API("_Unwind_GetDataRelBase(context=%p)", (void *)context);
+jllvm_Unwind_GetDataRelBase(struct jllvm_Unwind_Context *context) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetDataRelBase(context=%p)",
+                       (void *)context);
 #if defined(_AIX)
   return unw_get_data_rel_base((unw_cursor_t *)context);
 #else
   (void)context;
-  _LIBUNWIND_ABORT("_Unwind_GetDataRelBase() not implemented");
+  _LIBUNWIND_ABORT("jllvm_Unwind_GetDataRelBase() not implemented");
 #endif
 }
 
 /// Called by personality handler during phase 2 to get base address for text
 /// relative encodings.
 _LIBUNWIND_EXPORT uintptr_t
-_Unwind_GetTextRelBase(struct _Unwind_Context *context) {
+jllvm_Unwind_GetTextRelBase(struct jllvm_Unwind_Context *context) {
   (void)context;
-  _LIBUNWIND_TRACE_API("_Unwind_GetTextRelBase(context=%p)", (void *)context);
-  _LIBUNWIND_ABORT("_Unwind_GetTextRelBase() not implemented");
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetTextRelBase(context=%p)",
+                       (void *)context);
+  _LIBUNWIND_ABORT("jllvm_Unwind_GetTextRelBase() not implemented");
 }
 
 
 /// Scans unwind information to find the function that contains the
 /// specified code address "pc".
-_LIBUNWIND_EXPORT void *_Unwind_FindEnclosingFunction(void *pc) {
-  _LIBUNWIND_TRACE_API("_Unwind_FindEnclosingFunction(pc=%p)", pc);
+_LIBUNWIND_EXPORT void *jllvm_Unwind_FindEnclosingFunction(void *pc) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_FindEnclosingFunction(pc=%p)", pc);
 #if defined(_AIX)
   if (pc == NULL)
     return NULL;
@@ -114,13 +117,13 @@ _LIBUNWIND_EXPORT void *_Unwind_FindEnclosingFunction(void *pc) {
 #else
   // This is slow, but works.
   // We create an unwind cursor then alter the IP to be pc
-  unw_cursor_t cursor;
-  unw_context_t uc;
-  unw_proc_info_t info;
-  __unw_getcontext(&uc);
-  __unw_init_local(&cursor, &uc);
-  __unw_set_reg(&cursor, UNW_REG_IP, (unw_word_t)(intptr_t)pc);
-  if (__unw_get_proc_info(&cursor, &info) == UNW_ESUCCESS)
+  jllvm_unw_cursor_t cursor;
+  jllvm_unw_context_t uc;
+  jllvm_unw_proc_info_t info;
+  jllvm__unw_getcontext(&uc);
+  jllvm__unw_init_local(&cursor, &uc);
+  jllvm__unw_set_reg(&cursor, UNW_REG_IP, (unw_word_t)(intptr_t)pc);
+  if (jllvm__unw_get_proc_info(&cursor, &info) == jllvm_UNW_ESUCCESS)
     return (void *)(intptr_t) info.start_ip;
   else
     return NULL;
@@ -129,14 +132,14 @@ _LIBUNWIND_EXPORT void *_Unwind_FindEnclosingFunction(void *pc) {
 
 /// Walk every frame and call trace function at each one.  If trace function
 /// returns anything other than _URC_NO_REASON, then walk is terminated.
-_LIBUNWIND_EXPORT _Unwind_Reason_Code
-_Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
-  unw_cursor_t cursor;
-  unw_context_t uc;
-  __unw_getcontext(&uc);
-  __unw_init_local(&cursor, &uc);
+_LIBUNWIND_EXPORT jllvm_Unwind_Reason_Code
+jllvm_Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
+  jllvm_unw_cursor_t cursor;
+  jllvm_unw_context_t uc;
+  jllvm__unw_getcontext(&uc);
+  jllvm__unw_init_local(&cursor, &uc);
 
-  _LIBUNWIND_TRACE_API("_Unwind_Backtrace(callback=%p)",
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_Backtrace(callback=%p)",
                        (void *)(uintptr_t)callback);
 
 #if defined(_LIBUNWIND_ARM_EHABI)
@@ -148,16 +151,16 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
 
   // walk each frame
   while (true) {
-    _Unwind_Reason_Code result;
+    jllvm_Unwind_Reason_Code result;
 
 #if !defined(_LIBUNWIND_ARM_EHABI)
     // ask libunwind to get next frame (skip over first frame which is
     // _Unwind_Backtrace())
-    if (__unw_step(&cursor) <= 0) {
+    if (jllvm__unw_step(&cursor) <= 0) {
       _LIBUNWIND_TRACE_UNWINDING(" _backtrace: ended because cursor reached "
                                  "bottom of stack, returning %d",
-                                 _URC_END_OF_STACK);
-      return _URC_END_OF_STACK;
+                                 jllvm_URC_END_OF_STACK);
+      return jllvm_URC_END_OF_STACK;
     }
 #else
     // Get the information for this frame.
@@ -187,10 +190,10 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
     // debugging
     if (_LIBUNWIND_TRACING_UNWINDING) {
       char functionName[512];
-      unw_proc_info_t frame;
+      jllvm_unw_proc_info_t frame;
       unw_word_t offset;
-      __unw_get_proc_name(&cursor, functionName, 512, &offset);
-      __unw_get_proc_info(&cursor, &frame);
+      jllvm__unw_get_proc_name(&cursor, functionName, 512, &offset);
+      jllvm__unw_get_proc_info(&cursor, &frame);
       _LIBUNWIND_TRACE_UNWINDING(
           " _backtrace: start_ip=0x%" PRIxPTR ", func=%s, lsda=0x%" PRIxPTR ", context=%p",
           frame.start_ip, functionName, frame.lsda,
@@ -198,8 +201,8 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
     }
 
     // call trace function with this frame
-    result = (*callback)((struct _Unwind_Context *)(&cursor), ref);
-    if (result != _URC_NO_REASON) {
+    result = (*callback)((struct jllvm_Unwind_Context *)(&cursor), ref);
+    if (result != jllvm_URC_NO_REASON) {
       _LIBUNWIND_TRACE_UNWINDING(
           " _backtrace: ended because callback returned %d", result);
       return result;
@@ -209,32 +212,33 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
 
 
 /// Find DWARF unwind info for an address 'pc' in some function.
-_LIBUNWIND_EXPORT const void *_Unwind_Find_FDE(const void *pc,
-                                               struct dwarf_eh_bases *bases) {
+_LIBUNWIND_EXPORT const void *
+jllvm_Unwind_Find_FDE(const void *pc, struct dwarf_eh_bases *bases) {
   // This is slow, but works.
   // We create an unwind cursor then alter the IP to be pc
-  unw_cursor_t cursor;
-  unw_context_t uc;
-  unw_proc_info_t info;
-  __unw_getcontext(&uc);
-  __unw_init_local(&cursor, &uc);
-  __unw_set_reg(&cursor, UNW_REG_IP, (unw_word_t)(intptr_t)pc);
-  __unw_get_proc_info(&cursor, &info);
+  jllvm_unw_cursor_t cursor;
+  jllvm_unw_context_t uc;
+  jllvm_unw_proc_info_t info;
+  jllvm__unw_getcontext(&uc);
+  jllvm__unw_init_local(&cursor, &uc);
+  jllvm__unw_set_reg(&cursor, UNW_REG_IP, (unw_word_t)(intptr_t)pc);
+  jllvm__unw_get_proc_info(&cursor, &info);
   bases->tbase = (uintptr_t)info.extra;
   bases->dbase = 0; // dbase not used on Mac OS X
   bases->func = (uintptr_t)info.start_ip;
-  _LIBUNWIND_TRACE_API("_Unwind_Find_FDE(pc=%p) => %p", pc,
-                  (void *)(intptr_t) info.unwind_info);
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_Find_FDE(pc=%p) => %p", pc,
+                       (void *)(intptr_t)info.unwind_info);
   return (void *)(intptr_t) info.unwind_info;
 }
 
 /// Returns the CFA (call frame area, or stack pointer at start of function)
 /// for the current context.
-_LIBUNWIND_EXPORT uintptr_t _Unwind_GetCFA(struct _Unwind_Context *context) {
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
+_LIBUNWIND_EXPORT uintptr_t
+jllvm_Unwind_GetCFA(struct jllvm_Unwind_Context *context) {
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
   unw_word_t result;
-  __unw_get_reg(cursor, UNW_REG_SP, &result);
-  _LIBUNWIND_TRACE_API("_Unwind_GetCFA(context=%p) => 0x%" PRIxPTR,
+  jllvm__unw_get_reg(cursor, UNW_REG_SP, &result);
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetCFA(context=%p) => 0x%" PRIxPTR,
                        (void *)context, result);
   return (uintptr_t)result;
 }
@@ -243,10 +247,10 @@ _LIBUNWIND_EXPORT uintptr_t _Unwind_GetCFA(struct _Unwind_Context *context) {
 /// Called by personality handler during phase 2 to get instruction pointer.
 /// ipBefore is a boolean that says if IP is already adjusted to be the call
 /// site address.  Normally IP is the return address.
-_LIBUNWIND_EXPORT uintptr_t _Unwind_GetIPInfo(struct _Unwind_Context *context,
-                                              int *ipBefore) {
-  _LIBUNWIND_TRACE_API("_Unwind_GetIPInfo(context=%p)", (void *)context);
-  int isSignalFrame = __unw_is_signal_frame((unw_cursor_t *)context);
+_LIBUNWIND_EXPORT uintptr_t
+jllvm_Unwind_GetIPInfo(struct jllvm_Unwind_Context *context, int *ipBefore) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetIPInfo(context=%p)", (void *)context);
+  int isSignalFrame = jllvm__unw_is_signal_frame((jllvm_unw_cursor_t *)context);
   // Negative means some kind of error (probably UNW_ENOINFO), but we have no
   // good way to report that, and this maintains backward compatibility with the
   // implementation that hard-coded zero in every case, even signal frames.
@@ -254,7 +258,7 @@ _LIBUNWIND_EXPORT uintptr_t _Unwind_GetIPInfo(struct _Unwind_Context *context,
     *ipBefore = 0;
   else
     *ipBefore = 1;
-  return _Unwind_GetIP(context);
+  return jllvm_Unwind_GetIP(context);
 }
 
 #if defined(_LIBUNWIND_SUPPORT_DWARF_UNWIND)
@@ -263,9 +267,9 @@ _LIBUNWIND_EXPORT uintptr_t _Unwind_GetIPInfo(struct _Unwind_Context *context,
 /// to register a dynamically generated FDE.
 /// This function has existed on Mac OS X since 10.4, but
 /// was broken until 10.6.
-_LIBUNWIND_EXPORT void __register_frame(const void *fde) {
-  _LIBUNWIND_TRACE_API("__register_frame(%p)", fde);
-  __unw_add_dynamic_fde((unw_word_t)(uintptr_t)fde);
+_LIBUNWIND_EXPORT void jllvm__register_frame(const void *fde) {
+  _LIBUNWIND_TRACE_API("jllvm__register_frame(%p)", fde);
+  jllvm__unw_add_dynamic_fde((unw_word_t)(uintptr_t)fde);
 }
 
 
@@ -273,9 +277,9 @@ _LIBUNWIND_EXPORT void __register_frame(const void *fde) {
 /// to unregister a dynamically generated FDE.
 /// This function has existed on Mac OS X since 10.4, but
 /// was broken until 10.6.
-_LIBUNWIND_EXPORT void __deregister_frame(const void *fde) {
-  _LIBUNWIND_TRACE_API("__deregister_frame(%p)", fde);
-  __unw_remove_dynamic_fde((unw_word_t)(uintptr_t)fde);
+_LIBUNWIND_EXPORT void jllvm__deregister_frame(const void *fde) {
+  _LIBUNWIND_TRACE_API("jllvm__deregister_frame(%p)", fde);
+  jllvm__unw_remove_dynamic_fde((unw_word_t)(uintptr_t)fde);
 }
 
 
@@ -288,59 +292,63 @@ _LIBUNWIND_EXPORT void __deregister_frame(const void *fde) {
 // application won't be able to use them.
 
 #if defined(_LIBUNWIND_SUPPORT_FRAME_APIS)
-_LIBUNWIND_EXPORT void __register_frame_info_bases(const void *fde, void *ob,
-                                                   void *tb, void *db) {
+_LIBUNWIND_EXPORT void jllvm__register_frame_info_bases(const void *fde,
+                                                        void *ob, void *tb,
+                                                        void *db) {
   (void)fde;
   (void)ob;
   (void)tb;
   (void)db;
- _LIBUNWIND_TRACE_API("__register_frame_info_bases(%p,%p, %p, %p)",
-                            fde, ob, tb, db);
+  _LIBUNWIND_TRACE_API("jllvm__register_frame_info_bases(%p,%p, %p, %p)", fde,
+                       ob, tb, db);
   // do nothing, this function never worked in Mac OS X
 }
 
-_LIBUNWIND_EXPORT void __register_frame_info(const void *fde, void *ob) {
+_LIBUNWIND_EXPORT void jllvm__register_frame_info(const void *fde, void *ob) {
   (void)fde;
   (void)ob;
-  _LIBUNWIND_TRACE_API("__register_frame_info(%p, %p)", fde, ob);
+  _LIBUNWIND_TRACE_API("jllvm__register_frame_info(%p, %p)", fde, ob);
   // do nothing, this function never worked in Mac OS X
 }
 
-_LIBUNWIND_EXPORT void __register_frame_info_table_bases(const void *fde,
-                                                         void *ob, void *tb,
-                                                         void *db) {
+_LIBUNWIND_EXPORT void jllvm__register_frame_info_table_bases(const void *fde,
+                                                              void *ob,
+                                                              void *tb,
+                                                              void *db) {
   (void)fde;
   (void)ob;
   (void)tb;
   (void)db;
-  _LIBUNWIND_TRACE_API("__register_frame_info_table_bases"
-                             "(%p,%p, %p, %p)", fde, ob, tb, db);
+  _LIBUNWIND_TRACE_API("jllvm__register_frame_info_table_bases"
+                       "(%p,%p, %p, %p)",
+                       fde, ob, tb, db);
   // do nothing, this function never worked in Mac OS X
 }
 
-_LIBUNWIND_EXPORT void __register_frame_info_table(const void *fde, void *ob) {
+_LIBUNWIND_EXPORT void jllvm__register_frame_info_table(const void *fde,
+                                                        void *ob) {
   (void)fde;
   (void)ob;
-  _LIBUNWIND_TRACE_API("__register_frame_info_table(%p, %p)", fde, ob);
+  _LIBUNWIND_TRACE_API("jllvm__register_frame_info_table(%p, %p)", fde, ob);
   // do nothing, this function never worked in Mac OS X
 }
 
-_LIBUNWIND_EXPORT void __register_frame_table(const void *fde) {
+_LIBUNWIND_EXPORT void jllvm__register_frame_table(const void *fde) {
   (void)fde;
-  _LIBUNWIND_TRACE_API("__register_frame_table(%p)", fde);
+  _LIBUNWIND_TRACE_API("jllvm__register_frame_table(%p)", fde);
   // do nothing, this function never worked in Mac OS X
 }
 
-_LIBUNWIND_EXPORT void *__deregister_frame_info(const void *fde) {
+_LIBUNWIND_EXPORT void *jllvm__deregister_frame_info(const void *fde) {
   (void)fde;
-  _LIBUNWIND_TRACE_API("__deregister_frame_info(%p)", fde);
+  _LIBUNWIND_TRACE_API("jllvm__deregister_frame_info(%p)", fde);
   // do nothing, this function never worked in Mac OS X
   return NULL;
 }
 
-_LIBUNWIND_EXPORT void *__deregister_frame_info_bases(const void *fde) {
+_LIBUNWIND_EXPORT void *jllvm__deregister_frame_info_bases(const void *fde) {
   (void)fde;
-  _LIBUNWIND_TRACE_API("__deregister_frame_info_bases(%p)", fde);
+  _LIBUNWIND_TRACE_API("jllvm__deregister_frame_info_bases(%p)", fde);
   // do nothing, this function never worked in Mac OS X
   return NULL;
 }

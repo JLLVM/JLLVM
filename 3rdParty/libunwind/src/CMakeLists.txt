@@ -1,7 +1,7 @@
 # Get sources
 
 set(LIBUNWIND_CXX_SOURCES
-    libunwind.cpp
+        jllvm_libunwind.cpp
     Unwind-EHABI.cpp
     Unwind-seh.cpp
     )
@@ -43,8 +43,8 @@ set(LIBUNWIND_HEADERS
     RWMutex.hpp
     Unwind-EHABI.h
     UnwindCursor.hpp
-    ../include/libunwind.h
-    ../include/unwind.h
+        ../include/jllvm_libunwind.h
+        ../include/jllvm_unwind.h
     ../include/unwind_itanium.h
     ../include/unwind_arm_ehabi.h
     )

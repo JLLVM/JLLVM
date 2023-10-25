@@ -12,10 +12,10 @@
 #define __UNWINDCURSOR_HPP__
 
 #include "cet_unwind.h"
+#include <jllvm_unwind.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unwind.h>
 
 #ifdef _WIN32
   #include <windows.h>
@@ -41,14 +41,14 @@
 
 #include "AddressSpace.hpp"
 #include "CompactUnwinder.hpp"
-#include "config.h"
 #include "DwarfInstructions.hpp"
 #include "EHHeaderParser.hpp"
-#include "libunwind.h"
-#include "libunwind_ext.h"
-#include "Registers.hpp"
 #include "RWMutex.hpp"
+#include "Registers.hpp"
 #include "Unwind-EHABI.h"
+#include "config.h"
+#include "jllvm_libunwind.h"
+#include "libunwind_ext.h"
 
 #if defined(_LIBUNWIND_SUPPORT_SEH_UNWIND)
 // Provide a definition for the DISPATCHER_CONTEXT struct for old (Win7 and
@@ -87,7 +87,7 @@ extern "C" _Unwind_Reason_Code __libunwind_seh_personality(
 
 #endif
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 #if defined(_LIBUNWIND_SUPPORT_DWARF_UNWIND)
 /// Cache of recently found FDEs.
@@ -444,7 +444,7 @@ public:
     _LIBUNWIND_ABORT("setFloatReg not implemented");
   }
   virtual int step(bool = false) { _LIBUNWIND_ABORT("step not implemented"); }
-  virtual void getInfo(unw_proc_info_t *) {
+  virtual void getInfo(jllvm_unw_proc_info_t *) {
     _LIBUNWIND_ABORT("getInfo not implemented");
   }
   virtual void jumpto() { _LIBUNWIND_ABORT("jumpto not implemented"); }
@@ -929,8 +929,8 @@ template <typename A, typename R>
 class UnwindCursor : public AbstractUnwindCursor{
   typedef typename A::pint_t pint_t;
 public:
-                      UnwindCursor(unw_context_t *context, A &as);
-                      UnwindCursor(A &as, void *threadArg);
+  UnwindCursor(jllvm_unw_context_t *context, A &as);
+  UnwindCursor(A &as, void *threadArg);
   virtual             ~UnwindCursor() {}
   virtual bool        validReg(int);
   virtual unw_word_t  getReg(int);
@@ -939,7 +939,7 @@ public:
   virtual unw_fpreg_t getFloatReg(int);
   virtual void        setFloatReg(int, unw_fpreg_t);
   virtual int         step(bool stage2 = false);
-  virtual void        getInfo(unw_proc_info_t *);
+  virtual void getInfo(jllvm_unw_proc_info_t *);
   virtual void        jumpto();
   virtual bool        isSignalFrame();
   virtual bool        getFunctionName(char *buf, size_t len, unw_word_t *off);
@@ -1308,7 +1308,7 @@ private:
 
   A               &_addressSpace;
   R                _registers;
-  unw_proc_info_t  _info;
+  jllvm_unw_proc_info_t _info;
   bool             _unwindInfoMissing;
   bool             _isSignalFrame;
 #if defined(_LIBUNWIND_CHECK_LINUX_SIGRETURN)
@@ -1318,12 +1318,12 @@ private:
 
 
 template <typename A, typename R>
-UnwindCursor<A, R>::UnwindCursor(unw_context_t *context, A &as)
+UnwindCursor<A, R>::UnwindCursor(jllvm_unw_context_t *context, A &as)
     : _addressSpace(as), _registers(context), _unwindInfoMissing(false),
       _isSignalFrame(false) {
-  static_assert((check_fit<UnwindCursor<A, R>, unw_cursor_t>::does_fit),
+  static_assert((check_fit<UnwindCursor<A, R>, jllvm_unw_cursor_t>::does_fit),
                 "UnwindCursor<> does not fit in unw_cursor_t");
-  static_assert((alignof(UnwindCursor<A, R>) <= alignof(unw_cursor_t)),
+  static_assert((alignof(UnwindCursor<A, R>) <= alignof(jllvm_unw_cursor_t)),
                 "UnwindCursor<> requires more alignment than unw_cursor_t");
   memset(&_info, 0, sizeof(_info));
 }
@@ -2928,7 +2928,7 @@ template <typename A, typename R> int UnwindCursor<A, R>::step(bool stage2) {
 }
 
 template <typename A, typename R>
-void UnwindCursor<A, R>::getInfo(unw_proc_info_t *info) {
+void UnwindCursor<A, R>::getInfo(jllvm_unw_proc_info_t *info) {
   if (_unwindInfoMissing)
     memset(info, 0, sizeof(*info));
   else

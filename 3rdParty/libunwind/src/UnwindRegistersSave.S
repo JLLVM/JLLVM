@@ -36,7 +36,7 @@
 #   +-----------------------+   <-- SP
 #   +                       +
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 
   _LIBUNWIND_CET_ENDBR
   push  %eax
@@ -73,7 +73,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in rdi
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 #if defined(_WIN64)
 #define PTR %rcx
 #define TMP %rdx
@@ -136,7 +136,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in a0 ($4)
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   .set push
   .set noat
   .set noreorder
@@ -247,7 +247,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in a0 ($4)
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   .set push
   .set noat
   .set noreorder
@@ -280,7 +280,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # extern int __unw_getcontext(unw_context_t* thread_state)
 #
 # Just trap for the time being.
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   teq $0, $0
 
 #elif defined(__powerpc64__)
@@ -294,7 +294,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 #if defined(_AIX)
 DEFINE_LIBUNWIND_FUNCTION_AND_WEAK_ALIAS(__unw_getcontext, unw_getcontext)
 #else
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 #endif
 // store register (GPR)
 #define PPC64_STR(n) \
@@ -553,7 +553,7 @@ LnoR2Fix:
 #if defined(_AIX)
 DEFINE_LIBUNWIND_FUNCTION_AND_WEAK_ALIAS(__unw_getcontext, unw_getcontext)
 #else
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 #endif
   stw     0,   8(3)
   mflr    0
@@ -715,7 +715,7 @@ LnoR2Fix:
 //  thread_state pointer is in x0
 //
   .p2align 2
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   stp    x0, x1,  [x0, #0x000]
   stp    x2, x3,  [x0, #0x010]
   stp    x4, x5,  [x0, #0x020]
@@ -778,7 +778,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 @ Instead, VFP registers are demand saved by logic external to __unw_getcontext.
 @
   .p2align 2
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 #if !defined(__ARM_ARCH_ISA_ARM) && __ARM_ARCH_ISA_THUMB == 1
   stm r0!, {r0-r7}
   mov r1, r8
@@ -916,7 +916,7 @@ DEFINE_LIBUNWIND_FUNCTION(_ZN9libunwind13Registers_arm16saveiWMMXControlEPj)
 # On entry:
 #  thread_state pointer is in r3
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   l.sw       0(r3), r0
   l.sw       4(r3), r1
   l.sw       8(r3), r2
@@ -962,7 +962,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 #  thread_state pointer is in r0
 #
 #define OFFSET(offset) (offset/4)
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   memw(r0+#32) = r8
   memw(r0+#36) = r9
   memw(r0+#40) = r10
@@ -1008,7 +1008,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in %o0
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   .register %g2, #scratch
   .register %g3, #scratch
   .register %g6, #scratch
@@ -1066,7 +1066,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in o0
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   ta 3
   add %o7, 8, %o7
   std %g0, [%o0 +   0]
@@ -1096,7 +1096,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in a0
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   ISTORE    x1, (RISCV_ISIZE * 0)(a0) // store ra as pc
   .irp i,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
     ISTORE x\i, (RISCV_ISIZE * \i)(a0)
@@ -1119,7 +1119,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 // On entry:
 //  thread_state pointer is in r2
 //
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
 
   // Save GPRs
   stmg %r0, %r15, 16(%r2)
@@ -1148,7 +1148,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 # On entry:
 #  thread_state pointer is in $a0($r4)
 #
-DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
+DEFINE_LIBUNWIND_FUNCTION(jllvm__unw_getcontext)
   .irp i,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
     st.d $r\i, $a0, (8*\i)
   .endr
@@ -1165,7 +1165,7 @@ DEFINE_LIBUNWIND_FUNCTION(__unw_getcontext)
 
 #endif
 
-  WEAK_ALIAS(__unw_getcontext, unw_getcontext)
+  WEAK_ALIAS(jllvm__unw_getcontext, jllvm_unw_getcontext)
 
 #endif /* !defined(__USING_SJLJ_EXCEPTIONS__) */
 

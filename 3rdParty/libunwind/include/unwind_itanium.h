@@ -13,15 +13,15 @@
 #ifndef __ITANIUM_UNWIND_H__
 #define __ITANIUM_UNWIND_H__
 
-struct _Unwind_Context;   // opaque
-struct _Unwind_Exception; // forward declaration
-typedef struct _Unwind_Exception _Unwind_Exception;
-typedef uint64_t _Unwind_Exception_Class;
+struct jllvm_Unwind_Context;   // opaque
+struct jllvm_Unwind_Exception; // forward declaration
+typedef struct jllvm_Unwind_Exception jllvm_Unwind_Exception;
+typedef uint64_t jllvm_Unwind_Exception_Class;
 
-struct _Unwind_Exception {
-  _Unwind_Exception_Class exception_class;
-  void (*exception_cleanup)(_Unwind_Reason_Code reason,
-                            _Unwind_Exception *exc);
+struct jllvm_Unwind_Exception {
+  jllvm_Unwind_Exception_Class exception_class;
+  void (*exception_cleanup)(jllvm_Unwind_Reason_Code reason,
+                            jllvm_Unwind_Exception *exc);
 #if defined(__SEH__) && !defined(__USING_SJLJ_EXCEPTIONS__)
   uintptr_t private_[6];
 #else
@@ -40,9 +40,10 @@ struct _Unwind_Exception {
   // alignment for the target"; so do we.
 } __attribute__((__aligned__));
 
-typedef _Unwind_Reason_Code (*_Unwind_Personality_Fn)(
-    int version, _Unwind_Action actions, uint64_t exceptionClass,
-    _Unwind_Exception *exceptionObject, struct _Unwind_Context *context);
+typedef jllvm_Unwind_Reason_Code (*jllvm_Unwind_Personality_Fn)(
+    int version, jllvm_Unwind_Action actions, uint64_t exceptionClass,
+    jllvm_Unwind_Exception *exceptionObject,
+    struct jllvm_Unwind_Context *context);
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,18 +57,20 @@ extern _Unwind_Reason_Code
     _Unwind_SjLj_RaiseException(_Unwind_Exception *exception_object);
 extern void _Unwind_SjLj_Resume(_Unwind_Exception *exception_object);
 #else
-extern _Unwind_Reason_Code
-    _Unwind_RaiseException(_Unwind_Exception *exception_object);
-extern void _Unwind_Resume(_Unwind_Exception *exception_object);
+extern jllvm_Unwind_Reason_Code
+jllvm_Unwind_RaiseException(jllvm_Unwind_Exception *exception_object);
+extern void jllvm_Unwind_Resume(jllvm_Unwind_Exception *exception_object);
 #endif
-extern void _Unwind_DeleteException(_Unwind_Exception *exception_object);
+extern void
+jllvm_Unwind_DeleteException(jllvm_Unwind_Exception *exception_object);
 
-
-extern uintptr_t _Unwind_GetGR(struct _Unwind_Context *context, int index);
-extern void _Unwind_SetGR(struct _Unwind_Context *context, int index,
-                          uintptr_t new_value);
-extern uintptr_t _Unwind_GetIP(struct _Unwind_Context *context);
-extern void _Unwind_SetIP(struct _Unwind_Context *, uintptr_t new_value);
+extern uintptr_t jllvm_Unwind_GetGR(struct jllvm_Unwind_Context *context,
+                                    int index);
+extern void jllvm_Unwind_SetGR(struct jllvm_Unwind_Context *context, int index,
+                               uintptr_t new_value);
+extern uintptr_t jllvm_Unwind_GetIP(struct jllvm_Unwind_Context *context);
+extern void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *,
+                               uintptr_t new_value);
 
 #ifdef __cplusplus
 }

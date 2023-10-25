@@ -17,13 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "libunwind.h"
-#include "dwarf2.h"
 #include "Registers.hpp"
+#include "dwarf2.h"
+#include "jllvm_libunwind.h"
 
 #include "config.h"
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 /// CFI_Parser does basic parsing of a CFI (Call Frame Information) records.
 /// See DWARF Spec for details:
