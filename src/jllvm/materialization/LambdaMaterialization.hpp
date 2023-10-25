@@ -147,7 +147,7 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
     template <std::size_t... is>
     auto trampoline(std::index_sequence<is...>)
     {
-        return reinterpret_cast<std::uintptr_t>(+[](F* f, typename llvm::function_traits<F>::template arg_t<is>... args)
+        return reinterpret_cast<std::uintptr_t>(+[](typename llvm::function_traits<F>::template arg_t<is>... args, F* f)
                                                 { return (*f)(args...); });
     }
 
@@ -199,17 +199,17 @@ public:
         llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
         llvm::SmallVector<llvm::Value*> args;
-        args.push_back(closure);
         for (auto& iter : function->args())
         {
             args.push_back(&iter);
         }
+        args.push_back(closure);
         auto callee = builder.CreateIntToPtr(
             builder.getInt64(trampoline(std::make_index_sequence<llvm::function_traits<F>::num_args>{})),
             builder.getPtrTy());
 
         auto types = llvm::to_vector(parameters);
-        types.insert(types.begin(), builder.getPtrTy());
+        types.push_back(builder.getPtrTy());
         auto* trampFuncType = llvm::FunctionType::get(retType, types, false);
 
         auto* call = builder.CreateCall(trampFuncType, callee, args);
