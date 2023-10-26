@@ -24,42 +24,37 @@
 
 #define DEBUG_TYPE "unwinder"
 
-bool jllvm::detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, UnwindFrame))
+namespace
 {
-    std::pair data{lambdaIn, fpIn};
-    jllvm_Unwind_Reason_Code code = jllvm_Unwind_Backtrace(
-        +[](jllvm_Unwind_Context* context, void* lp)
-        {
-            auto [lambda, fp] = *reinterpret_cast<decltype(data)*>(lp);
-            switch (fp(lambda, UnwindFrame(context)))
-            {
-                case UnwindAction::ContinueUnwinding: return jllvm_URC_NO_REASON;
-                case UnwindAction::StopUnwinding: return jllvm_URC_END_OF_STACK;
-                default: llvm_unreachable("Invalid unwind action");
-            }
-        },
-        &data);
-    return code != jllvm_URC_END_OF_STACK;
-}
-
-std::uintptr_t jllvm::UnwindFrame::getProgramCounter() const
+///
+void cantFail([[maybe_unused]] int unwindErrorCode)
 {
-    return jllvm_Unwind_GetIP(reinterpret_cast<jllvm_Unwind_Context*>(m_impl));
+    assert(unwindErrorCode == 0 && "unwinding action cannot fail");
 }
+} // namespace
 
 std::uintptr_t jllvm::UnwindFrame::getIntegerRegister(int registerNumber) const
 {
-    return jllvm_Unwind_GetGR(reinterpret_cast<jllvm_Unwind_Context*>(m_impl), registerNumber);
+    unw_word_t value;
+    cantFail(jllvm_unw_get_reg(const_cast<jllvm_unw_cursor_t*>(&m_cursor), registerNumber, &value));
+    return value;
 }
 
 void jllvm::UnwindFrame::setIntegerRegister(int registerNumber, std::uintptr_t value)
 {
-    jllvm_Unwind_SetGR(reinterpret_cast<jllvm_Unwind_Context*>(m_impl), registerNumber, value);
+    cantFail(jllvm_unw_set_reg(&m_cursor, registerNumber, value));
 }
 
 std::uintptr_t jllvm::UnwindFrame::getFunctionPointer() const
 {
-    return jllvm_Unwind_GetRegionStart(reinterpret_cast<jllvm_Unwind_Context*>(m_impl));
+    jllvm_unw_proc_info_t procInfo;
+    cantFail(jllvm_unw_get_proc_info(const_cast<jllvm_unw_cursor_t*>(&m_cursor), &procInfo));
+    return procInfo.start_ip;
+}
+
+jllvm::UnwindFrame::UnwindFrame(const jllvm_unw_context_t& context) : m_cursor()
+{
+    cantFail(jllvm_unw_init_local(&m_cursor, const_cast<jllvm_unw_context_t*>(&context)));
 }
 
 namespace

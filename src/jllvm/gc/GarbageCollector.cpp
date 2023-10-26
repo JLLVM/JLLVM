@@ -107,7 +107,7 @@ void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                        std::vector<ObjectRepr*>& results, ObjectRepr* from, ObjectRepr* to)
 {
     jllvm::unwindStack(
-        [&](jllvm::UnwindFrame context)
+        [&](const jllvm::UnwindFrame& context)
         {
             for (const auto& iter : map.lookup(context.getProgramCounter()))
             {
@@ -153,7 +153,7 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
                        const llvm::DenseMap<ObjectRepr*, ObjectRepr*>& mapping)
 {
     jllvm::unwindStack(
-        [&](jllvm::UnwindFrame context)
+        [&](jllvm::UnwindFrame& context)
         {
             for (const auto& iter : map.lookup(context.getProgramCounter()))
             {

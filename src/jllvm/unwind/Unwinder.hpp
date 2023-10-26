@@ -19,40 +19,32 @@
 #include <cstdint>
 #include <type_traits>
 
+#include <jllvm_libunwind.h>
+
 namespace jllvm
 {
 
-/// Optional return type of function object passed to 'unwindStack'.
-enum class UnwindAction
-{
-    /// Causes 'unwindStack' to move onto the next frame on the stack.
-    ContinueUnwinding,
-    /// Causes 'unwindStack' to stop unwinding and return.
-    StopUnwinding
-};
-
-class UnwindFrame;
-
-namespace detail
-{
-
-bool unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, UnwindFrame));
-
-} // namespace detail
-
-/// Class representing a single frame on the stack while unwinding.
+/// Class representing a single frame on the stack while unwinding. A frame conceptually consists of the program
+/// counter pointing to a call, the stack pointer right before the call, and all callee-saved registers. Caller-saved
+/// register cannot arbitrarily be recovered.
 class UnwindFrame
 {
-    void* m_impl;
+    jllvm_unw_cursor_t m_cursor;
 
-    explicit UnwindFrame(void* impl) : m_impl(impl) {}
+    explicit UnwindFrame(const jllvm_unw_cursor_t& cursor) : m_cursor(cursor) {}
 
-    friend bool detail::unwindInternal(void* lambdaIn, UnwindAction (*fpIn)(void*, UnwindFrame));
+    template <std::invocable<UnwindFrame&> F>
+    friend bool unwindStack(F&& f);
+
+    UnwindFrame(const jllvm_unw_context_t& context);
 
 public:
 
     /// Returns the current program counter in this frame.
-    std::uintptr_t getProgramCounter() const;
+    std::uintptr_t getProgramCounter() const
+    {
+        return getIntegerRegister(UNW_REG_IP);
+    }
 
     /// Returns the value of the integer register with the given DWARF register number in the current frame, at the
     /// current program counter.
@@ -64,32 +56,63 @@ public:
     /// This is only guaranteed to work with callee-saved registers.
     void setIntegerRegister(int registerNumber, std::uintptr_t value);
 
-    /// Returns a pointer to the function being executed in this frame.
+    /// Returns the address of the function being executed in this frame.
     std::uintptr_t getFunctionPointer() const;
+
+    /// Returns the frame of caller of this frame, or an emtpy optional if the bottom of the call stack was reached.
+    std::optional<UnwindFrame> callerFrame() const
+    {
+        jllvm_unw_cursor_t copy = m_cursor;
+        int result = jllvm_unw_step(&copy);
+        if (result == 0)
+        {
+            // Bottom of the stack.
+            return std::nullopt;
+        }
+
+        assert(result >= 0 && "expected no errors in libunwind");
+        return UnwindFrame(copy);
+    }
+};
+
+/// Optional return type of function object passed to 'unwindStack'.
+enum class UnwindAction
+{
+    /// Causes 'unwindStack' to move onto the next frame on the stack.
+    ContinueUnwinding,
+    /// Causes 'unwindStack' to stop unwinding and return.
+    StopUnwinding
 };
 
 /// Function to unwind the stack. 'f' is called with an instance of 'UnwindFrame' for every frame on the stack and
-/// may be any callable object.
+/// may be any callable object. Note that integer registers changes on the frame passed as parameter are currently
+/// discarded and not applied.
 /// 'f' may return instances of 'UnwindAction' to control the unwinding process. Otherwise, the stack is fully unwound.
 /// Returns true if stack unwinding was interrupted.
-template <std::invocable<UnwindFrame> F>
+template <std::invocable<UnwindFrame&> F>
 bool unwindStack(F&& f)
 {
-    return detail::unwindInternal(
-        &f,
-        +[](void* lambda, UnwindFrame context)
+    // Note that it is required for this function to be called here. Specifically, the frame calling
+    // 'jllvm_unw_getcontext' must remain on the call stack to initialize an 'UnwindFrame' instance from the context.
+    jllvm_unw_context_t context;
+    jllvm_unw_getcontext(&context);
+
+    using T = decltype(f(std::declval<UnwindFrame&>()));
+    for (std::optional<UnwindFrame> frame = UnwindFrame(context); frame; frame = frame->callerFrame())
+    {
+        if constexpr (std::is_void_v<T>)
         {
-            using T = decltype((*reinterpret_cast<F*>(lambda))(context));
-            if constexpr (std::is_void_v<T>)
+            f(*frame);
+        }
+        else
+        {
+            if (f(*frame) == UnwindAction::StopUnwinding)
             {
-                (*reinterpret_cast<F*>(lambda))(context);
-                return UnwindAction::ContinueUnwinding;
+                return true;
             }
-            else
-            {
-                return (*reinterpret_cast<F*>(lambda))(context);
-            }
-        });
+        }
+    }
+    return false;
 }
 
 /// Registers a dynamically generated 'eh_section' in the unwinder, making it capable of unwinding through it. This is
