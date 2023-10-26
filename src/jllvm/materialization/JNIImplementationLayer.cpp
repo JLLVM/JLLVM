@@ -93,12 +93,6 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     jniName = formJNIMethodName(classFile->getThisClass(), methodInfo->getName(*classFile),
                                                 methodInfo->getDescriptor(*classFile));
                     lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
-                    if (!lookup)
-                    {
-                        // TODO: Return callback throwing UnsatisfiedLinkError. Don't forget to update the stubs
-                        //  manager to point to that callback too!
-                        llvm::report_fatal_error(lookup.takeError());
-                    }
                 }
 
                 std::string bridgeName = key;
@@ -110,8 +104,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
                 llvm::DIBuilder debugBuilder(*module);
                 llvm::DIFile* file = debugBuilder.createFile(".", ".");
-                llvm::DICompileUnit* cu =
-                    debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
+
+                debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
 
                 llvm::DISubprogram* subprogram = debugBuilder.createFunction(
                     file, bridgeName, bridgeName, file, 1,
@@ -129,72 +123,96 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
-                llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
-                builder.CreateStore(
-                    builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
-                                           builder.getPtrTy()),
-                    environment);
-
-                builder.CreateCall(module->getOrInsertFunction("jllvm_push_local_frame", builder.getVoidTy()));
-
-                llvm::SmallVector<llvm::Value*> args{environment};
-                if (methodInfo->isStatic())
-                {
-                    args.push_back(builder.CreateIntToPtr(
-                        builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), referenceType(*context)));
-                }
-                for (llvm::Argument& arg : function->args())
-                {
-                    args.push_back(&arg);
-                }
-
-                for (llvm::Value*& arg : args)
-                {
-                    if (arg->getType() != referenceType(*context))
-                    {
-                        continue;
-                    }
-                    arg = builder.CreateCall(
-                        module->getOrInsertFunction("jllvm_new_local_root", arg->getType(), arg->getType()), arg);
-                }
-
                 llvm::Type* returnType = descriptorToType(methodType.returnType(), *context);
-                llvm::SmallVector<llvm::Type*> argTypes;
-                // Env
-                argTypes.push_back(environment->getType());
-                // jclass or object
-                argTypes.push_back(referenceType(*context));
+                llvm::Type* referenceType = jllvm::referenceType(*context);
+                llvm::Value* returnValue;
 
-                constexpr std::size_t parameterStartOffset = 2;
-                for (FieldType iter : methodType.parameters())
+                if (lookup)
                 {
-                    argTypes.push_back(descriptorToType(iter, *context));
-                }
+                    llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
+                    builder.CreateStore(
+                        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
+                                               builder.getPtrTy()),
+                        environment);
+                    builder.CreateCall(module->getOrInsertFunction("jllvm_push_local_frame", builder.getVoidTy()));
 
-                llvm::Value* callee =
-                    builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
-                llvm::CallInst* result =
-                    builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
-                for (auto&& [index, type] : llvm::enumerate(methodType.parameters()))
-                {
-                    auto baseType = get_if<BaseType>(&type);
-                    if (!baseType || !baseType->isIntegerType())
+                    llvm::SmallVector<llvm::Value*> args{environment};
+                    if (methodInfo->isStatic())
                     {
-                        continue;
+                        args.push_back(builder.CreateIntToPtr(
+                            builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), referenceType));
                     }
-                    // Extend integer args for ABI.
-                    result->addParamAttr(parameterStartOffset + index,
-                                         baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
-                }
 
-                llvm::Value* retValue = result;
-                if (retValue->getType() == referenceType(*context))
+                    for (llvm::Argument& arg : function->args())
+                    {
+                        args.push_back(&arg);
+                    }
+
+                    for (llvm::Value*& arg : args)
+                    {
+                        if (arg->getType() != referenceType)
+                        {
+                            continue;
+                        }
+                        arg = builder.CreateCall(
+                            module->getOrInsertFunction("jllvm_new_local_root", arg->getType(), arg->getType()), arg);
+                    }
+
+                    llvm::SmallVector<llvm::Type*> argTypes;
+                    // Env
+                    argTypes.push_back(environment->getType());
+                    // jclass or object
+                    argTypes.push_back(referenceType);
+
+                    constexpr std::size_t parameterStartOffset = 2;
+                    for (FieldType iter : methodType.parameters())
+                    {
+                        argTypes.push_back(descriptorToType(iter, *context));
+                    }
+
+                    llvm::Value* callee =
+                        builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
+                    llvm::CallInst* result =
+                        builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
+                    for (auto&& [index, type] : llvm::enumerate(methodType.parameters()))
+                    {
+                        auto baseType = get_if<BaseType>(&type);
+                        if (!baseType || !baseType->isIntegerType())
+                        {
+                            continue;
+                        }
+                        // Extend integer args for ABI.
+                        result->addParamAttr(parameterStartOffset + index,
+                                             baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
+                    }
+
+                    returnValue = result;
+                    if (result->getType() == referenceType)
+                    {
+                        // JNI methods can only ever return a root as well. Unpack it.
+                        returnValue = builder.CreateLoad(referenceType, result);
+                    }
+
+                    builder.CreateCall(module->getOrInsertFunction("jllvm_pop_local_frame", builder.getVoidTy()));
+                }
+                else
                 {
-                    // JNI methods can only ever return a root as well. Unpack it.
-                    retValue = builder.CreateLoad(referenceType(*context), retValue);
-                }
+                    llvm::consumeError(lookup.takeError());
+                    llvm::Type* ptrType = builder.getPtrTy();
 
-                builder.CreateCall(module->getOrInsertFunction("jllvm_pop_local_frame", builder.getVoidTy()));
+                    llvm::Value* classObjectPtr = builder.CreateIntToPtr(
+                        builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), ptrType);
+                    llvm::Value* methodPtr =
+                        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(method)), ptrType);
+
+                    llvm::Value* exception = builder.CreateCall(
+                        module->getOrInsertFunction("jllvm_build_unsatisfied_link_error",
+                                                    llvm::FunctionType::get(referenceType, {ptrType, ptrType}, false)),
+                        {classObjectPtr, methodPtr});
+
+                    builder.CreateStore(exception, module->getOrInsertGlobal("activeException", referenceType));
+                    returnValue = llvm::UndefValue::get(referenceType);
+                }
 
                 if (returnType->isVoidTy())
                 {
@@ -202,7 +220,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 }
                 else
                 {
-                    builder.CreateRet(retValue);
+                    builder.CreateRet(returnValue);
                 }
 
                 debugBuilder.finalizeSubprogram(subprogram);

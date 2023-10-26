@@ -38,3 +38,74 @@ std::string jllvm::FieldType::textual() const
         default: llvm_unreachable("Invalid value");
     }
 }
+
+std::string jllvm::FieldType::pretty() const
+{
+    std::string result;
+    if (m_name)
+    {
+        std::replace_copy_if(
+            m_name, m_name + m_size, std::back_inserter(result), [](char c) { return c == '/'; }, '.');
+    }
+    else
+    {
+        llvm::StringRef baseType;
+        switch (m_baseTypeValue)
+        {
+            case BaseType::Byte:
+            {
+                baseType = "byte";
+                break;
+            }
+            case BaseType::Char:
+            {
+                baseType = "char";
+                break;
+            }
+            case BaseType::Double:
+            {
+                baseType = "double";
+                break;
+            }
+            case BaseType::Float:
+            {
+                baseType = "float";
+                break;
+            }
+            case BaseType::Int:
+            {
+                baseType = "int";
+                break;
+            }
+            case BaseType::Long:
+            {
+                baseType = "long";
+                break;
+            }
+            case BaseType::Short:
+            {
+                baseType = "short";
+                break;
+            }
+            case BaseType::Void:
+            {
+                baseType = "void";
+                break;
+            }
+            case BaseType::Boolean:
+            {
+                baseType = "boolean";
+                break;
+            }
+            default: llvm_unreachable("Invalid value");
+        }
+        result.append(baseType);
+    }
+
+    for (auto i = 0; i < m_arrayCount; i++)
+    {
+        result.append("[]");
+    }
+
+    return result;
+}

@@ -200,20 +200,12 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         std::pair{"jllvm_build_class_cast_exception",
                   [&](Object* object, ClassObject* classObject) -> Object*
                   {
-                      llvm::StringRef className = object->getClass()->getClassName();
-                      llvm::StringRef prefix;
-                      std::string name;
-                      if (classObject->isClass() || classObject->isInterface())
-                      {
-                          prefix = "class";
-                          name = classObject->getClassName();
-                      }
-                      else
-                      {
-                          // TODO: Pretty print array
-                      }
+                      std::string className = FieldType{object->getClass()->getDescriptor()}.pretty();
+                      std::string name = FieldType{classObject->getDescriptor()}.pretty();
+                      llvm::StringRef prefix = classObject->isClass() || classObject->isInterface() ? "class " : "";
+
                       String* string = m_stringInterner.intern(
-                          llvm::formatv("class {0} cannot be cast to {1} {2}", className, prefix, name).str());
+                          llvm::formatv("class {0} cannot be cast to {1}{2}", className, prefix, name).str());
                       GCUniqueRoot root =
                           m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/ClassCastException;")));
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
@@ -243,6 +235,32 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       String* string = m_stringInterner.intern(std::to_string(size));
                       GCUniqueRoot root =
                           m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/NegativeArraySizeException;")));
+                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
+                      return root;
+                  }},
+        std::pair{"jllvm_build_unsatisfied_link_error",
+                  [&](ClassObject* classObject, Method* method) -> Object*
+                  {
+                      MethodType methodType = method->getType();
+
+                      llvm::StringRef methodName = method->getName();
+                      std::string className = FieldType{classObject->getDescriptor()}.pretty();
+                      std::string returnType = methodType.returnType().pretty();
+                      std::string paramTypes;
+
+                      for (auto param = methodType.param_begin(); param != methodType.param_end();)
+                      {
+                          paramTypes.append((*param).pretty());
+                          if (++param != methodType.param_end())
+                          {
+                              paramTypes.append(", ");
+                          }
+                      }
+
+                      String* string = m_stringInterner.intern(
+                          llvm::formatv("{0} {1}.{2}({3})", returnType, className, methodName, paramTypes).str());
+                      GCUniqueRoot root =
+                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/UnsatisfiedLinkError;")));
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
                       return root;
                   }},
