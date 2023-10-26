@@ -133,7 +133,7 @@ _LIBUNWIND_EXPORT void *jllvm_Unwind_FindEnclosingFunction(void *pc) {
 /// Walk every frame and call trace function at each one.  If trace function
 /// returns anything other than _URC_NO_REASON, then walk is terminated.
 _LIBUNWIND_EXPORT jllvm_Unwind_Reason_Code
-jllvm_Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
+jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn callback, void *ref) {
   jllvm_unw_cursor_t cursor;
   jllvm_unw_context_t uc;
   jllvm__unw_getcontext(&uc);

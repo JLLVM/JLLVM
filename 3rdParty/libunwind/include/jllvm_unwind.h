@@ -53,7 +53,7 @@ typedef enum {
   jllvm_UA_END_OF_STACK = 16 // gcc extension to C++ ABI
 } jllvm_Unwind_Action;
 
-typedef struct jllvm_Unwind_Context _Unwind_Context; // opaque
+typedef struct jllvm_Unwind_Context jllvm_Unwind_Context; // opaque
 
 #if defined(_LIBUNWIND_ARM_EHABI)
 #include <unwind_arm_ehabi.h>
@@ -109,9 +109,9 @@ jllvm_Unwind_Resume_or_Rethrow(jllvm_Unwind_Exception *exception_object);
 // _Unwind_Backtrace() is a gcc extension that walks the stack and calls the
 // _Unwind_Trace_Fn once per frame until it reaches the bottom of the stack
 // or the _Unwind_Trace_Fn function returns something other than _URC_NO_REASON.
-typedef jllvm_Unwind_Reason_Code (*_Unwind_Trace_Fn)(
+typedef jllvm_Unwind_Reason_Code (*jllvm_Unwind_Trace_Fn)(
     struct jllvm_Unwind_Context *, void *);
-extern jllvm_Unwind_Reason_Code jllvm_Unwind_Backtrace(_Unwind_Trace_Fn,
+extern jllvm_Unwind_Reason_Code jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn,
                                                        void *);
 
 // _Unwind_GetCFA is a gcc extension that can be called from within a
