@@ -17,8 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, cxx_compiler: clang++-15, c_compiler: clang-15, sanitizer: "address,undefined" }
-          - { os: ubuntu-22.04, cxx_compiler: clang++-15, c_compiler: clang-15, shared_libs: "ON" }
+          - { os: ubuntu-22.04, cxx_compiler: clang++, c_compiler: clang, sanitizer: "address,undefined" }
+          - { os: ubuntu-22.04, cxx_compiler: clang++, c_compiler: clang, shared_libs: "ON" }
           - { os: ubuntu-22.04, cxx_compiler: g++-10, c_compiler: gcc-10 }
           - { os: macos-12, cxx_compiler: clang++, c_compiler: clang }
 
