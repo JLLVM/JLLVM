@@ -82,6 +82,9 @@ public:
     /// Returns the string representation of the 'FieldType'.
     std::string textual() const;
 
+    /// Returns the string representation of the 'FieldType' as it would appear in Java source code.
+    std::string pretty() const;
+
     constexpr bool operator==(FieldType rhs) const
     {
         return m_arrayCount == rhs.m_arrayCount && m_baseTypeValue == rhs.m_baseTypeValue

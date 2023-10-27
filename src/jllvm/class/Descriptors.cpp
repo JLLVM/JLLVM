@@ -13,6 +13,18 @@
 
 #include "Descriptors.hpp"
 
+#include <array>
+
+#ifndef NDEBUG
+static constexpr llvm::StringRef placeholder = {};
+#else
+static constexpr llvm::StringRef placeholder = "Invalid type";
+#endif
+
+static constexpr std::array<llvm::StringRef, 13> prettyPrimitives = {
+    placeholder, placeholder, placeholder, placeholder, "boolean", "char", "float",
+    "double",    "byte",      "short",     "int",       "long",    "void"};
+
 std::string jllvm::FieldType::textual() const
 {
     std::string result(m_arrayCount, '[');
@@ -37,4 +49,25 @@ std::string jllvm::FieldType::textual() const
         case BaseType::Boolean: return result + 'Z';
         default: llvm_unreachable("Invalid value");
     }
+}
+
+std::string jllvm::FieldType::pretty() const
+{
+    std::string result;
+    if (m_name)
+    {
+        std::replace_copy_if(
+            m_name, m_name + m_size, std::back_inserter(result), [](char c) { return c == '/'; }, '.');
+    }
+    else
+    {
+        result.append(prettyPrimitives[m_baseTypeValue]);
+    }
+
+    for (auto i = 0; i < m_arrayCount; i++)
+    {
+        result.append("[]");
+    }
+
+    return result;
 }
