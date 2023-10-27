@@ -19,9 +19,8 @@
 #include <llvm/IR/Module.h>
 
 #include <jllvm/class/Descriptors.hpp>
-
-#include "ByteCodeCompileUtils.hpp"
-#include "ClassObjectStubMangling.hpp"
+#include <jllvm/compiler/ByteCodeCompileUtils.hpp>
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
 
 namespace
 {

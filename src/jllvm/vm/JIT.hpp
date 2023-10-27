@@ -26,10 +26,10 @@
 #include <llvm/Support/ThreadPool.h>
 
 #include <jllvm/class/ClassFile.hpp>
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
 #include <jllvm/materialization/ByteCodeOnDemandLayer.hpp>
-#include <jllvm/materialization/ClassObjectStubMangling.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>

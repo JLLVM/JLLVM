@@ -29,6 +29,7 @@ include(cmake/CPM.cmake)
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads)
 find_package(LLVM REQUIRED CONFIG)
+set(LLVM_TABLEGEN_EXE "llvm-tblgen")
 
 find_package(Java 17 COMPONENTS Development REQUIRED)
 

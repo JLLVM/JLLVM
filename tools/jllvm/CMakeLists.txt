@@ -11,5 +11,5 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-add_subdirectory(jllvm)
-add_subdirectory(jllvm-jvmc)
+add_executable(jllvm main.cpp)
+target_link_libraries(jllvm PRIVATE JLLVMMain)

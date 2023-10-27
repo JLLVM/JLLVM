@@ -161,7 +161,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
     if (classFile.isInterface())
     {
         result = ClassObject::createInterface(m_classAllocator, m_metaClassObject, m_interfaceIdCounter++, methods,
-                                              fields, interfaces, className);
+                                              fields, interfaces, classFile);
     }
     else
     {
@@ -170,7 +170,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             interfaces.insert(interfaces.begin(), superClass);
         }
         result = ClassObject::create(m_classAllocator, m_metaClassObject, vTableAssignment.tableSize, instanceSize,
-                                     methods, fields, interfaces, className, classFile.isAbstract());
+                                     methods, fields, interfaces, classFile);
     }
     m_mapping.insert({ObjectType(className), result});
     m_prepareClassObject(&classFile, *result);
@@ -259,9 +259,6 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
     }
 
     LLVM_DEBUG({ llvm::dbgs() << "Loaded " << result->getBufferIdentifier() << " from class path\n"; });
-
-    llvm::StringRef raw = result->getBuffer();
-    ClassFile classFile = ClassFile::parseFromFile({raw.begin(), raw.end()}, m_stringSaver);
     return add(std::move(result));
 }
 

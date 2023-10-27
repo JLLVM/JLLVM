@@ -28,16 +28,14 @@ class GarbageCollectorFixture
 
 protected:
     GarbageCollector gc{/*heapSize=*/128};
-    ClassObject* emptyTestObject;
+    ClassObject emptyTestObject;
     ClassObject* arrayOfEmptyTestObject;
 
 public:
     GarbageCollectorFixture()
-        : emptyTestObject(ClassObject::create(m_allocator, /*metaClass=*/nullptr, /*vTableSlots=*/0,
-                                              /*fieldAreaSize=*/0, /*methods=*/{},
-                                              /*fields=*/{}, /*bases=*/{}, "TestObject", false)),
+        : emptyTestObject(/*metaClass=*/nullptr, /*fieldAreaSize=*/0, "TestObject"),
           arrayOfEmptyTestObject(
-              ClassObject::createArray(m_allocator, /*metaClass=*/nullptr, emptyTestObject, m_stringSaver))
+              ClassObject::createArray(m_allocator, /*metaClass=*/nullptr, &emptyTestObject, m_stringSaver))
     {
     }
 };
@@ -45,17 +43,17 @@ public:
 
 TEST_CASE_METHOD(GarbageCollectorFixture, "Create Object", "[GC]")
 {
-    Object* objectRaw = gc.allocate(emptyTestObject);
-    CHECK(objectRaw->getClass() == emptyTestObject);
+    Object* objectRaw = gc.allocate(&emptyTestObject);
+    CHECK(objectRaw->getClass() == &emptyTestObject);
 
     // Rooting the object allows it to persist past a GC.
     GCUniqueRoot object = gc.root(objectRaw);
-    CHECK(object->getClass() == emptyTestObject);
+    CHECK(object->getClass() == &emptyTestObject);
 
     gc.garbageCollect();
 
     // Memory access remains valid.
-    CHECK(object->getClass() == emptyTestObject);
+    CHECK(object->getClass() == &emptyTestObject);
 }
 
 TEST_CASE_METHOD(GarbageCollectorFixture, "Create Array", "[GC]")
@@ -71,7 +69,7 @@ TEST_CASE_METHOD(GarbageCollectorFixture, "Create Array", "[GC]")
 
     for (Object*& element : *object)
     {
-        element = gc.allocate(emptyTestObject);
+        element = gc.allocate(&emptyTestObject);
     }
 
     gc.garbageCollect();
@@ -80,14 +78,14 @@ TEST_CASE_METHOD(GarbageCollectorFixture, "Create Array", "[GC]")
     CHECK(object->getClass() == arrayOfEmptyTestObject);
     CHECK_THAT(*object, SizeIs(4));
     CHECK_THAT(*object, AllMatch(Predicate<Object*>(
-                            [&](Object* object) { return object->getClass() == emptyTestObject; }, "can be accessed")));
+                            [&](Object* object) { return object->getClass() == &emptyTestObject; }, "can be accessed")));
 }
 
 SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoot]")
 {
     GIVEN("A newly rooted object")
     {
-        Object* object = gc.allocate(emptyTestObject);
+        Object* object = gc.allocate(&emptyTestObject);
         GCUniqueRoot root = gc.root(object);
 
         THEN("the root refers to the object")
@@ -125,7 +123,7 @@ SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoo
             THEN("the reference remains")
             {
                 gc.garbageCollect();
-                CHECK(ref->getClass() == emptyTestObject);
+                CHECK(ref->getClass() == &emptyTestObject);
             }
         }
     }

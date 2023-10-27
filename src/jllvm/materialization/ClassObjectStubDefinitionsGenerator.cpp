@@ -13,7 +13,7 @@
 
 #include "ClassObjectStubDefinitionsGenerator.hpp"
 
-#include "ClassObjectStubCodeGenerator.hpp"
+#include <jllvm/compiler/ClassObjectStubCodeGenerator.hpp>
 
 namespace
 {

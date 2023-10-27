@@ -11,5 +11,13 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-add_subdirectory(jllvm)
-add_subdirectory(jllvm-jvmc)
+include(TableGen)
+
+set(LLVM_TARGET_DEFINITIONS Opts.td)
+tablegen(LLVM Opts.inc -gen-opt-parser-defs)
+add_public_tablegen_target(JLLVMJVMCOptsTableGen)
+
+add_executable(jllvm-jvmc main.cpp)
+target_link_libraries(jllvm-jvmc PRIVATE JLLVMCompiler LLVMOption)
+add_dependencies(jllvm-jvmc JLLVMJVMCOptsTableGen)
+target_include_directories(jllvm-jvmc PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

@@ -15,10 +15,9 @@
 
 #include <llvm/Support/Debug.h>
 
-#define DEBUG_TYPE "jvm"
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
 
 #include "ByteCodeMaterializationUnit.hpp"
-#include "ClassObjectStubMangling.hpp"
 
 llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo,
                                       const ClassFile* classFile, const Method* method, const ClassObject* classObject)

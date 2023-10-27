@@ -12,6 +12,7 @@
 # see <http://www.gnu.org/licenses/>.
 
 add_subdirectory(class)
+add_subdirectory(compiler)
 add_subdirectory(gc)
 add_subdirectory(main)
 add_subdirectory(materialization)
