@@ -50,16 +50,16 @@ jobs:
         id: llvm-build
         uses: ./JLLVM/.github/actions/llvm-build
         with:
-          c-compiler: clang
-          cpp-compiler: clang++
+          c-compiler: clang-15
+          cpp-compiler: clang++-15
           cache-key: LLVM-${{steps.dep-install.outputs.key}}
 
       - name: Configure JLLVM
         run: |
           cmake -GNinja -Bjllvm-build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_CXX_COMPILER=clang++ `
-            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++-15 `
+            -DCMAKE_C_COMPILER=clang-15 `
             -DPython3_ROOT_DIR="$Env:pythonLocation" -DPython3_FIND_STRATEGY=LOCATION `
             -DCMAKE_C_COMPILER_LAUNCHER=ccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
