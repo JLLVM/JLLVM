@@ -14,11 +14,6 @@
 #include "Unwinder.hpp"
 
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/Format.h>
-#include <llvm/Support/raw_ostream.h>
-
-#include <utility>
 
 #include <jllvm_unwind.h>
 
@@ -26,7 +21,8 @@
 
 namespace
 {
-///
+/// Assert that any use of libunwind didn't cause any errors. Errors while using libunwind are considered toolchain
+/// bugs or errors, not expected error cases.
 void cantFail([[maybe_unused]] int unwindErrorCode)
 {
     assert(unwindErrorCode == 0 && "unwinding action cannot fail");
