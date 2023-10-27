@@ -38,7 +38,7 @@ runs:
       shell: bash
       run: |
         sudo apt update
-        sudo apt install lld clang g++-10
+        sudo apt install g++-10
 
     - name: Generate compiler hash
       id: compiler-hash
