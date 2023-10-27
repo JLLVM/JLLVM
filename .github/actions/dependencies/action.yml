@@ -40,7 +40,7 @@ runs:
         sudo apt update
         # sudo apt remove g++-13 gcc-13 libstdc++-13-dev libstdc++-13
         sudo apt install lld clang g++-10 g++-12 libstdc++-12-dev build-essential
-        echo "CCC_OVERRIDE_OPTIONS='+--gcc-toolchain=$(dirname $(gcc-12 --print-libgcc))'" >> "$GITHUB_ENV"
+        echo "CCC_OVERRIDE_OPTIONS=+--gcc-toolchain=$(dirname $(gcc-12 --print-libgcc))" >> "$GITHUB_ENV"
 
     - name: Generate compiler hash
       id: compiler-hash
