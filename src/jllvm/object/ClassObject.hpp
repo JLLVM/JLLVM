@@ -86,6 +86,9 @@ public:
         return m_type;
     }
 
+    /// Returns the string representation of the 'Method' signature as it would appear in Java source code.
+    std::string prettySignature() const;
+
     /// Returns either the V-table slot or I-Table (depending on whether the method is part of a class or interface)
     /// of this method if it has one.
     std::optional<std::uint16_t> getTableSlot() const
@@ -785,8 +788,9 @@ public:
     /// Note: This is an expensive operation and should only be used if a topological traversal order is required.
     auto maximallySpecificInterfaces() const;
 
-    /// Performs method resolution as described in the JVM Spec: https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3
-    /// This is the low level procedure used to find a method within a class given a method name and type.
+    /// Performs method resolution as described in the JVM Spec:
+    /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3 This is the low level procedure
+    /// used to find a method within a class given a method name and type.
     ///
     /// Note that this is not equal to any specific `invoke` instruction as these also perform method selection after
     /// resolution. This method instead is a low level tool to implement these instructions.
@@ -794,9 +798,10 @@ public:
     /// Returns null if no method was found.
     const Method* methodResolution(llvm::StringRef methodName, MethodType methodType) const;
 
-    /// Performs interface method resolution as described in the JVM Spec: https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4
-    /// This is the low level procedure used to find a method within an interface given a method name and type.
-    /// 'objectClass' should be the class object of "java/lang/Object".
+    /// Performs interface method resolution as described in the JVM Spec:
+    /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.4 This is the low level procedure
+    /// used to find a method within an interface given a method name and type. 'objectClass' should be the class object
+    /// of "java/lang/Object".
     ///
     /// Note that this is not equal to any specific `invoke` instruction as these also perform method selection after
     /// resolution. This method instead is a low level tool to implement these instructions.

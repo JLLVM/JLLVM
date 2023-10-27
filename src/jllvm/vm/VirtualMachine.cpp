@@ -200,8 +200,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         std::pair{"jllvm_build_class_cast_exception",
                   [&](Object* object, ClassObject* classObject) -> Object*
                   {
-                      std::string className = FieldType{object->getClass()->getDescriptor()}.pretty();
-                      std::string name = FieldType{classObject->getDescriptor()}.pretty();
+                      std::string className = object->getClass()->getDescriptor().pretty();
+                      std::string name = classObject->getDescriptor().pretty();
                       llvm::StringRef prefix = classObject->isClass() || classObject->isInterface() ? "class " : "";
 
                       String* string = m_stringInterner.intern(
@@ -239,26 +239,9 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       return root;
                   }},
         std::pair{"jllvm_build_unsatisfied_link_error",
-                  [&](ClassObject* classObject, Method* method) -> Object*
+                  [&](Method* method) -> Object*
                   {
-                      MethodType methodType = method->getType();
-
-                      llvm::StringRef methodName = method->getName();
-                      std::string className = FieldType{classObject->getDescriptor()}.pretty();
-                      std::string returnType = methodType.returnType().pretty();
-                      std::string paramTypes;
-
-                      for (auto param = methodType.param_begin(); param != methodType.param_end();)
-                      {
-                          paramTypes.append((*param).pretty());
-                          if (++param != methodType.param_end())
-                          {
-                              paramTypes.append(", ");
-                          }
-                      }
-
-                      String* string = m_stringInterner.intern(
-                          llvm::formatv("{0} {1}.{2}({3})", returnType, className, methodName, paramTypes).str());
+                      String* string = m_stringInterner.intern(method->prettySignature());
                       GCUniqueRoot root =
                           m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/UnsatisfiedLinkError;")));
                       executeObjectConstructor(root, "(Ljava/lang/String;)V", string);

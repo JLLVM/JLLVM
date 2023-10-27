@@ -14,6 +14,8 @@
 #include "ClassObject.hpp"
 
 #include <llvm/ADT/Twine.h>
+#include <llvm/Support/FormatVariadic.h>
+#include <llvm/Support/raw_ostream.h>
 
 namespace
 {
@@ -25,6 +27,18 @@ auto arrayRefAlloc(llvm::BumpPtrAllocator& allocator, const Range& ref)
     return llvm::MutableArrayRef{storage, ref.size()};
 }
 } // namespace
+
+std::string jllvm::Method::prettySignature() const
+{
+    std::string className = m_classObject->getDescriptor().pretty();
+    std::string returnType = m_type.returnType().pretty();
+    std::string paramTypes;
+    llvm::raw_string_ostream paramStream{paramTypes};
+
+    llvm::interleaveComma(llvm::map_range(m_type.parameters(), std::mem_fn(&FieldType::pretty)), paramStream);
+
+    return llvm::formatv("{0} {1}.{2}({3})", returnType, className, m_name, paramTypes).str();
+}
 
 jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                                std::uint32_t vTableSlots, std::uint32_t fieldAreaSize,

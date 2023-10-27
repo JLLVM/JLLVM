@@ -197,18 +197,18 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 }
                 else
                 {
+                    // TODO: Decide whether stub should additionally attempt to load the native method on each
+                    // invocation or only the first.
                     llvm::consumeError(lookup.takeError());
                     llvm::Type* ptrType = builder.getPtrTy();
 
-                    llvm::Value* classObjectPtr = builder.CreateIntToPtr(
-                        builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), ptrType);
                     llvm::Value* methodPtr =
                         builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(method)), ptrType);
 
                     llvm::Value* exception = builder.CreateCall(
                         module->getOrInsertFunction("jllvm_build_unsatisfied_link_error",
-                                                    llvm::FunctionType::get(referenceType, {ptrType, ptrType}, false)),
-                        {classObjectPtr, methodPtr});
+                                                    llvm::FunctionType::get(referenceType, {ptrType}, false)),
+                        {methodPtr});
 
                     builder.CreateStore(exception, module->getOrInsertGlobal("activeException", referenceType));
                     returnValue = llvm::UndefValue::get(referenceType);

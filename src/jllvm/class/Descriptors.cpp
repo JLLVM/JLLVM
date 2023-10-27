@@ -13,6 +13,18 @@
 
 #include "Descriptors.hpp"
 
+#include <array>
+
+#ifndef NDEBUG
+static constexpr llvm::StringRef placeholder = {};
+#else
+static constexpr llvm::StringRef placeholder = "Invalid type";
+#endif
+
+static constexpr std::array<llvm::StringRef, 13> prettyPrimitives = {
+    placeholder, placeholder, placeholder, placeholder, "boolean", "char", "float",
+    "double",    "byte",      "short",     "int",       "long",    "void"};
+
 std::string jllvm::FieldType::textual() const
 {
     std::string result(m_arrayCount, '[');
@@ -49,57 +61,7 @@ std::string jllvm::FieldType::pretty() const
     }
     else
     {
-        llvm::StringRef baseType;
-        switch (m_baseTypeValue)
-        {
-            case BaseType::Byte:
-            {
-                baseType = "byte";
-                break;
-            }
-            case BaseType::Char:
-            {
-                baseType = "char";
-                break;
-            }
-            case BaseType::Double:
-            {
-                baseType = "double";
-                break;
-            }
-            case BaseType::Float:
-            {
-                baseType = "float";
-                break;
-            }
-            case BaseType::Int:
-            {
-                baseType = "int";
-                break;
-            }
-            case BaseType::Long:
-            {
-                baseType = "long";
-                break;
-            }
-            case BaseType::Short:
-            {
-                baseType = "short";
-                break;
-            }
-            case BaseType::Void:
-            {
-                baseType = "void";
-                break;
-            }
-            case BaseType::Boolean:
-            {
-                baseType = "boolean";
-                break;
-            }
-            default: llvm_unreachable("Invalid value");
-        }
-        result.append(baseType);
+        result.append(prettyPrimitives[m_baseTypeValue]);
     }
 
     for (auto i = 0; i < m_arrayCount; i++)
