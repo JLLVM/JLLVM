@@ -39,6 +39,7 @@ runs:
       run: |
         sudo apt update
         sudo apt install lld-15 clang-15 g++-10
+        sudo apt remove g++-13 gcc-13
 
     - name: Generate compiler hash
       id: compiler-hash
