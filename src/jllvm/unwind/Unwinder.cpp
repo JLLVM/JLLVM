@@ -14,6 +14,8 @@
 #include "Unwinder.hpp"
 
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/Format.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <jllvm_unwind.h>
 
