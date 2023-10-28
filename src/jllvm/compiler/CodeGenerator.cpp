@@ -821,12 +821,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             FieldType fieldType(
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
             llvm::Value* fieldOffset = getInstanceFieldOffset(m_builder, className, fieldName, fieldType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(fieldOffset))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             llvm::Value* fieldPtr = m_builder.CreateGEP(m_builder.getInt8Ty(), objectRef, {fieldOffset});
             llvm::Value* field = m_builder.CreateLoad(type, fieldPtr);
@@ -844,12 +841,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->descriptorIndex.resolve(m_classFile)->text);
 
             llvm::Value* fieldPtr = getStaticFieldAddress(m_builder, className, fieldName, fieldType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(fieldPtr))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             llvm::Type* type = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* field = m_builder.CreateLoad(type, fieldPtr);
@@ -1182,12 +1176,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                               });
             }
 
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(arrayClassObjects[0]))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             llvm::for_each(loopCounts, [&](llvm::Value* count) { generateNegativeArraySizeCheck(count); });
 
@@ -1268,13 +1258,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* count = m_operandStack.pop_back();
 
             llvm::Value* classObject = getClassObject(m_builder, ArrayType(descriptor));
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may
-            // occur.
-            if (!llvm::isa<llvm::Constant>(classObject))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             generateNegativeArraySizeCheck(count);
 
@@ -1323,12 +1309,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             generateNullPointerCheck(objectRef);
 
             llvm::Value* fieldOffset = getInstanceFieldOffset(m_builder, className, fieldName, fieldType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(fieldOffset))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             llvm::Value* fieldPtr =
                 m_builder.CreateGEP(llvm::Type::getInt8Ty(m_builder.getContext()), objectRef, {fieldOffset});
@@ -1355,12 +1338,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Type* llvmFieldType = descriptorToType(fieldType, m_builder.getContext());
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* fieldPtr = getStaticFieldAddress(m_builder, className, fieldName, fieldType);
-            // If the class was already loaded 'callee' is optimized to a constant and no exception may occur.
-            if (!llvm::isa<llvm::Constant>(fieldPtr))
-            {
-                // Can throw class loader or linkage related errors.
-                generateEHDispatch();
-            }
+
+            // Can throw class loader or linkage related errors.
+            generateEHDispatch();
 
             if (value->getType() != llvmFieldType)
             {

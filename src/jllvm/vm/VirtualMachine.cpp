@@ -283,6 +283,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     executeStaticMethod("java/lang/System", "initPhase1", "()V");
 }
 
+jllvm::VirtualMachine::~VirtualMachine() = default;
+
 int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm::StringRef> args)
 {
     auto buffer = llvm::MemoryBuffer::getFile(path);

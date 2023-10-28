@@ -30,22 +30,6 @@
 namespace jllvm
 {
 
-/// Default 'State' type of a 'ModelBase' subclass.
-struct ModelState
-{
-    ModelState() = default;
-
-    ModelState(const ModelState&) = delete;
-
-    ModelState(ModelState&&) = delete;
-
-    ModelState& operator=(const ModelState&) = delete;
-
-    ModelState& operator=(ModelState&&) = delete;
-
-    virtual ~ModelState() = default;
-};
-
 /// Options used to boot the VM.
 struct BootOptions
 {
@@ -53,6 +37,8 @@ struct BootOptions
     std::vector<std::string> classPath;
     bool systemInitialization = true;
 };
+
+struct ModelState;
 
 class VirtualMachine
 {
@@ -74,12 +60,21 @@ class VirtualMachine
 
     void initialize(ClassObject& classObject);
 
-    // Type erased instances of 'Model::State'.
-    // The deleter casts the 'void*' back to its real type for destruction.
+    // Instances of 'Model::State', subtypes of ModelState.
     std::vector<std::unique_ptr<ModelState>> m_modelState;
 
 public:
     explicit VirtualMachine(BootOptions&& options);
+
+    VirtualMachine(const VirtualMachine&) = delete;
+
+    VirtualMachine(VirtualMachine&&) = delete;
+
+    VirtualMachine& operator=(const VirtualMachine&) = delete;
+
+    VirtualMachine& operator=(VirtualMachine&&) = delete;
+
+    ~VirtualMachine();
 
     /// Returns a new pseudo random hash code for a Java object.
     /// Since we have a relocating garbage collector we use a similar strategy to V8, where we generate pseudo random
