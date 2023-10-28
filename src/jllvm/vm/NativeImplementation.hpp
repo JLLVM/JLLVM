@@ -25,6 +25,22 @@
 namespace jllvm
 {
 
+/// Default 'State' type of a 'ModelBase' subclass.
+struct ModelState
+{
+    ModelState() = default;
+
+    ModelState(const ModelState&) = delete;
+
+    ModelState(ModelState&&) = delete;
+
+    ModelState& operator=(const ModelState&) = delete;
+
+    ModelState& operator=(ModelState&&) = delete;
+
+    virtual ~ModelState() = default;
+};
+
 /// Base class for any Models used as our high level API for implementing native methods of Java.
 /// This high level API builds on top of the JNI and translates the JNIs general and JVM agnostic C interface to
 /// a more high level C++ API specific to our JVM implementation.
@@ -35,7 +51,7 @@ namespace jllvm
 /// 'StateType' refers to a subclass of 'ModelState', of which a per VM singleton will be default constructed
 /// when registering the model and injected into static methods when requested
 /// or can be accessed from non-static methods using the 'state' field.
-//
+///
 /// Use case for this type is the ability to persist state between function calls within a Model. This is commonly
 /// used to create and then use 'InstanceFieldRef' or 'StaticFieldRef's without having to look them up on every call.
 ///
@@ -207,8 +223,7 @@ auto createMethodBridge(typename Model::State& state, Ret (Model::*ptr)(Args...)
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
         {
-            return coerceReturnType((Model(javaThis, virtualMachine, state).*ptr)(args...),
-                                    virtualMachine);
+            return coerceReturnType((Model(javaThis, virtualMachine, state).*ptr)(args...), virtualMachine);
         }
         else
         {
