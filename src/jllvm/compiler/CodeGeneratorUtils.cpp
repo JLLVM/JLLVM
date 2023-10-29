@@ -47,22 +47,18 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
     };
     auto checkRet = [&](auto& ret)
     {
-        std::uint16_t retAddress = m_localRetMap[ret.index];
+        std::uint16_t retAddress = m_locals[ret.index].template get<RetAddrType>();
         m_subroutineToReturnInfoMap.insert(
             {m_returnAddressToSubroutineMap[retAddress], {static_cast<std::uint16_t>(ret.offset), retAddress}});
 
         pushNext(retAddress);
         done = true;
     };
-    auto checkAstore = [&](auto& aStore)
+    auto checkStore = [&](auto& store)
     {
         JVMType type = typeStack.back();
         typeStack.pop_back();
-
-        if (type.is<RetAddrType>())
-        {
-            m_localRetMap[aStore.index] = type.get<RetAddrType>();
-        }
+        m_locals[store.index] = type;
     };
 
     for (ByteCodeOp operation : byteCodeRange(block, offset))
@@ -70,6 +66,12 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
         if (done)
         {
             return;
+        }
+
+        if (getOffset(operation) == m_byteCodeTypeInfo.offset)
+        {
+            m_byteCodeTypeInfo.operandStack = typeStack;
+            m_byteCodeTypeInfo.locals = m_locals;
         }
 
         match(
@@ -87,20 +89,21 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
             [&](OneOfBase<AConstNull, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, New>)
             { typeStack.emplace_back(m_addressType); },
             [&](OneOfBase<AReturn, AThrow, DReturn, FReturn, IReturn, LReturn, Return>) { done = true; },
-            [&](AStore aStore) { checkAstore(aStore); },
-            [&](OneOf<AStore0, AStore1, AStore2, AStore3>)
+            [&](OneOf<AStore, IStore, FStore, DStore, LStore> store) { checkStore(store); },
+            [&](OneOf<AStore0, AStore1, AStore2, AStore3, IStore0, IStore1, IStore2, IStore3, FStore0, FStore1, FStore2,
+                      FStore3, DStore0, DStore1, DStore2, DStore3, LStore0, LStore1, LStore2, LStore3>)
             {
                 JVMType type = typeStack.back();
                 typeStack.pop_back();
 
-                if (type.is<RetAddrType>())
-                {
-                    auto index = match(
-                        operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
-                        [&](AStore0) { return 0; }, [&](AStore1) { return 1; }, [&](AStore2) { return 2; },
-                        [&](AStore3) { return 3; });
-                    m_localRetMap[index] = type.get<RetAddrType>();
-                }
+                auto index = match(
+                    operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid store operation"); },
+                    [&](OneOf<AStore0, IStore0, FStore0, DStore0, LStore0>) { return 0; },
+                    [&](OneOf<AStore1, IStore1, FStore1, DStore1, LStore1>) { return 1; },
+                    [&](OneOf<AStore2, IStore2, FStore2, DStore2, LStore2>) { return 2; },
+                    [&](OneOf<AStore3, IStore3, FStore3, DStore3, LStore3>) { return 3; });
+
+                m_locals[index] = type;
             },
             [&](OneOfBase<ArrayLength, D2I, F2I, InstanceOf, L2I>) { typeStack.back() = m_intType; },
             [&](OneOfBase<CheckCast, DNeg, FNeg, I2B, I2C, I2S, IInc, INeg, LNeg, Nop>) { /* Types do not change */ },
@@ -127,11 +130,9 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                 }
                 typeStack.back() = m_longType;
             },
-            [&](OneOfBase<DAdd, DDiv, DMul, DRem, DStore, DStore0, DStore1, DStore2, DStore3, DSub, FAdd, FDiv, FMul,
-                          FRem, FStore, FStore0, FStore1, FStore2, FStore3, FSub, IAdd, IAnd, IDiv, IMul, IOr, IRem,
-                          IShl, IShr, IStore, IStore0, IStore1, IStore2, IStore3, ISub, IUShr, IXor, LAdd, LAnd, LDiv,
-                          LMul, LOr, LRem, LShl, LShr, LStore, LStore0, LStore1, LStore2, LStore3, LSub, LUShr, LXor,
-                          MonitorEnter, MonitorExit, Pop, PutStatic>) { typeStack.pop_back(); },
+            [&](OneOfBase<DAdd, DDiv, DMul, DRem, DSub, FAdd, FDiv, FMul, FRem, FSub, IAdd, IAnd, IDiv, IMul, IOr, IRem,
+                          IShl, IShr, ISub, IUShr, IXor, LAdd, LAnd, LDiv, LMul, LOr, LRem, LShl, LShr, LSub, LUShr,
+                          LXor, MonitorEnter, MonitorExit, Pop, PutStatic>) { typeStack.pop_back(); },
             [&](OneOfBase<DALoad, F2D, I2D, L2D>)
             {
                 if (holds_alternative<DALoad>(operation))
@@ -390,16 +391,12 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                 {
                     default: llvm_unreachable("Invalid wide operation");
                     case OpCodes::AStore:
-                    {
-                        checkAstore(wide);
-                        return;
-                    }
                     case OpCodes::DStore:
                     case OpCodes::FStore:
                     case OpCodes::IStore:
                     case OpCodes::LStore:
                     {
-                        typeStack.pop_back();
+                        checkStore(wide);
                         return;
                     }
                     case OpCodes::Ret:
@@ -465,13 +462,13 @@ void ByteCodeTypeChecker::check()
     }
 }
 
-ByteCodeTypeChecker::PossibleRetsMap ByteCodeTypeChecker::makeRetToMap()
+ByteCodeTypeChecker::PossibleRetsMap ByteCodeTypeChecker::makeRetToMap() const
 {
     PossibleRetsMap map;
 
-    for (auto& [returnAddr, subroutine] : m_returnAddressToSubroutineMap)
+    for (const auto& [returnAddr, subroutine] : m_returnAddressToSubroutineMap)
     {
-        map[m_subroutineToReturnInfoMap[subroutine].retOffset].insert(returnAddr);
+        map[m_subroutineToReturnInfoMap.lookup(subroutine).retOffset].insert(returnAddr);
     }
 
     return map;

@@ -44,6 +44,12 @@ llvm::Type* descriptorToType(FieldType type, llvm::LLVMContext& context);
 /// Returns the corresponding LLVM function type for a given, possible static, Java method descriptor.
 llvm::FunctionType* descriptorToType(MethodType type, bool isStatic, llvm::LLVMContext& context);
 
+/// Returns the LLVM function type for an OSR method for a given Java method descriptor.
+/// An OSR frame currently uses as calling convention (ptr, ptr) where the first pointer refers to an array as large as
+/// the operand stack at entry and the second to an array as large as the local variables at entry. These are used to
+/// initialize the operand stack and local variables respectively.
+llvm::FunctionType* osrMethodSignature(MethodType methodType, llvm::LLVMContext& context);
+
 /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
 struct JavaMethodMetadata
 {

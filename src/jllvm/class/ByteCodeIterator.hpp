@@ -123,10 +123,16 @@ public:
     {
         return currentOp();
     }
+
+    /// Returns the current bytecode offset the iterator is at.
+    std::size_t getOffset()
+    {
+        return m_offset;
+    }
 };
 
 /// Returns an iterator range returning a 'ByteCodeOp' for every JVM instruction.
-/// Assumes that 'current' contains valid byte code.
+/// Assumes that the beginning of 'current' is the bytecode offset 'offset' and contains valid bytecode.
 inline auto byteCodeRange(llvm::ArrayRef<char> current, std::uint16_t offset = 0)
 {
     return llvm::make_range(ByteCodeIterator(current.begin(), offset), ByteCodeIterator(current.end()));

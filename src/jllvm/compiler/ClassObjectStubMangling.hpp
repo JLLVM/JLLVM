@@ -43,6 +43,12 @@ std::string mangleDirectMethodCall(const Method* method);
 
 std::string mangleDirectMethodCall(const MethodInfo& methodInfo, const ClassFile& classFile);
 
+/// Mangling for a definition of an OSR frame that enters at the given bytecode offset.
+///
+/// Syntax:
+/// <osr-method> ::= <direct-call> '$' <offset>
+std::string mangleOSRMethod(const Method* method, unsigned offset);
+
 /// Mangling for calling a function returning either the address of a static field or the offset of an instance field.
 /// The caller must know whether the field is a static or an instance field and use the corresponding function
 /// signature:

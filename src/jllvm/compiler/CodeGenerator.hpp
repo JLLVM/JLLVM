@@ -45,6 +45,7 @@ class CodeGenerator
     std::vector<llvm::AllocaInst*> m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
     ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
+    llvm::SmallSetVector<std::uint16_t, 8> m_workList;
 
     using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
 
@@ -53,12 +54,20 @@ class CodeGenerator
     // std::map because it is the easiest to use with std::list key.
     std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
 
-    void createBasicBlocks(const Code& code);
+    /// Returns the basic block corresponding to the given bytecode offset and schedules the basic block to be compiled.
+    /// The offset must point to the start of a basic block.
+    llvm::BasicBlock* getBasicBlock(std::uint16_t offset)
+    {
+        m_workList.insert(offset);
+        return m_basicBlocks.find(offset)->second.block;
+    }
 
-    void generateCodeBody(const Code& code);
+    void createBasicBlocks(const ByteCodeTypeChecker& checker);
 
-    /// Generate LLVM IR instructions for a JVM bytecode instruction, returns whether the instruction indicated the end
-    /// of a basic block
+    void generateCodeBody(const Code& code, std::uint16_t startOffset);
+
+    /// Generate LLVM IR instructions for a JVM bytecode instruction. Returns true if the instruction falls through or
+    /// more formally, whether the next instruction is an immediate successor of this instruction.
     bool generateInstruction(ByteCodeOp operation);
 
     void generateEHDispatch();
@@ -107,11 +116,10 @@ class CodeGenerator
     llvm::Value* getClassObject(llvm::IRBuilder<>& builder, FieldType fieldDescriptor);
 
 public:
-    CodeGenerator(llvm::Function* function, const ClassFile& classFile, const ClassObject& classObject,
-                  StringInterner& stringInterner, MethodType methodType, std::uint16_t maxStack,
-                  std::uint16_t maxLocals)
+    CodeGenerator(llvm::Function* function, const ClassObject& classObject, StringInterner& stringInterner,
+                  MethodType methodType, std::uint16_t maxStack, std::uint16_t maxLocals)
         : m_function{function},
-          m_classFile{classFile},
+          m_classFile{*classObject.getClassFile()},
           m_classObject(classObject),
           m_stringInterner{stringInterner},
           m_functionMethodType{methodType},
@@ -132,27 +140,29 @@ public:
     CodeGenerator& operator=(CodeGenerator&&) = delete;
 
     using PrologueGenFn = llvm::function_ref<void(llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals,
-                                                  OperandStack& operandStack)>;
+                                                  OperandStack& operandStack, const ByteCodeTypeInfo& typeInfo)>;
 
     /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
-    /// and have at most 'maxLocals' local variables.
-    void generateBody(const Code& code, PrologueGenFn generatePrologue);
+    /// and have at most 'maxLocals' local variables. 'generatePrologue' is used to initialize the local variables and
+    /// operand stack at the start of the method. 'offset' is the bytecode offset at which compilation should start and
+    /// must refer to a JVM instruction.
+    void generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset = 0);
 };
 
-/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'classFile' is the class
-/// file containing 'code', 'classObject' the corresponding class object of the class file, 'stringInterner' the
-/// interner used to create string object instances from literals and 'methodType' the JVM Type of the method being
-/// compiled.
+/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'classObject' is the class
+/// object of the class file containing 'code', 'stringInterner' the interner used to create string object instances
+/// from literals and 'methodType' the JVM Type of the method being compiled.
 /// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
-/// the newly created code.
-inline void compileMethodBody(llvm::Function* function, const ClassFile& classFile, const ClassObject& classObject,
-                              StringInterner& stringInterner, MethodType methodType, const Code& code,
-                              CodeGenerator::PrologueGenFn generatePrologue)
+/// the newly created code. 'offset' is the bytecode offset at which compilation should start and must refer to a JVM
+/// instruction.
+inline void compileMethodBody(llvm::Function* function, const ClassObject& classObject, StringInterner& stringInterner,
+                              MethodType methodType, const Code& code, CodeGenerator::PrologueGenFn generatePrologue,
+                              std::uint16_t offset = 0)
 {
-    CodeGenerator codeGenerator{function,   classFile,          classObject,        stringInterner,
+    CodeGenerator codeGenerator{function,   classObject,        stringInterner,
                                 methodType, code.getMaxStack(), code.getMaxLocals()};
 
-    codeGenerator.generateBody(code, generatePrologue);
+    codeGenerator.generateBody(code, generatePrologue, offset);
 }
 
 } // namespace jllvm

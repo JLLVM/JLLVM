@@ -32,6 +32,11 @@ std::string jllvm::mangleDirectMethodCall(const jllvm::Method* method)
     return mangleDirectMethodCall(method->getClassObject()->getClassName(), method->getName(), method->getType());
 }
 
+std::string jllvm::mangleOSRMethod(const jllvm::Method* method, unsigned offset)
+{
+    return mangleDirectMethodCall(method) + "$" + std::to_string(offset);
+}
+
 std::string jllvm::mangleFieldAccess(llvm::StringRef className, llvm::StringRef fieldName, FieldType descriptor)
 {
     return (className + "." + fieldName + ":" + descriptor.textual()).str();

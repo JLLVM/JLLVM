@@ -174,7 +174,7 @@ T parseFieldOrMethodInfo(llvm::ArrayRef<char>& bytes, const ClassFile& classFile
     for (std::size_t i = 0; i < attributeCount; i++)
     {
         auto [name, attrBytes] = parseAttributeInfo(bytes);
-        attributes.insert({name.resolve(classFile)->text, attrBytes});
+        attributes.insert(name.resolve(classFile)->text, attrBytes);
     }
     return T(accessFlags, nameIndex, descriptorIndex, std::move(attributes));
 }
@@ -229,7 +229,7 @@ jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llv
     for (std::size_t i = 0; i < attributeCount; i++)
     {
         auto [name, attrBytes] = parseAttributeInfo(bytes);
-        result.m_attributes.insert({name.resolve(result)->text, attrBytes});
+        result.m_attributes.insert(name.resolve(result)->text, attrBytes);
     }
 
     return result;
