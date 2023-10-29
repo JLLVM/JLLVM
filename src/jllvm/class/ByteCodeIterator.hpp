@@ -132,7 +132,7 @@ public:
 };
 
 /// Returns an iterator range returning a 'ByteCodeOp' for every JVM instruction.
-/// Assumes that 'current' contains valid byte code contains the bytecode starting at offset 'offset'.
+/// Assumes that the beginning of 'current' is the bytecode offset 'offset' and contains valid bytecode.
 inline auto byteCodeRange(llvm::ArrayRef<char> current, std::uint16_t offset = 0)
 {
     return llvm::make_range(ByteCodeIterator(current.begin(), offset), ByteCodeIterator(current.end()));

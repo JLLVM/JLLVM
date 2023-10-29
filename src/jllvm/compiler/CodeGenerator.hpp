@@ -47,6 +47,13 @@ class CodeGenerator
     ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
     llvm::SmallSetVector<std::uint16_t, 8> m_workList;
 
+    using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
+
+    // std::list because we want the iterator stability when deleting handlers (requires random access).
+    std::list<HandlerInfo> m_activeHandlers;
+    // std::map because it is the easiest to use with std::list key.
+    std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
+
     /// Returns the basic block corresponding to the given bytecode offset and schedules the basic block to be compiled.
     /// The offset must point to the start of a basic block.
     llvm::BasicBlock* getBasicBlock(std::uint16_t offset)
@@ -54,13 +61,6 @@ class CodeGenerator
         m_workList.insert(offset);
         return m_basicBlocks.find(offset)->second.block;
     }
-
-    using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
-
-    // std::list because we want the iterator stability when deleting handlers (requires random access).
-    std::list<HandlerInfo> m_activeHandlers;
-    // std::map because it is the easiest to use with std::list key.
-    std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
 
     void createBasicBlocks(const ByteCodeTypeChecker& checker);
 
