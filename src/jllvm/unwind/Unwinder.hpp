@@ -94,7 +94,8 @@ public:
     /// The argument types and count supported by 'args' is platform dependent but must currently support at least two
     /// arguments of pointer types.
     template <class Ret, typename... Args>
-    [[noreturn]] void resumeExecutionAtFunction(Ret (*fnPtr)(Args...), std::type_identity<Args>::type... args) const
+    [[noreturn]] void resumeExecutionAtFunction(Ret (*fnPtr)(Args...),
+                                                typename std::type_identity<Args>::type... args) const
         requires((std::is_void_v<Ret> || abiSupported<Ret>)&&...&& abiSupported<Args>)
     {
         std::array<std::uint64_t, sizeof...(args)> array{llvm::bit_cast<std::uint64_t>(args)...};
