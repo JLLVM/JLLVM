@@ -30,7 +30,7 @@
 
 #if defined(_LIBUNWIND_SUPPORT_SEH_UNWIND)
 #define PRIVATE_1 private_[0]
-#elif defined(_LIBUNWIND_ARM_EHABI)
+#elif defined(JLLVM_LIBUNWIND_ARM_EHABI)
 #define PRIVATE_1 unwinder_cache.reserved1
 #else
 #define PRIVATE_1 private_1
@@ -142,7 +142,7 @@ jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn callback, void *ref) {
   _LIBUNWIND_TRACE_API("jllvm_Unwind_Backtrace(callback=%p)",
                        (void *)(uintptr_t)callback);
 
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
   // Create a mock exception object for force unwinding.
   _Unwind_Exception ex;
   memset(&ex, '\0', sizeof(ex));
@@ -153,7 +153,7 @@ jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn callback, void *ref) {
   while (true) {
     jllvm_Unwind_Reason_Code result;
 
-#if !defined(_LIBUNWIND_ARM_EHABI)
+#if !defined(JLLVM_LIBUNWIND_ARM_EHABI)
     // ask libunwind to get next frame (skip over first frame which is
     // _Unwind_Backtrace())
     if (jllvm__unw_step(&cursor) <= 0) {
@@ -185,7 +185,7 @@ jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn callback, void *ref) {
             _URC_CONTINUE_UNWIND) {
       return _URC_END_OF_STACK;
     }
-#endif // defined(_LIBUNWIND_ARM_EHABI)
+#endif // defined(JLLVM_LIBUNWIND_ARM_EHABI)
 
     // debugging
     if (_LIBUNWIND_TRACING_UNWINDING) {

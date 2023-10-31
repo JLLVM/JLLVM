@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __UNWIND_H__
-#define __UNWIND_H__
+#ifndef JLLVM__UNWIND_H__
+#define JLLVM__UNWIND_H__
 
 #include <__libunwind_config.h>
 
@@ -24,9 +24,9 @@
 #endif
 
 #if defined(__APPLE__)
-#define LIBUNWIND_UNAVAIL __attribute__ (( unavailable ))
+#define JLLVM_LIBUNWIND_UNAVAIL __attribute__ (( unavailable ))
 #else
-#define LIBUNWIND_UNAVAIL
+#define JLLVM_LIBUNWIND_UNAVAIL
 #endif
 
 typedef enum {
@@ -40,7 +40,7 @@ typedef enum {
   jllvm_URC_HANDLER_FOUND = 6,
   jllvm_URC_INSTALL_CONTEXT = 7,
   jllvm_URC_CONTINUE_UNWIND = 8,
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
   _URC_FAILURE = 9
 #endif
 } jllvm_Unwind_Reason_Code;
@@ -55,7 +55,7 @@ typedef enum {
 
 typedef struct jllvm_Unwind_Context jllvm_Unwind_Context; // opaque
 
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
 #include <unwind_arm_ehabi.h>
 #else
 #include <unwind_itanium.h>
@@ -160,27 +160,27 @@ extern void *jllvm_Unwind_FindEnclosingFunction(void *pc);
 // Mac OS X does not support text-rel and data-rel addressing so these functions
 // are unimplemented.
 extern uintptr_t jllvm_Unwind_GetDataRelBase(
-    struct jllvm_Unwind_Context *context) LIBUNWIND_UNAVAIL;
+    struct jllvm_Unwind_Context *context) JLLVM_LIBUNWIND_UNAVAIL;
 extern uintptr_t jllvm_Unwind_GetTextRelBase(
-    struct jllvm_Unwind_Context *context) LIBUNWIND_UNAVAIL;
+    struct jllvm_Unwind_Context *context) JLLVM_LIBUNWIND_UNAVAIL;
 
 // Mac OS X 10.4 and 10.5 had implementations of these functions in
 // libgcc_s.dylib, but they never worked.
 /// These functions are no longer available on Mac OS X.
 extern void jllvm__register_frame_info_bases(const void *fde, void *ob,
                                              void *tb,
-                                             void *db) LIBUNWIND_UNAVAIL;
+                                             void *db) JLLVM_LIBUNWIND_UNAVAIL;
 extern void jllvm__register_frame_info(const void *fde,
-                                       void *ob) LIBUNWIND_UNAVAIL;
+                                       void *ob) JLLVM_LIBUNWIND_UNAVAIL;
 extern void jllvm__register_frame_info_table_bases(const void *fde, void *ob,
                                                    void *tb,
-                                                   void *db) LIBUNWIND_UNAVAIL;
+                                                   void *db) JLLVM_LIBUNWIND_UNAVAIL;
 extern void jllvm__register_frame_info_table(const void *fde,
-                                             void *ob) LIBUNWIND_UNAVAIL;
-extern void jllvm__register_frame_table(const void *fde) LIBUNWIND_UNAVAIL;
-extern void *jllvm__deregister_frame_info(const void *fde) LIBUNWIND_UNAVAIL;
+                                             void *ob) JLLVM_LIBUNWIND_UNAVAIL;
+extern void jllvm__register_frame_table(const void *fde) JLLVM_LIBUNWIND_UNAVAIL;
+extern void *jllvm__deregister_frame_info(const void *fde) JLLVM_LIBUNWIND_UNAVAIL;
 extern void *
-jllvm__deregister_frame_info_bases(const void *fde) LIBUNWIND_UNAVAIL;
+jllvm__deregister_frame_info_bases(const void *fde) JLLVM_LIBUNWIND_UNAVAIL;
 
 #if defined(__SEH__) && !defined(__USING_SJLJ_EXCEPTIONS__)
 #ifndef _WIN32
@@ -201,4 +201,4 @@ extern EXCEPTION_DISPOSITION _GCC_specific_handler(EXCEPTION_RECORD *exc,
 }
 #endif
 
-#endif // __UNWIND_H__
+#endif // JLLVM__UNWIND_H__

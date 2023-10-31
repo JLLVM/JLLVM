@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __ITANIUM_UNWIND_H__
-#define __ITANIUM_UNWIND_H__
+#ifndef JLLVM__ITANIUM_UNWIND_H__
+#define JLLVM__ITANIUM_UNWIND_H__
 
 struct jllvm_Unwind_Context;   // opaque
 struct jllvm_Unwind_Exception; // forward declaration
@@ -76,4 +76,4 @@ extern void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *,
 }
 #endif
 
-#endif // __ITANIUM_UNWIND_H__
+#endif // JLLVM__ITANIUM_UNWIND_H__

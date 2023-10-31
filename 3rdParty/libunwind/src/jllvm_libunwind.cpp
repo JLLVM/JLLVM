@@ -163,7 +163,7 @@ _LIBUNWIND_WEAK_ALIAS(jllvm__unw_get_fpreg, jllvm_unw_get_fpreg)
 _LIBUNWIND_HIDDEN int jllvm__unw_set_fpreg(jllvm_unw_cursor_t *cursor,
                                            unw_regnum_t regNum,
                                            unw_fpreg_t value) {
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
   _LIBUNWIND_TRACE_API("__unw_set_fpreg(cursor=%p, regNum=%d, value=%llX)",
                        static_cast<void *>(cursor), regNum, value);
 #else

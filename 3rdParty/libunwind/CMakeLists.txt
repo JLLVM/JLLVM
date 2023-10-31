@@ -248,7 +248,7 @@ endif()
 
 # Cross-unwinding
 if (NOT LIBUNWIND_ENABLE_CROSS_UNWINDING)
-  add_compile_flags(-D_LIBUNWIND_IS_NATIVE_ONLY)
+  add_compile_flags(-DJLLVM_LIBUNWIND_IS_NATIVE_ONLY)
 endif()
 
 # Include stubs for __register_frame_info_bases and related

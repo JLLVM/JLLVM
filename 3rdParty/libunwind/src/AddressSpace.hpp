@@ -38,7 +38,7 @@
 #endif
 #endif
 
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
 struct EHABIIndexEntry {
   uint32_t functionOffset;
   uint32_t data;
@@ -102,7 +102,7 @@ extern char __eh_frame_hdr_start;
 extern char __eh_frame_hdr_end;
 #endif
 
-#elif defined(_LIBUNWIND_ARM_EHABI) && defined(_LIBUNWIND_IS_BAREMETAL)
+#elif defined(JLLVM_LIBUNWIND_ARM_EHABI) && defined(_LIBUNWIND_IS_BAREMETAL)
 
 // When statically linked on bare-metal, the symbols for the EH table are looked
 // up without going through the dynamic loader.
@@ -146,7 +146,7 @@ struct UnwindInfoSections {
   uintptr_t       compact_unwind_section;
   size_t          compact_unwind_section_length;
 #endif
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
   uintptr_t       arm_section;
   size_t          arm_section_length;
 #endif
@@ -424,7 +424,7 @@ static bool checkForUnwindInfoSegment(const Elf_Phdr *phdr, size_t image_base,
     }
   }
   return false;
-#elif defined(_LIBUNWIND_ARM_EHABI)
+#elif defined(JLLVM_LIBUNWIND_ARM_EHABI)
   if (phdr->p_type == PT_ARM_EXIDX) {
     uintptr_t exidx_start = image_base + phdr->p_vaddr;
     cbdata->sects->arm_section = exidx_start;
@@ -433,7 +433,7 @@ static bool checkForUnwindInfoSegment(const Elf_Phdr *phdr, size_t image_base,
   }
   return false;
 #else
-#error Need one of _LIBUNWIND_SUPPORT_DWARF_INDEX or _LIBUNWIND_ARM_EHABI
+#error Need one of _LIBUNWIND_SUPPORT_DWARF_INDEX or JLLVM_LIBUNWIND_ARM_EHABI
 #endif
 }
 
@@ -532,7 +532,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
 #endif
   if (info.dwarf_section_length)
     return true;
-#elif defined(_LIBUNWIND_ARM_EHABI) && defined(_LIBUNWIND_IS_BAREMETAL)
+#elif defined(JLLVM_LIBUNWIND_ARM_EHABI) && defined(_LIBUNWIND_IS_BAREMETAL)
   // Bare metal is statically linked, so no need to ask the dynamic loader
   info.arm_section =        (uintptr_t)(&__exidx_start);
   info.arm_section_length = (size_t)(&__exidx_end - &__exidx_start);

@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __LIBUNWIND__
-#define __LIBUNWIND__
+#ifndef JLLVM__LIBUNWIND__
+#define JLLVM__LIBUNWIND__
 
 #include <__libunwind_config.h>
 
@@ -62,7 +62,7 @@ enum {
   jllvm_UNW_EINVAL = -6547,       /* unsupported operation or bad value */
   jllvm_UNW_EBADVERSION = -6548,  /* unwind info has unsupported version */
   jllvm_UNW_ENOINFO = -6549       /* no unwind info found */
-#if defined(_LIBUNWIND_TARGET_AARCH64) && !defined(_LIBUNWIND_IS_NATIVE_ONLY)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64) && !defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
   ,
   jllvm_UNW_ECROSSRASIGNING =
       -6550 /* cross unwind with return address signing */
@@ -70,12 +70,12 @@ enum {
 };
 
 struct jllvm_unw_context_t {
-  uint64_t data[_LIBUNWIND_CONTEXT_SIZE];
+  uint64_t data[JLLVM_LIBUNWIND_CONTEXT_SIZE];
 };
 typedef struct jllvm_unw_context_t jllvm_unw_context_t;
 
 struct jllvm_unw_cursor_t {
-  uint64_t data[_LIBUNWIND_CURSOR_SIZE];
+  uint64_t data[JLLVM_LIBUNWIND_CURSOR_SIZE];
 } LIBUNWIND_CURSOR_ALIGNMENT_ATTR;
 typedef struct jllvm_unw_cursor_t jllvm_unw_cursor_t;
 

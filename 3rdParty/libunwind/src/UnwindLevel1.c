@@ -31,7 +31,7 @@
 #include "jllvm_unwind.h"
 #include "libunwind_ext.h"
 
-#if !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
+#if !defined(JLLVM_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
 
 #ifndef _LIBUNWIND_SUPPORT_SEH_UNWIND
 
@@ -49,7 +49,7 @@
     (void)fn;                                                                  \
     jllvm__unw_resume((cursor));                                               \
   } while (0)
-#elif defined(_LIBUNWIND_TARGET_I386)
+#elif defined(JLLVM_LIBUNWIND_TARGET_I386)
 #define __cet_ss_step_size 4
 #define __unw_phase2_resume(cursor, fn)                                        \
   do {                                                                         \
@@ -61,7 +61,7 @@
                      "jmp *%%edx\n\t" :: "D"(cetRegContext),                   \
                      "d"(cetJumpAddress));                                     \
   } while (0)
-#elif defined(_LIBUNWIND_TARGET_X86_64)
+#elif defined(JLLVM_LIBUNWIND_TARGET_X86_64)
 #define __cet_ss_step_size 8
 #define __unw_phase2_resume(cursor, fn)                                        \
   do {                                                                         \
@@ -591,4 +591,4 @@ _LIBUNWIND_EXPORT void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *context,
   jllvm__unw_set_reg(cursor, UNW_REG_IP, new_value);
 }
 
-#endif // !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
+#endif // !defined(JLLVM_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)

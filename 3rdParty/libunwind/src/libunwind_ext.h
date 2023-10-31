@@ -123,7 +123,7 @@ extern int jllvm__unw_remove_find_dynamic_unwind_sections(
 
 #endif
 
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
 extern const uint32_t* decode_eht_entry(const uint32_t*, size_t*, size_t*);
 extern _Unwind_Reason_Code _Unwind_VRS_Interpret(_Unwind_Context *context,
                                                  const uint32_t *data,

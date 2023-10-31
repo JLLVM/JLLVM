@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __ARM_EHABI_UNWIND_H__
-#define __ARM_EHABI_UNWIND_H__
+#ifndef JLLVM__ARM_EHABI_UNWIND_H__
+#define JLLVM__ARM_EHABI_UNWIND_H__
 
 typedef uint32_t _Unwind_State;
 
@@ -167,4 +167,4 @@ void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *, uintptr_t new_value) {
 }
 #endif
 
-#endif // __ARM_EHABI_UNWIND_H__
+#endif // JLLVM__ARM_EHABI_UNWIND_H__

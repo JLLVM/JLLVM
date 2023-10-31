@@ -11,7 +11,7 @@
 
 #include "Unwind-EHABI.h"
 
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
 
 #include <inttypes.h>
 #include <stdbool.h>
@@ -1208,4 +1208,4 @@ __gnu_unwind_frame(_Unwind_Exception *exception_object,
   }
 }
 
-#endif  // defined(_LIBUNWIND_ARM_EHABI)
+#endif  // defined(JLLVM_LIBUNWIND_ARM_EHABI)

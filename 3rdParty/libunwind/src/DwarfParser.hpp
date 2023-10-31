@@ -49,7 +49,7 @@ public:
     bool      isSignalFrame;
     bool      fdesHaveAugmentationData;
     uint8_t   returnAddressRegister;
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
     bool      addressesSignedWithBKey;
     bool      mteTaggedFrame;
 #endif
@@ -66,7 +66,7 @@ public:
   };
 
   enum {
-    kMaxRegisterNumber = _LIBUNWIND_HIGHEST_DWARF_REGISTER
+    kMaxRegisterNumber = JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER
   };
   enum RegisterSavedWhere {
     kRegisterUnused,
@@ -324,7 +324,7 @@ const char *CFI_Parser<A>::parseCIE(A &addressSpace, pint_t cie,
   cieInfo->dataAlignFactor = 0;
   cieInfo->isSignalFrame = false;
   cieInfo->fdesHaveAugmentationData = false;
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
   cieInfo->addressesSignedWithBKey = false;
   cieInfo->mteTaggedFrame = false;
 #endif
@@ -392,7 +392,7 @@ const char *CFI_Parser<A>::parseCIE(A &addressSpace, pint_t cie,
       case 'S':
         cieInfo->isSignalFrame = true;
         break;
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
       case 'B':
         cieInfo->addressesSignedWithBKey = true;
         break;
@@ -739,15 +739,15 @@ bool CFI_Parser<A>::parseFDEInstructions(A &addressSpace,
             "DW_CFA_GNU_negative_offset_extended(%" PRId64 ")\n", offset);
         break;
 
-#if defined(_LIBUNWIND_TARGET_AARCH64) || defined(_LIBUNWIND_TARGET_SPARC) || \
-    defined(_LIBUNWIND_TARGET_SPARC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64) || defined(JLLVM_LIBUNWIND_TARGET_SPARC) || \
+    defined(JLLVM_LIBUNWIND_TARGET_SPARC64)
         // The same constant is used to represent different instructions on
         // AArch64 (negate_ra_state) and SPARC (window_save).
         static_assert(DW_CFA_AARCH64_negate_ra_state == DW_CFA_GNU_window_save,
                       "uses the same constant");
       case DW_CFA_AARCH64_negate_ra_state:
         switch (arch) {
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
         case REGISTERS_ARM64: {
           int64_t value =
               results->savedRegisters[UNW_AARCH64_RA_SIGN_STATE].value ^ 0x1;
@@ -757,7 +757,7 @@ bool CFI_Parser<A>::parseFDEInstructions(A &addressSpace,
         } break;
 #endif
 
-#if defined(_LIBUNWIND_TARGET_SPARC)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC)
         // case DW_CFA_GNU_window_save:
         case REGISTERS_SPARC:
           _LIBUNWIND_TRACE_DWARF("DW_CFA_GNU_window_save()\n");
@@ -775,7 +775,7 @@ bool CFI_Parser<A>::parseFDEInstructions(A &addressSpace,
           break;
 #endif
 
-#if defined(_LIBUNWIND_TARGET_SPARC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC64)
         // case DW_CFA_GNU_window_save:
         case REGISTERS_SPARC64:
           // Don't save %o0-%o7 on sparc64.

@@ -73,7 +73,7 @@ private:
     assert(0 && "getCFA(): unknown location");
     __builtin_unreachable();
   }
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
   static bool getRA_SIGN_STATE(A &addressSpace, R registers, pint_t cfa,
                                PrologInfo &prolog);
 #endif
@@ -134,7 +134,7 @@ double DwarfInstructions<A, R>::getSavedFloatRegister(
   case CFI_Parser<A>::kRegisterUndefined:
     return 0.0;
   case CFI_Parser<A>::kRegisterInRegister:
-#ifndef _LIBUNWIND_TARGET_ARM
+#ifndef JLLVM_LIBUNWIND_TARGET_ARM
     return registers.getFloatRegister((int)savedReg.value);
 #endif
   case CFI_Parser<A>::kRegisterIsExpression:
@@ -171,7 +171,7 @@ v128 DwarfInstructions<A, R>::getSavedVectorRegister(
   }
   _LIBUNWIND_ABORT("unsupported restore location for vector register");
 }
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
 template <typename A, typename R>
 bool DwarfInstructions<A, R>::getRA_SIGN_STATE(A &addressSpace, R registers,
                                                pint_t cfa, PrologInfo &prolog) {
@@ -281,7 +281,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
 
       isSignalFrame = cieInfo.isSignalFrame;
 
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
       // If the target is aarch64 then the return address may have been signed
       // using the v8.3 pointer authentication extensions. The original
       // return address needs to be authenticated before the return address is
@@ -290,7 +290,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       if ((R::getArch() == REGISTERS_ARM64) &&
           getRA_SIGN_STATE(addressSpace, registers, cfa, prolog) &&
           returnAddress != 0) {
-#if !defined(_LIBUNWIND_IS_NATIVE_ONLY)
+#if !defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
         return UNW_ECROSSRASIGNING;
 #else
         register unsigned long long x17 __asm("x17") = returnAddress;
@@ -308,7 +308,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       }
 #endif
 
-#if defined(_LIBUNWIND_IS_NATIVE_ONLY) && defined(_LIBUNWIND_TARGET_ARM) &&    \
+#if defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY) && defined(JLLVM_LIBUNWIND_TARGET_ARM) &&    \
     defined(__ARM_FEATURE_PAUTH)
       if ((R::getArch() == REGISTERS_ARM) &&
           prolog.savedRegisters[UNW_ARM_RA_AUTH_CODE].value) {
@@ -322,7 +322,7 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       }
 #endif
 
-#if defined(_LIBUNWIND_TARGET_SPARC)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC)
       if (R::getArch() == REGISTERS_SPARC) {
         // Skip call site instruction and delay slot
         returnAddress += 8;
@@ -332,13 +332,13 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       }
 #endif
 
-#if defined(_LIBUNWIND_TARGET_SPARC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC64)
       // Skip call site instruction and delay slot.
       if (R::getArch() == REGISTERS_SPARC64)
         returnAddress += 8;
 #endif
 
-#if defined(_LIBUNWIND_TARGET_PPC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_PPC64)
 #define PPC64_ELFV1_R2_LOAD_INST_ENCODING 0xe8410028u // ld r2,40(r1)
 #define PPC64_ELFV1_R2_OFFSET 40
 #define PPC64_ELFV2_R2_LOAD_INST_ENCODING 0xe8410018u // ld r2,24(r1)
