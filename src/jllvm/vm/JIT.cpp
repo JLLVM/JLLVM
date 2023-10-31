@@ -28,6 +28,7 @@
 #include <llvm/Transforms/Instrumentation/AddressSanitizer.h>
 #include <llvm/Transforms/Scalar/RewriteStatepointsForGC.h>
 
+#include <jllvm/compiler/Compiler.hpp>
 #include <jllvm/materialization/ClassObjectStubDefinitionsGenerator.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
@@ -123,6 +124,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
           llvm::Triple(LLVM_HOST_TRIPLE), *m_session,
           llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
       m_classLoader(classLoader),
+      m_stringInterner(stringInterner),
       m_dataLayout(layout),
       m_interner(*m_session, m_dataLayout),
       m_objectLayer(*m_session),
@@ -153,7 +155,9 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
         *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
 
-    m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc));
+    m_objectLayer.addPlugin(
+        std::make_unique<StackMapRegistrationPlugin>(gc, [&](std::uintptr_t address, DeoptEntry&& entry)
+                                                     { m_deoptEntries.try_emplace(address, std::move(entry)); }));
     m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
@@ -260,4 +264,60 @@ void jllvm::JIT::optimize(llvm::Module& module)
 
     auto mpm = passBuilder.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
+}
+
+llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame) const
+{
+    auto iter = m_deoptEntries.find(frame.getProgramCounter());
+    assert(iter != m_deoptEntries.end() && "Frame must be a Java frame and has to have deopt info");
+
+    const DeoptEntry& entry = iter->second;
+
+    llvm::SmallVector<std::uint64_t> result(entry.locals.size());
+    for (auto&& [location, dest] : llvm::zip(entry.locals, result))
+    {
+        dest = match(
+            location, [&](DeoptEntry::Constant constant) { return constant.constant; },
+            [&](DeoptEntry::Register reg) { return frame.getIntegerRegister(reg.registerNumber); },
+            [&](DeoptEntry::Indirect indirect)
+            {
+                auto* framePointer =
+                    reinterpret_cast<char*>(frame.getIntegerRegister(indirect.registerNumber)) + indirect.offset;
+                std::uint64_t value = 0;
+                std::memcpy(&value, framePointer, indirect.size);
+                return value;
+            },
+            [&](DeoptEntry::Direct direct) -> std::uint64_t { llvm_unreachable("not doing stack allocations yet"); });
+    }
+
+    return result;
+}
+
+void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
+                                               Throwable* exception)
+{
+    llvm::SmallVector<std::uint64_t> locals = readLocals(frame);
+
+    // Dynamically allocating memory here as this frame will be replaced at the end of this method and all local
+    // variables destroyed. The OSR method will delete the array on entry once no longer needed.
+    auto* operandPtr = new std::uint64_t[locals.size() + 1];
+    *operandPtr = reinterpret_cast<std::uint64_t>(exception);
+    std::uint64_t* localsPtr = operandPtr + 1;
+    llvm::copy(locals, localsPtr);
+
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("name", *context);
+
+    module->setDataLayout(m_dataLayout);
+    module->setTargetTriple(LLVM_HOST_TRIPLE);
+
+    const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->method;
+    compileOSRMethod(*module, byteCodeOffset, method, m_stringInterner);
+
+    llvm::cantFail(m_optimizeLayer.add(m_main, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+    llvm::JITEvaluatedSymbol osrMethod =
+        llvm::cantFail(m_session->lookup({&m_main}, mangleOSRMethod(&method, byteCodeOffset)));
+    frame.resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()),
+                                    operandPtr, localsPtr);
 }

@@ -18,9 +18,9 @@ add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp StackMapRegistrationP
         native/Lang.cpp native/JDK.cpp native/Security.cpp
         ClassObjectStubImportPass.cpp)
 target_link_libraries(JLLVMVirtualMachine
-        PRIVATE JLLVMUnwinder ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
-        PUBLIC JLLVMClassParser JLLVMObject JLLVMGC JLLVMMaterialization LLVMExecutionEngine LLVMOrcJIT LLVMJITLink
-        LLVMPasses
+        PRIVATE ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
+        PUBLIC JLLVMClassParser JLLVMObject JLLVMGC JLLVMMaterialization JLLVMUnwinder LLVMExecutionEngine LLVMOrcJIT
+        LLVMJITLink LLVMPasses
         )
 
 set(JAVA_INCLUDE_PATH "${JAVA_HOME}/../include")

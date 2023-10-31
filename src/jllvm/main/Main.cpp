@@ -61,6 +61,9 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     llvm::SmallVector<const char*> llvmArgs{"jllvm"};
     CommandLine commandLine(args);
 
+    // Deopt values are read-only and can be read from CSR registers by libunwind.
+    llvmArgs.push_back("-use-registers-for-deopt-values=1");
+
 #ifndef NDEBUG
     llvm::SmallString<64> buffer;
     llvmArgs.push_back("-jllvm-gc-every-alloc=1");

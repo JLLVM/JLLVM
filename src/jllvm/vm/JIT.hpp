@@ -34,6 +34,7 @@
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
 #include <jllvm/object/StringInterner.hpp>
+#include <jllvm/unwind/Unwinder.hpp>
 
 #include <memory>
 
@@ -48,6 +49,7 @@ class JIT
     std::unique_ptr<llvm::TargetMachine> m_targetMachine;
     std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
     ClassLoader& m_classLoader;
+    StringInterner& m_stringInterner;
 
     llvm::DataLayout m_dataLayout;
 
@@ -60,6 +62,41 @@ class JIT
     JNIImplementationLayer m_jniLayer;
 
     llvm::DenseSet<void*> m_javaFrames;
+
+public:
+    struct DeoptEntry
+    {
+        std::uint16_t bytecodeOffset;
+
+        struct Constant
+        {
+            std::uint64_t constant;
+        };
+        struct Register
+        {
+            int registerNumber;
+        };
+        struct Direct
+        {
+            int registerNumber;
+            std::int32_t offset;
+            unsigned size;
+        };
+        struct Indirect
+        {
+            int registerNumber;
+            std::int32_t offset;
+            unsigned size;
+        };
+        using Location = swl::variant<Constant, Register, Direct, Indirect>;
+
+        std::vector<Location> locals;
+    };
+
+private:
+    llvm::DenseMap<std::uintptr_t, DeoptEntry> m_deoptEntries;
+
+    llvm::SmallVector<std::uint64_t> readLocals(const UnwindFrame& frame) const;
 
     void optimize(llvm::Module& module);
 
@@ -156,6 +193,25 @@ public:
         }
         return reinterpret_cast<const JavaMethodMetadata*>(functionPointer)[-1];
     }
+
+    /// Returns the Java Bytecode offset corresponding to 'programCounter' or an empty optional if the program counter
+    /// does not correspond to a Java method.
+    std::optional<std::uint16_t> getJavaBytecodeOffset(std::uintptr_t programCounter)
+    {
+        auto result = m_deoptEntries.find(programCounter);
+        if (result == m_deoptEntries.end())
+        {
+            return std::nullopt;
+        }
+        return result->second.bytecodeOffset;
+    }
+
+    /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
+    /// method at the JVM bytecode corresponding to 'byteCodeOffset'. This method is meant to be used for executing
+    /// exception handlers and therefore puts only 'exception' on the operand stack.
+    /// 'frame' must be the execution of a Java method.
+    [[noreturn]] void doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
+                                                    Throwable* exception);
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
     /// returning a pointer to the function if successful or an error otherwise.

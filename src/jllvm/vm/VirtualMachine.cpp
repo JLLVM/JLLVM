@@ -18,6 +18,7 @@
 #include <llvm/Support/Debug.h>
 
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
+#include <jllvm/unwind/Unwinder.hpp>
 
 #include "NativeImplementation.hpp"
 
@@ -126,6 +127,20 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
     llvm_unreachable("Method resolution unexpectedly failed");
 }
 
+/// Exception thrown and caught by the VM if a Java exception is not handled at all.
+class UnhandledJavaException : public std::exception
+{
+    jllvm::Throwable* m_javaException;
+
+public:
+    explicit UnhandledJavaException(jllvm::Throwable* javaException) : m_javaException(javaException) {}
+
+    jllvm::Throwable* getJavaException() const
+    {
+        return m_javaException;
+    }
+};
+
 } // namespace
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
@@ -189,8 +204,9 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         std::pair{"jllvm_instance_of",
                   [](const Object* object, const ClassObject* classObject) -> std::int32_t
                   { return object->instanceOf(classObject); }},
-        std::pair{"activeException", m_activeException.data()},
+        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
         std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
+        std::pair{"jllvm_throw", [&](Throwable* object) { unwindStackForExceptionHandling(object); }},
         std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
                   {
                       // This should have been checked inline in LLVM IR.
@@ -300,25 +316,30 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
     {
         llvm::report_fatal_error(("Failed to find main method due to " + toString(lookup.takeError())).c_str());
     }
-    reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
-    if (!m_activeException)
+
+    try
     {
+        reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
         return 0;
     }
-
-    // TODO: Use printStackTrace:()V in the future
-
-    // Equivalent to Throwable:toString() (does not yet work).
-    std::string s = m_activeException->getClass()->getClassName().str();
-    std::replace(s.begin(), s.end(), '/', '.');
-    llvm::errs() << s;
-    if (m_activeException->detailMessage)
+    catch (const UnhandledJavaException& unhandledJavaException)
     {
-        llvm::errs() << ": " << m_activeException->detailMessage->toUTF8();
-    }
-    llvm::errs() << '\n';
+        Throwable* activeException = unhandledJavaException.getJavaException();
 
-    return -1;
+        // TODO: Use printStackTrace:()V in the future
+
+        // Equivalent to Throwable:toString() (does not yet work).
+        std::string s = activeException->getClass()->getClassName().str();
+        std::replace(s.begin(), s.end(), '/', '.');
+        llvm::errs() << s;
+        if (activeException->detailMessage)
+        {
+            llvm::errs() << ": " << activeException->detailMessage->toUTF8();
+        }
+        llvm::errs() << '\n';
+
+        return -1;
+    }
 }
 
 std::int32_t jllvm::VirtualMachine::createNewHashCode()
@@ -363,4 +384,72 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
                      << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
     reinterpret_cast<void (*)()>(classInitializer->getAddress())();
+}
+
+void jllvm::VirtualMachine::unwindStackForExceptionHandling(Throwable* exception)
+{
+    unwindStack(
+        [&](const UnwindFrame& frame)
+        {
+            std::optional<JavaMethodMetadata> metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
+            if (!metadata)
+            {
+                return UnwindAction::ContinueUnwinding;
+            }
+
+            std::optional<uint16_t> byteCodeOffset = m_jit.getJavaBytecodeOffset(frame.getProgramCounter());
+            if (!byteCodeOffset)
+            {
+                return UnwindAction::ContinueUnwinding;
+            }
+
+            Code* code = metadata->method->getMethodInfo().getAttributes().find<Code>();
+            assert(code && "cannot be in a Java frame of a method without code");
+
+            const ClassFile& classFile = *metadata->classObject->getClassFile();
+            // Exception handler to use is the very first one in the [start, end) range where the type of the exception
+            // is an instance of the catch type.
+            std::optional<std::uint16_t> handlerPc;
+            for (const Code::ExceptionTable& exceptionTable : code->getExceptionTable())
+            {
+                if (exceptionTable.startPc > *byteCodeOffset || *byteCodeOffset >= exceptionTable.endPc)
+                {
+                    continue;
+                }
+
+                // Catch-all handlers as is used by 'finally' blocks don't have a catch type.
+                if (!exceptionTable.catchType)
+                {
+                    handlerPc = exceptionTable.handlerPc;
+                    break;
+                }
+
+                const ClassInfo* info = exceptionTable.catchType.resolve(classFile);
+                ClassObject* catchType =
+                    m_classLoader.forNameLoaded(ObjectType(info->nameIndex.resolve(classFile)->text));
+                if (!catchType)
+                {
+                    // If the type to catch is not loaded, then it's impossible for the exception to be an instance.
+                    continue;
+                }
+                if (exception->instanceOf(catchType))
+                {
+                    // Found the correct exception handler.
+                    handlerPc = exceptionTable.handlerPc;
+                    break;
+                }
+            }
+
+            if (!handlerPc)
+            {
+                return UnwindAction::ContinueUnwinding;
+            }
+
+            m_jit.doExceptionOnStackReplacement(frame, *handlerPc, exception);
+            return UnwindAction::StopUnwinding;
+        });
+
+    // If no Java frame is ready to handle the exception, unwind all of it completely.
+    // The caller of Javas main or the start of a Java thread will catch this in C++ code.
+    throw UnhandledJavaException(exception);
 }

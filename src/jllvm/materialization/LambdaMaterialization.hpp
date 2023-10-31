@@ -143,11 +143,19 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
         return {CppToLLVMType<typename llvm::function_traits<F>::template arg_t<is>>::get(context)...};
     }
 
+    /// Free function that is 'noexcept(false)' as a lambda converted to a function pointer is implicitly 'noexcept'.
+    template <class Ret, class... Args>
+    static Ret trampolineFunction(Args... args, F* f) noexcept(false)
+    {
+        return (*f)(args...);
+    }
+
     template <std::size_t... is>
     auto trampoline(std::index_sequence<is...>)
     {
-        return reinterpret_cast<std::uintptr_t>(+[](typename llvm::function_traits<F>::template arg_t<is>... args, F* f)
-                                                { return (*f)(args...); });
+        return reinterpret_cast<std::uintptr_t>(
+            trampolineFunction<typename llvm::function_traits<F>::result_t,
+                               typename llvm::function_traits<F>::template arg_t<is>...>);
     }
 
 public:

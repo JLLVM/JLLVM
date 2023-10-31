@@ -100,6 +100,12 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
                 llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
                 builder.CreateStore(load, local);
             }
+
+            // The OSR frame is responsible for deleting its input arrays as the frame that originally allocated the
+            // pointer is replaced.
+            builder.CreateCall(function->getParent()->getOrInsertFunction("jllvm_osr_frame_delete", builder.getVoidTy(),
+                                                                          builder.getPtrTy()),
+                               operandStackInput);
         },
         offset);
 

@@ -38,6 +38,20 @@ class UnwindFrame
 
     UnwindFrame(const jllvm_unw_context_t& context);
 
+#if defined(__x86_64__) && !defined(_WIN32)
+
+    constexpr static std::size_t argMax = 6;
+
+    template <class T>
+    constexpr static bool abiSupported = std::is_integral_v<T> || std::is_pointer_v<T>;
+
+#else
+    #error Code not ported for this architecture yet
+#endif
+
+    [[noreturn]] void resumeExecutionAtFunctionImpl(std::uintptr_t functionPointer,
+                                                    llvm::ArrayRef<std::uint64_t> arguments) const;
+
 public:
 
     /// Returns the current program counter in this frame.
@@ -72,6 +86,19 @@ public:
 
         assert(result >= 0 && "expected no errors in libunwind");
         return UnwindFrame(copy);
+    }
+
+    /// Replaces this frame and all its direct or indirect callees with the execution of 'fnPtr' called with 'args'.
+    /// This first performs C++ stack unwinding to run any destructors all callee frames. 'fnPtr' is required to have
+    /// the same return type or a compatible return type as determined by the platform ABI.
+    /// The argument types and count supported by 'args' is platform dependent but must currently support at least two
+    /// arguments of pointer types.
+    template <class Ret, typename... Args>
+    [[noreturn]] void resumeExecutionAtFunction(Ret (*fnPtr)(Args...), std::type_identity<Args>::type... args) const
+        requires((std::is_void_v<Ret> || abiSupported<Ret>)&&...&& abiSupported<Args>)
+    {
+        std::array<std::uint64_t, sizeof...(args)> array{llvm::bit_cast<std::uint64_t>(args)...};
+        resumeExecutionAtFunctionImpl(reinterpret_cast<std::uintptr_t>(fnPtr), array);
     }
 };
 

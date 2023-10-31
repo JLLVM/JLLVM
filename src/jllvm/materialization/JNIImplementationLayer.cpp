@@ -210,7 +210,8 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                                     llvm::FunctionType::get(referenceType, {ptrType}, false)),
                         {methodPtr});
 
-                    builder.CreateStore(exception, module->getOrInsertGlobal("activeException", referenceType));
+                    builder.CreateCall(module->getOrInsertFunction("jllvm_throw", builder.getVoidTy(), referenceType),
+                                       exception);
                     returnValue = llvm::UndefValue::get(referenceType);
                 }
 

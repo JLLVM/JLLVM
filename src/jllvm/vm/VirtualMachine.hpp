@@ -50,7 +50,6 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     StringInterner m_stringInterner;
-    GCRootRef<Throwable> m_activeException = static_cast<GCRootRef<Throwable>>(m_gc.allocateStatic());
     JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
@@ -62,6 +61,8 @@ class VirtualMachine
 
     // Instances of 'Model::State', subtypes of ModelState.
     std::vector<std::unique_ptr<ModelState>> m_modelState;
+
+    [[noreturn]] void unwindStackForExceptionHandling(Throwable* exception);
 
 public:
     explicit VirtualMachine(BootOptions&& options);
