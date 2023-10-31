@@ -318,7 +318,7 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
     llvm::cantFail(m_optimizeLayer.add(m_main, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
 
     llvm::JITEvaluatedSymbol osrMethod =
-        llvm::cantFail(m_session->lookup({&m_main}, mangleOSRMethod(&method, byteCodeOffset)));
+        llvm::cantFail(m_session->lookup({&m_main}, m_interner(mangleOSRMethod(&method, byteCodeOffset))));
     frame.resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()),
                                     operandPtr, localsPtr);
 }
