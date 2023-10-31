@@ -103,7 +103,7 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
         {
             // Identifier used by personality functions whether it knows the kind of exception. Mustn't match what C++
             // uses.
-            std::memcpy(&exception_class, "JLVMJAVA", sizeof(_Unwind_Exception_Class));
+            std::memcpy(&exception_class, "JLVMJAVA", sizeof(exception_class));
             exception_cleanup = +[](_Unwind_Reason_Code, _Unwind_Exception* exception)
             { delete static_cast<ForcedException*>(exception); };
         }
@@ -116,8 +116,7 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
     // implementation.
     _Unwind_ForcedUnwind(
         exception,
-        +[](int, _Unwind_Action, _Unwind_Exception_Class, _Unwind_Exception* exception, _Unwind_Context* context,
-            void* stopPc)
+        +[](int, _Unwind_Action, std::uint64_t, _Unwind_Exception* exception, _Unwind_Context* context, void* stopPc)
         {
             auto* forcedException = static_cast<ForcedException*>(exception);
             std::uintptr_t pc = _Unwind_GetIP(context);
