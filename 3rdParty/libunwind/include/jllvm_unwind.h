@@ -142,13 +142,13 @@ extern void jllvm__deregister_frame(const void *fde);
 // info" which the runtime uses in preference to DWARF unwind info.  This
 // function will only work if the target function has an FDE but no compact
 // unwind info.
-struct dwarf_eh_bases {
+struct jllvm_dwarf_eh_bases {
   uintptr_t tbase;
   uintptr_t dbase;
   uintptr_t func;
 };
 extern const void *jllvm_Unwind_Find_FDE(const void *pc,
-                                         struct dwarf_eh_bases *);
+                                         struct jllvm_dwarf_eh_bases *);
 
 // This function attempts to find the start (address of first instruction) of
 // a function given an address inside the function.  It only works if the

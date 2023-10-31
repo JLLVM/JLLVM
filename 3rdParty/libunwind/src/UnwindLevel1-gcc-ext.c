@@ -213,7 +213,7 @@ jllvm_Unwind_Backtrace(jllvm_Unwind_Trace_Fn callback, void *ref) {
 
 /// Find DWARF unwind info for an address 'pc' in some function.
 _LIBUNWIND_EXPORT const void *
-jllvm_Unwind_Find_FDE(const void *pc, struct dwarf_eh_bases *bases) {
+jllvm_Unwind_Find_FDE(const void *pc, struct jllvm_dwarf_eh_bases *bases) {
   // This is slow, but works.
   // We create an unwind cursor then alter the IP to be pc
   jllvm_unw_cursor_t cursor;
