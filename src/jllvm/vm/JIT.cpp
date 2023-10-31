@@ -287,7 +287,8 @@ llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame
                 std::memcpy(&value, framePointer, indirect.size);
                 return value;
             },
-            [&](DeoptEntry::Direct direct) -> std::uint64_t { llvm_unreachable("not doing stack allocations yet"); });
+            [&](DeoptEntry::Direct /*direct*/) -> std::uint64_t
+            { llvm_unreachable("not doing stack allocations yet"); });
     }
 
     return result;
