@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __LIBUNWIND__
-#define __LIBUNWIND__
+#ifndef JLLVM__LIBUNWIND__
+#define JLLVM__LIBUNWIND__
 
 #include <__libunwind_config.h>
 
@@ -51,33 +51,35 @@
 
 /* error codes */
 enum {
-  UNW_ESUCCESS      = 0,     /* no error */
-  UNW_EUNSPEC       = -6540, /* unspecified (general) error */
-  UNW_ENOMEM        = -6541, /* out of memory */
-  UNW_EBADREG       = -6542, /* bad register number */
-  UNW_EREADONLYREG  = -6543, /* attempt to write read-only register */
-  UNW_ESTOPUNWIND   = -6544, /* stop unwinding */
-  UNW_EINVALIDIP    = -6545, /* invalid IP */
-  UNW_EBADFRAME     = -6546, /* bad frame */
-  UNW_EINVAL        = -6547, /* unsupported operation or bad value */
-  UNW_EBADVERSION   = -6548, /* unwind info has unsupported version */
-  UNW_ENOINFO       = -6549  /* no unwind info found */
-#if defined(_LIBUNWIND_TARGET_AARCH64) && !defined(_LIBUNWIND_IS_NATIVE_ONLY)
-  , UNW_ECROSSRASIGNING = -6550 /* cross unwind with return address signing */
+  jllvm_UNW_ESUCCESS = 0,         /* no error */
+  jllvm_UNW_EUNSPEC = -6540,      /* unspecified (general) error */
+  jllvm_UNW_ENOMEM = -6541,       /* out of memory */
+  jllvm_UNW_EBADREG = -6542,      /* bad register number */
+  jllvm_UNW_EREADONLYREG = -6543, /* attempt to write read-only register */
+  jllvm_UNW_ESTOPUNWIND = -6544,  /* stop unwinding */
+  jllvm_UNW_EINVALIDIP = -6545,   /* invalid IP */
+  jllvm_UNW_EBADFRAME = -6546,    /* bad frame */
+  jllvm_UNW_EINVAL = -6547,       /* unsupported operation or bad value */
+  jllvm_UNW_EBADVERSION = -6548,  /* unwind info has unsupported version */
+  jllvm_UNW_ENOINFO = -6549       /* no unwind info found */
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64) && !defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
+  ,
+  jllvm_UNW_ECROSSRASIGNING =
+      -6550 /* cross unwind with return address signing */
 #endif
 };
 
-struct unw_context_t {
-  uint64_t data[_LIBUNWIND_CONTEXT_SIZE];
+struct jllvm_unw_context_t {
+  uint64_t data[JLLVM_LIBUNWIND_CONTEXT_SIZE];
 };
-typedef struct unw_context_t unw_context_t;
+typedef struct jllvm_unw_context_t jllvm_unw_context_t;
 
-struct unw_cursor_t {
-  uint64_t data[_LIBUNWIND_CURSOR_SIZE];
+struct jllvm_unw_cursor_t {
+  uint64_t data[JLLVM_LIBUNWIND_CURSOR_SIZE];
 } LIBUNWIND_CURSOR_ALIGNMENT_ATTR;
-typedef struct unw_cursor_t unw_cursor_t;
+typedef struct jllvm_unw_cursor_t jllvm_unw_cursor_t;
 
-typedef struct unw_addr_space *unw_addr_space_t;
+typedef struct jllvm_unw_addr_space *jllvm_unw_addr_space_t;
 
 typedef int unw_regnum_t;
 typedef uintptr_t unw_word_t;
@@ -87,7 +89,7 @@ typedef uint64_t unw_fpreg_t;
 typedef double unw_fpreg_t;
 #endif
 
-struct unw_proc_info_t {
+struct jllvm_unw_proc_info_t {
   unw_word_t  start_ip;         /* start address of function */
   unw_word_t  end_ip;           /* address after end of function */
   unw_word_t  lsda;             /* address of language specific data area, */
@@ -100,20 +102,25 @@ struct unw_proc_info_t {
   unw_word_t  unwind_info;      /* address of DWARF unwind info, or zero */
   unw_word_t  extra;            /* mach_header of mach-o image containing func */
 };
-typedef struct unw_proc_info_t unw_proc_info_t;
+typedef struct jllvm_unw_proc_info_t jllvm_unw_proc_info_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern int unw_getcontext(unw_context_t *) LIBUNWIND_AVAIL;
-extern int unw_init_local(unw_cursor_t *, unw_context_t *) LIBUNWIND_AVAIL;
-extern int unw_step(unw_cursor_t *) LIBUNWIND_AVAIL;
-extern int unw_get_reg(unw_cursor_t *, unw_regnum_t, unw_word_t *) LIBUNWIND_AVAIL;
-extern int unw_get_fpreg(unw_cursor_t *, unw_regnum_t, unw_fpreg_t *) LIBUNWIND_AVAIL;
-extern int unw_set_reg(unw_cursor_t *, unw_regnum_t, unw_word_t) LIBUNWIND_AVAIL;
-extern int unw_set_fpreg(unw_cursor_t *, unw_regnum_t, unw_fpreg_t)  LIBUNWIND_AVAIL;
-extern int unw_resume(unw_cursor_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_getcontext(jllvm_unw_context_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_init_local(jllvm_unw_cursor_t *,
+                                jllvm_unw_context_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_step(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_reg(jllvm_unw_cursor_t *, unw_regnum_t,
+                             unw_word_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_fpreg(jllvm_unw_cursor_t *, unw_regnum_t,
+                               unw_fpreg_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_set_reg(jllvm_unw_cursor_t *, unw_regnum_t,
+                             unw_word_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_set_fpreg(jllvm_unw_cursor_t *, unw_regnum_t,
+                               unw_fpreg_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_resume(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
 
 #ifdef __arm__
 /* Save VFP registers in FSTMX format (instead of FSTMD). */
@@ -124,14 +131,18 @@ extern void unw_save_vfp_as_X(unw_cursor_t *) LIBUNWIND_AVAIL;
 extern uintptr_t unw_get_data_rel_base(unw_cursor_t *) LIBUNWIND_AVAIL;
 #endif
 
-extern const char *unw_regname(unw_cursor_t *, unw_regnum_t) LIBUNWIND_AVAIL;
-extern int unw_get_proc_info(unw_cursor_t *, unw_proc_info_t *) LIBUNWIND_AVAIL;
-extern int unw_is_fpreg(unw_cursor_t *, unw_regnum_t) LIBUNWIND_AVAIL;
-extern int unw_is_signal_frame(unw_cursor_t *) LIBUNWIND_AVAIL;
-extern int unw_get_proc_name(unw_cursor_t *, char *, size_t, unw_word_t *) LIBUNWIND_AVAIL;
+extern const char *jllvm_unw_regname(jllvm_unw_cursor_t *,
+                                     unw_regnum_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_proc_info(jllvm_unw_cursor_t *,
+                                   jllvm_unw_proc_info_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_is_fpreg(jllvm_unw_cursor_t *,
+                              unw_regnum_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_is_signal_frame(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_proc_name(jllvm_unw_cursor_t *, char *, size_t,
+                                   unw_word_t *) LIBUNWIND_AVAIL;
 //extern int       unw_get_save_loc(unw_cursor_t*, int, unw_save_loc_t*);
 
-extern unw_addr_space_t unw_local_addr_space;
+extern jllvm_unw_addr_space_t jllvm_unw_local_addr_space;
 
 #ifdef __cplusplus
 }

@@ -58,7 +58,7 @@ __attribute__((noinline)) void foo() {
   // object. Ensure struct _Unwind_Exception* work there too,
   // because _Unwind_Exception in this case is just an alias.
   struct _Unwind_Exception *e = &ex;
-#if defined(_LIBUNWIND_ARM_EHABI)
+#if defined(JLLVM_LIBUNWIND_ARM_EHABI)
   // Create a mock exception object.
   memset(e, '\0', sizeof(*e));
   strcpy(reinterpret_cast<char *>(&e->exception_class), "CLNGUNW");

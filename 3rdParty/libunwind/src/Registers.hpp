@@ -17,9 +17,9 @@
 
 #include "cet_unwind.h"
 #include "config.h"
-#include "libunwind.h"
+#include "jllvm_libunwind.h"
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
 // For emulating 128-bit registers
 struct v128 { uint32_t vec[4]; };
@@ -43,7 +43,7 @@ enum {
   REGISTERS_LOONGARCH,
 };
 
-#if defined(_LIBUNWIND_TARGET_I386)
+#if defined(JLLVM_LIBUNWIND_TARGET_I386)
 class _LIBUNWIND_HIDDEN Registers_x86;
 extern "C" void __libunwind_Registers_x86_jumpto(Registers_x86 *);
 
@@ -72,7 +72,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto() { __libunwind_Registers_x86_jumpto(this); }
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_X86;
   }
   static int  getArch() { return REGISTERS_X86; }
 
@@ -258,14 +258,14 @@ inline v128 Registers_x86::getVectorRegister(int) const {
 inline void Registers_x86::setVectorRegister(int, v128) {
   _LIBUNWIND_ABORT("no x86 vector registers");
 }
-#endif // _LIBUNWIND_TARGET_I386
+#endif // JLLVM_LIBUNWIND_TARGET_I386
 
 
-#if defined(_LIBUNWIND_TARGET_X86_64)
+#if defined(JLLVM_LIBUNWIND_TARGET_X86_64)
 /// Registers_x86_64  holds the register state of a thread in a 64-bit intel
 /// process.
 class _LIBUNWIND_HIDDEN Registers_x86_64;
-extern "C" void __libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
+extern "C" void jllvm__libunwind_Registers_x86_64_jumpto(Registers_x86_64 *);
 
 #if defined(_LIBUNWIND_USE_CET)
 extern "C" void *__libunwind_cet_get_jump_target() {
@@ -288,9 +288,9 @@ public:
   v128        getVectorRegister(int num) const;
   void        setVectorRegister(int num, v128 value);
   static const char *getRegisterName(int num);
-  void        jumpto() { __libunwind_Registers_x86_64_jumpto(this); }
+  void        jumpto() { jllvm__libunwind_Registers_x86_64_jumpto(this); }
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64;
   }
   static int  getArch() { return REGISTERS_X86_64; }
 
@@ -345,7 +345,7 @@ private:
 };
 
 inline Registers_x86_64::Registers_x86_64(const void *registers) {
-  static_assert((check_fit<Registers_x86_64, unw_context_t>::does_fit),
+  static_assert((check_fit<Registers_x86_64, jllvm_unw_context_t>::does_fit),
                 "x86_64 registers do not fit into unw_context_t");
   memcpy(&_registers, registers, sizeof(_registers));
 }
@@ -586,10 +586,10 @@ inline void Registers_x86_64::setVectorRegister(int regNum, v128 value) {
   _LIBUNWIND_ABORT("no x86_64 vector registers");
 #endif
 }
-#endif // _LIBUNWIND_TARGET_X86_64
+#endif // JLLVM_LIBUNWIND_TARGET_X86_64
 
 
-#if defined(_LIBUNWIND_TARGET_PPC)
+#if defined(JLLVM_LIBUNWIND_TARGET_PPC)
 /// Registers_ppc holds the register state of a thread in a 32-bit PowerPC
 /// process.
 class _LIBUNWIND_HIDDEN Registers_ppc {
@@ -609,7 +609,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC;
   }
   static int  getArch() { return REGISTERS_PPC; }
 
@@ -1157,9 +1157,9 @@ inline const char *Registers_ppc::getRegisterName(int regNum) {
   }
 
 }
-#endif // _LIBUNWIND_TARGET_PPC
+#endif // JLLVM_LIBUNWIND_TARGET_PPC
 
-#if defined(_LIBUNWIND_TARGET_PPC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_PPC64)
 /// Registers_ppc64 holds the register state of a thread in a 64-bit PowerPC
 /// process.
 class _LIBUNWIND_HIDDEN Registers_ppc64 {
@@ -1179,7 +1179,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC64;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_PPC64;
   }
   static int  getArch() { return REGISTERS_PPC64; }
 
@@ -1803,10 +1803,10 @@ inline const char *Registers_ppc64::getRegisterName(int regNum) {
   }
   return "unknown register";
 }
-#endif // _LIBUNWIND_TARGET_PPC64
+#endif // JLLVM_LIBUNWIND_TARGET_PPC64
 
 
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
 /// Registers_arm64  holds the register state of a thread in a 64-bit arm
 /// process.
 class _LIBUNWIND_HIDDEN Registers_arm64;
@@ -1828,7 +1828,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto() { __libunwind_Registers_arm64_jumpto(this); }
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM64;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM64;
   }
   static int  getArch() { return REGISTERS_ARM64; }
 
@@ -2092,9 +2092,9 @@ inline v128 Registers_arm64::getVectorRegister(int) const {
 inline void Registers_arm64::setVectorRegister(int, v128) {
   _LIBUNWIND_ABORT("no arm64 vector register support yet");
 }
-#endif // _LIBUNWIND_TARGET_AARCH64
+#endif // JLLVM_LIBUNWIND_TARGET_AARCH64
 
-#if defined(_LIBUNWIND_TARGET_ARM)
+#if defined(JLLVM_LIBUNWIND_TARGET_ARM)
 /// Registers_arm holds the register state of a thread in a 32-bit arm
 /// process.
 ///
@@ -2120,7 +2120,7 @@ public:
     restoreCoreAndJumpTo();
   }
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_ARM;
   }
   static int  getArch() { return REGISTERS_ARM; }
 
@@ -2511,7 +2511,7 @@ inline const char *Registers_arm::getRegisterName(int regNum) {
 
 inline bool Registers_arm::validFloatRegister(int regNum) const {
   // NOTE: Consider the intel MMX registers floating points so the
-  // __unw_get_fpreg can be used to transmit the 64-bit data back.
+  // jllvm__unw_get_fpreg can be used to transmit the 64-bit data back.
   return ((regNum >= UNW_ARM_D0) && (regNum <= UNW_ARM_D31))
 #if defined(__ARM_WMMX)
       || ((regNum >= UNW_ARM_WR0) && (regNum <= UNW_ARM_WR15))
@@ -2599,10 +2599,10 @@ inline v128 Registers_arm::getVectorRegister(int) const {
 inline void Registers_arm::setVectorRegister(int, v128) {
   _LIBUNWIND_ABORT("ARM vector support not implemented");
 }
-#endif // _LIBUNWIND_TARGET_ARM
+#endif // JLLVM_LIBUNWIND_TARGET_ARM
 
 
-#if defined(_LIBUNWIND_TARGET_OR1K)
+#if defined(JLLVM_LIBUNWIND_TARGET_OR1K)
 /// Registers_or1k holds the register state of a thread in an OpenRISC1000
 /// process.
 class _LIBUNWIND_HIDDEN Registers_or1k {
@@ -2622,7 +2622,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_OR1K;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_OR1K;
   }
   static int  getArch() { return REGISTERS_OR1K; }
 
@@ -2799,9 +2799,9 @@ inline const char *Registers_or1k::getRegisterName(int regNum) {
   }
 
 }
-#endif // _LIBUNWIND_TARGET_OR1K
+#endif // JLLVM_LIBUNWIND_TARGET_OR1K
 
-#if defined(_LIBUNWIND_TARGET_MIPS_O32)
+#if defined(JLLVM_LIBUNWIND_TARGET_MIPS_O32)
 /// Registers_mips_o32 holds the register state of a thread in a 32-bit MIPS
 /// process.
 class _LIBUNWIND_HIDDEN Registers_mips_o32 {
@@ -2821,7 +2821,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
   }
   static int  getArch() { return REGISTERS_MIPS_O32; }
 
@@ -3134,9 +3134,9 @@ inline const char *Registers_mips_o32::getRegisterName(int regNum) {
     return "unknown register";
   }
 }
-#endif // _LIBUNWIND_TARGET_MIPS_O32
+#endif // JLLVM_LIBUNWIND_TARGET_MIPS_O32
 
-#if defined(_LIBUNWIND_TARGET_MIPS_NEWABI)
+#if defined(JLLVM_LIBUNWIND_TARGET_MIPS_NEWABI)
 /// Registers_mips_newabi holds the register state of a thread in a
 /// MIPS process using NEWABI (the N32 or N64 ABIs).
 class _LIBUNWIND_HIDDEN Registers_mips_newabi {
@@ -3156,7 +3156,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_MIPS;
   }
   static int  getArch() { return REGISTERS_MIPS_NEWABI; }
 
@@ -3437,9 +3437,9 @@ inline const char *Registers_mips_newabi::getRegisterName(int regNum) {
     return "unknown register";
   }
 }
-#endif // _LIBUNWIND_TARGET_MIPS_NEWABI
+#endif // JLLVM_LIBUNWIND_TARGET_MIPS_NEWABI
 
-#if defined(_LIBUNWIND_TARGET_SPARC)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC)
 /// Registers_sparc holds the register state of a thread in a 32-bit Sparc
 /// process.
 class _LIBUNWIND_HIDDEN Registers_sparc {
@@ -3459,7 +3459,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC;
   }
   static int  getArch() { return REGISTERS_SPARC; }
 
@@ -3623,9 +3623,9 @@ inline const char *Registers_sparc::getRegisterName(int regNum) {
     return "unknown register";
   }
 }
-#endif // _LIBUNWIND_TARGET_SPARC
+#endif // JLLVM_LIBUNWIND_TARGET_SPARC
 
-#if defined(_LIBUNWIND_TARGET_SPARC64)
+#if defined(JLLVM_LIBUNWIND_TARGET_SPARC64)
 /// Registers_sparc64 holds the register state of a thread in a 64-bit
 /// sparc process.
 class _LIBUNWIND_HIDDEN Registers_sparc64 {
@@ -3645,7 +3645,7 @@ public:
   const char *getRegisterName(int num);
   void jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC64;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_SPARC64;
   }
   static int getArch() { return REGISTERS_SPARC64; }
 
@@ -3808,9 +3808,9 @@ inline const char *Registers_sparc64::getRegisterName(int regNum) {
     return "unknown register";
   }
 }
-#endif // _LIBUNWIND_TARGET_SPARC64
+#endif // JLLVM_LIBUNWIND_TARGET_SPARC64
 
-#if defined(_LIBUNWIND_TARGET_HEXAGON)
+#if defined(JLLVM_LIBUNWIND_TARGET_HEXAGON)
 /// Registers_hexagon holds the register state of a thread in a Hexagon QDSP6
 /// process.
 class _LIBUNWIND_HIDDEN Registers_hexagon {
@@ -3830,7 +3830,7 @@ public:
   const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_HEXAGON;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_HEXAGON;
   }
   static int  getArch() { return REGISTERS_HEXAGON; }
 
@@ -3990,10 +3990,10 @@ inline const char *Registers_hexagon::getRegisterName(int regNum) {
   }
 
 }
-#endif // _LIBUNWIND_TARGET_HEXAGON
+#endif // JLLVM_LIBUNWIND_TARGET_HEXAGON
 
 
-#if defined(_LIBUNWIND_TARGET_RISCV)
+#if defined(JLLVM_LIBUNWIND_TARGET_RISCV)
 /// Registers_riscv holds the register state of a thread in a RISC-V
 /// process.
 
@@ -4045,7 +4045,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_RISCV;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_RISCV;
   }
   static int  getArch() { return REGISTERS_RISCV; }
 
@@ -4321,9 +4321,9 @@ inline v128 Registers_riscv::getVectorRegister(int) const {
 inline void Registers_riscv::setVectorRegister(int, v128) {
   _LIBUNWIND_ABORT("no riscv vector register support yet");
 }
-#endif // _LIBUNWIND_TARGET_RISCV
+#endif // JLLVM_LIBUNWIND_TARGET_RISCV
 
-#if defined(_LIBUNWIND_TARGET_VE)
+#if defined(JLLVM_LIBUNWIND_TARGET_VE)
 /// Registers_ve holds the register state of a thread in a VE process.
 class _LIBUNWIND_HIDDEN Registers_ve {
 public:
@@ -4342,7 +4342,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_VE;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_VE;
   }
   static int  getArch() { return REGISTERS_VE; }
 
@@ -4763,9 +4763,9 @@ inline const char *Registers_ve::getRegisterName(int regNum) {
   }
   return "unknown register";
 }
-#endif // _LIBUNWIND_TARGET_VE
+#endif // JLLVM_LIBUNWIND_TARGET_VE
 
-#if defined(_LIBUNWIND_TARGET_S390X)
+#if defined(JLLVM_LIBUNWIND_TARGET_S390X)
 /// Registers_s390x holds the register state of a thread in a
 /// 64-bit Linux on IBM zSystems process.
 class _LIBUNWIND_HIDDEN Registers_s390x {
@@ -4785,7 +4785,7 @@ public:
   static const char *getRegisterName(int num);
   void        jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_S390X;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_S390X;
   }
   static int  getArch() { return REGISTERS_S390X; }
 
@@ -5051,9 +5051,9 @@ inline const char *Registers_s390x::getRegisterName(int regNum) {
   }
   return "unknown register";
 }
-#endif // _LIBUNWIND_TARGET_S390X
+#endif // JLLVM_LIBUNWIND_TARGET_S390X
 
-#if defined(_LIBUNWIND_TARGET_LOONGARCH)
+#if defined(JLLVM_LIBUNWIND_TARGET_LOONGARCH)
 /// Registers_loongarch holds the register state of a thread in a 64-bit
 /// LoongArch process.
 class _LIBUNWIND_HIDDEN Registers_loongarch {
@@ -5073,7 +5073,7 @@ public:
   static const char *getRegisterName(int num);
   void jumpto();
   static constexpr int lastDwarfRegNum() {
-    return _LIBUNWIND_HIGHEST_DWARF_REGISTER_LOONGARCH;
+    return JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_LOONGARCH;
   }
   static int getArch() { return REGISTERS_LOONGARCH; }
 
@@ -5317,7 +5317,7 @@ inline v128 Registers_loongarch::getVectorRegister(int) const {
 inline void Registers_loongarch::setVectorRegister(int, v128) {
   _LIBUNWIND_ABORT("loongarch vector support not implemented");
 }
-#endif //_LIBUNWIND_TARGET_LOONGARCH
+#endif //JLLVM_LIBUNWIND_TARGET_LOONGARCH
 
 } // namespace libunwind
 

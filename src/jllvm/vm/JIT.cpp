@@ -147,8 +147,12 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
                         *m_session, llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderGDBWrapper))));
+    // Register unwind info in both our forked libunwind and the platform implementation.
     m_objectLayer.addPlugin(
         std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(*m_session, std::make_unique<EHRegistration>()));
+    m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
+        *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
+
     m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc));
     m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
 

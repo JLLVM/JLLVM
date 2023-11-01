@@ -27,11 +27,11 @@
 
 #include "cet_unwind.h"
 #include "config.h"
-#include "libunwind.h"
+#include "jllvm_libunwind.h"
+#include "jllvm_unwind.h"
 #include "libunwind_ext.h"
-#include "unwind.h"
 
-#if !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
+#if !defined(JLLVM_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
 
 #ifndef _LIBUNWIND_SUPPORT_SEH_UNWIND
 
@@ -47,9 +47,9 @@
 #define __unw_phase2_resume(cursor, fn)                                        \
   do {                                                                         \
     (void)fn;                                                                  \
-    __unw_resume((cursor));                                                    \
+    jllvm__unw_resume((cursor));                                               \
   } while (0)
-#elif defined(_LIBUNWIND_TARGET_I386)
+#elif defined(JLLVM_LIBUNWIND_TARGET_I386)
 #define __cet_ss_step_size 4
 #define __unw_phase2_resume(cursor, fn)                                        \
   do {                                                                         \
@@ -61,7 +61,7 @@
                      "jmp *%%edx\n\t" :: "D"(cetRegContext),                   \
                      "d"(cetJumpAddress));                                     \
   } while (0)
-#elif defined(_LIBUNWIND_TARGET_X86_64)
+#elif defined(JLLVM_LIBUNWIND_TARGET_X86_64)
 #define __cet_ss_step_size 8
 #define __unw_phase2_resume(cursor, fn)                                        \
   do {                                                                         \
@@ -73,38 +73,39 @@
   } while (0)
 #endif
 
-static _Unwind_Reason_Code
-unwind_phase1(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *exception_object) {
-  __unw_init_local(cursor, uc);
+static jllvm_Unwind_Reason_Code
+unwind_phase1(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
+              jllvm_Unwind_Exception *exception_object) {
+  jllvm__unw_init_local(cursor, uc);
 
   // Walk each frame looking for a place to stop.
   while (true) {
     // Ask libunwind to get next frame (skip over first which is
     // _Unwind_RaiseException).
-    int stepResult = __unw_step(cursor);
+    int stepResult = jllvm__unw_step(cursor);
     if (stepResult == 0) {
       _LIBUNWIND_TRACE_UNWINDING(
-          "unwind_phase1(ex_obj=%p): __unw_step() reached "
+          "unwind_phase1(ex_obj=%p): jllvm__unw_step() reached "
           "bottom => _URC_END_OF_STACK",
           (void *)exception_object);
-      return _URC_END_OF_STACK;
+      return jllvm_URC_END_OF_STACK;
     } else if (stepResult < 0) {
       _LIBUNWIND_TRACE_UNWINDING(
-          "unwind_phase1(ex_obj=%p): __unw_step failed => "
+          "unwind_phase1(ex_obj=%p): jllvm__unw_step failed => "
           "_URC_FATAL_PHASE1_ERROR",
           (void *)exception_object);
-      return _URC_FATAL_PHASE1_ERROR;
+      return jllvm_URC_FATAL_PHASE1_ERROR;
     }
 
     // See if frame has code to run (has personality routine).
-    unw_proc_info_t frameInfo;
+    jllvm_unw_proc_info_t frameInfo;
     unw_word_t sp;
-    if (__unw_get_proc_info(cursor, &frameInfo) != UNW_ESUCCESS) {
+    if (jllvm__unw_get_proc_info(cursor, &frameInfo) != jllvm_UNW_ESUCCESS) {
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase1(ex_obj=%p): __unw_get_proc_info "
           "failed => _URC_FATAL_PHASE1_ERROR",
           (void *)exception_object);
-      return _URC_FATAL_PHASE1_ERROR;
+      return jllvm_URC_FATAL_PHASE1_ERROR;
     }
 
 #ifndef NDEBUG
@@ -113,12 +114,12 @@ unwind_phase1(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
       unw_word_t pc;
-      __unw_get_reg(cursor, UNW_REG_IP, &pc);
+      jllvm__unw_get_reg(cursor, UNW_REG_IP, &pc);
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase1(ex_obj=%p): pc=0x%" PRIxPTR ", start_ip=0x%" PRIxPTR
           ", func=%s, lsda=0x%" PRIxPTR ", personality=0x%" PRIxPTR "",
@@ -130,26 +131,26 @@ unwind_phase1(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
     // If there is a personality routine, ask it if it will want to stop at
     // this frame.
     if (frameInfo.handler != 0) {
-      _Unwind_Personality_Fn p =
-          (_Unwind_Personality_Fn)(uintptr_t)(frameInfo.handler);
+      jllvm_Unwind_Personality_Fn p =
+          (jllvm_Unwind_Personality_Fn)(uintptr_t)(frameInfo.handler);
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase1(ex_obj=%p): calling personality function %p",
           (void *)exception_object, (void *)(uintptr_t)p);
-      _Unwind_Reason_Code personalityResult =
-          (*p)(1, _UA_SEARCH_PHASE, exception_object->exception_class,
-               exception_object, (struct _Unwind_Context *)(cursor));
+      jllvm_Unwind_Reason_Code personalityResult =
+          (*p)(1, jllvm_UA_SEARCH_PHASE, exception_object->exception_class,
+               exception_object, (struct jllvm_Unwind_Context *)(cursor));
       switch (personalityResult) {
-      case _URC_HANDLER_FOUND:
+      case jllvm_URC_HANDLER_FOUND:
         // found a catch clause or locals that need destructing in this frame
         // stop search and remember stack pointer at the frame
-        __unw_get_reg(cursor, UNW_REG_SP, &sp);
+        jllvm__unw_get_reg(cursor, UNW_REG_SP, &sp);
         exception_object->private_2 = (uintptr_t)sp;
         _LIBUNWIND_TRACE_UNWINDING(
             "unwind_phase1(ex_obj=%p): _URC_HANDLER_FOUND",
             (void *)exception_object);
-        return _URC_NO_REASON;
+        return jllvm_URC_NO_REASON;
 
-      case _URC_CONTINUE_UNWIND:
+      case jllvm_URC_CONTINUE_UNWIND:
         _LIBUNWIND_TRACE_UNWINDING(
             "unwind_phase1(ex_obj=%p): _URC_CONTINUE_UNWIND",
             (void *)exception_object);
@@ -161,17 +162,18 @@ unwind_phase1(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
         _LIBUNWIND_TRACE_UNWINDING(
             "unwind_phase1(ex_obj=%p): _URC_FATAL_PHASE1_ERROR",
             (void *)exception_object);
-        return _URC_FATAL_PHASE1_ERROR;
+        return jllvm_URC_FATAL_PHASE1_ERROR;
       }
     }
   }
-  return _URC_NO_REASON;
+  return jllvm_URC_NO_REASON;
 }
-extern int __unw_step_stage2(unw_cursor_t *);
+extern int __unw_step_stage2(jllvm_unw_cursor_t *);
 
-static _Unwind_Reason_Code
-unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *exception_object) {
-  __unw_init_local(cursor, uc);
+static jllvm_Unwind_Reason_Code
+unwind_phase2(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
+              jllvm_Unwind_Exception *exception_object) {
+  jllvm__unw_init_local(cursor, uc);
 
   _LIBUNWIND_TRACE_UNWINDING("unwind_phase2(ex_obj=%p)",
                              (void *)exception_object);
@@ -193,25 +195,25 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
           "unwind_phase2(ex_obj=%p): __unw_step_stage2() reached "
           "bottom => _URC_END_OF_STACK",
           (void *)exception_object);
-      return _URC_END_OF_STACK;
+      return jllvm_URC_END_OF_STACK;
     } else if (stepResult < 0) {
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase2(ex_obj=%p): __unw_step_stage2 failed => "
           "_URC_FATAL_PHASE1_ERROR",
           (void *)exception_object);
-      return _URC_FATAL_PHASE2_ERROR;
+      return jllvm_URC_FATAL_PHASE2_ERROR;
     }
 
     // Get info about this frame.
     unw_word_t sp;
-    unw_proc_info_t frameInfo;
-    __unw_get_reg(cursor, UNW_REG_SP, &sp);
-    if (__unw_get_proc_info(cursor, &frameInfo) != UNW_ESUCCESS) {
+    jllvm_unw_proc_info_t frameInfo;
+    jllvm__unw_get_reg(cursor, UNW_REG_SP, &sp);
+    if (jllvm__unw_get_proc_info(cursor, &frameInfo) != jllvm_UNW_ESUCCESS) {
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase2(ex_obj=%p): __unw_get_proc_info "
           "failed => _URC_FATAL_PHASE1_ERROR",
           (void *)exception_object);
-      return _URC_FATAL_PHASE2_ERROR;
+      return jllvm_URC_FATAL_PHASE2_ERROR;
     }
 
 #ifndef NDEBUG
@@ -220,16 +222,16 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
-      _LIBUNWIND_TRACE_UNWINDING("unwind_phase2(ex_obj=%p): start_ip=0x%" PRIxPTR
-                                 ", func=%s, sp=0x%" PRIxPTR ", lsda=0x%" PRIxPTR
-                                 ", personality=0x%" PRIxPTR,
-                                 (void *)exception_object, frameInfo.start_ip,
-                                 functionName, sp, frameInfo.lsda,
-                                 frameInfo.handler);
+      _LIBUNWIND_TRACE_UNWINDING(
+          "unwind_phase2(ex_obj=%p): start_ip=0x%" PRIxPTR
+          ", func=%s, sp=0x%" PRIxPTR ", lsda=0x%" PRIxPTR
+          ", personality=0x%" PRIxPTR,
+          (void *)exception_object, frameInfo.start_ip, functionName, sp,
+          frameInfo.lsda, frameInfo.handler);
     }
 #endif
 
@@ -250,18 +252,19 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
     ++framesWalked;
     // If there is a personality routine, tell it we are unwinding.
     if (frameInfo.handler != 0) {
-      _Unwind_Personality_Fn p =
-          (_Unwind_Personality_Fn)(uintptr_t)(frameInfo.handler);
-      _Unwind_Action action = _UA_CLEANUP_PHASE;
+      jllvm_Unwind_Personality_Fn p =
+          (jllvm_Unwind_Personality_Fn)(uintptr_t)(frameInfo.handler);
+      jllvm_Unwind_Action action = jllvm_UA_CLEANUP_PHASE;
       if (sp == exception_object->private_2) {
         // Tell personality this was the frame it marked in phase 1.
-        action = (_Unwind_Action)(_UA_CLEANUP_PHASE | _UA_HANDLER_FRAME);
+        action = (jllvm_Unwind_Action)(jllvm_UA_CLEANUP_PHASE |
+                                       jllvm_UA_HANDLER_FRAME);
       }
-       _Unwind_Reason_Code personalityResult =
+      jllvm_Unwind_Reason_Code personalityResult =
           (*p)(1, action, exception_object->exception_class, exception_object,
-               (struct _Unwind_Context *)(cursor));
+               (struct jllvm_Unwind_Context *)(cursor));
       switch (personalityResult) {
-      case _URC_CONTINUE_UNWIND:
+      case jllvm_URC_CONTINUE_UNWIND:
         // Continue unwinding
         _LIBUNWIND_TRACE_UNWINDING(
             "unwind_phase2(ex_obj=%p): _URC_CONTINUE_UNWIND",
@@ -272,7 +275,7 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
                            "stop here, but now in phase2 it did not stop here");
         }
         break;
-      case _URC_INSTALL_CONTEXT:
+      case jllvm_URC_INSTALL_CONTEXT:
         _LIBUNWIND_TRACE_UNWINDING(
             "unwind_phase2(ex_obj=%p): _URC_INSTALL_CONTEXT",
             (void *)exception_object);
@@ -280,8 +283,8 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
         // We may get control back if landing pad calls _Unwind_Resume().
         if (_LIBUNWIND_TRACING_UNWINDING) {
           unw_word_t pc;
-          __unw_get_reg(cursor, UNW_REG_IP, &pc);
-          __unw_get_reg(cursor, UNW_REG_SP, &sp);
+          jllvm__unw_get_reg(cursor, UNW_REG_IP, &pc);
+          jllvm__unw_get_reg(cursor, UNW_REG_SP, &sp);
           _LIBUNWIND_TRACE_UNWINDING("unwind_phase2(ex_obj=%p): re-entering "
                                      "user code with ip=0x%" PRIxPTR
                                      ", sp=0x%" PRIxPTR,
@@ -290,26 +293,26 @@ unwind_phase2(unw_context_t *uc, unw_cursor_t *cursor, _Unwind_Exception *except
 
         __unw_phase2_resume(cursor, framesWalked);
         // __unw_phase2_resume() only returns if there was an error.
-        return _URC_FATAL_PHASE2_ERROR;
+        return jllvm_URC_FATAL_PHASE2_ERROR;
       default:
         // Personality routine returned an unknown result code.
         _LIBUNWIND_DEBUG_LOG("personality function returned unknown result %d",
                              personalityResult);
-        return _URC_FATAL_PHASE2_ERROR;
+        return jllvm_URC_FATAL_PHASE2_ERROR;
       }
     }
   }
 
   // Clean up phase did not resume at the frame that the search phase
   // said it would...
-  return _URC_FATAL_PHASE2_ERROR;
+  return jllvm_URC_FATAL_PHASE2_ERROR;
 }
 
-static _Unwind_Reason_Code
-unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
-                     _Unwind_Exception *exception_object,
-                     _Unwind_Stop_Fn stop, void *stop_parameter) {
-  __unw_init_local(cursor, uc);
+static jllvm_Unwind_Reason_Code
+unwind_phase2_forced(jllvm_unw_context_t *uc, jllvm_unw_cursor_t *cursor,
+                     jllvm_Unwind_Exception *exception_object,
+                     jllvm_Unwind_Stop_Fn stop, void *stop_parameter) {
+  jllvm__unw_init_local(cursor, uc);
 
   // uc is initialized by __unw_getcontext in the parent frame. The first stack
   // frame walked is unwind_phase2_forced.
@@ -318,13 +321,13 @@ unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
   while (__unw_step_stage2(cursor) > 0) {
 
     // Update info about this frame.
-    unw_proc_info_t frameInfo;
-    if (__unw_get_proc_info(cursor, &frameInfo) != UNW_ESUCCESS) {
+    jllvm_unw_proc_info_t frameInfo;
+    if (jllvm__unw_get_proc_info(cursor, &frameInfo) != jllvm_UNW_ESUCCESS) {
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase2_forced(ex_obj=%p): __unw_get_proc_info "
           "failed => _URC_END_OF_STACK",
           (void *)exception_object);
-      return _URC_FATAL_PHASE2_ERROR;
+      return jllvm_URC_FATAL_PHASE2_ERROR;
     }
 
 #ifndef NDEBUG
@@ -333,8 +336,8 @@ unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
       char functionBuf[512];
       const char *functionName = functionBuf;
       unw_word_t offset;
-      if ((__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
-                               &offset) != UNW_ESUCCESS) ||
+      if ((jllvm__unw_get_proc_name(cursor, functionBuf, sizeof(functionBuf),
+                                    &offset) != jllvm_UNW_ESUCCESS) ||
           (frameInfo.start_ip + offset > frameInfo.end_ip))
         functionName = ".anonymous.";
       _LIBUNWIND_TRACE_UNWINDING(
@@ -346,41 +349,41 @@ unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
 #endif
 
     // Call stop function at each frame.
-    _Unwind_Action action =
-        (_Unwind_Action)(_UA_FORCE_UNWIND | _UA_CLEANUP_PHASE);
-    _Unwind_Reason_Code stopResult =
+    jllvm_Unwind_Action action =
+        (jllvm_Unwind_Action)(jllvm_UA_FORCE_UNWIND | jllvm_UA_CLEANUP_PHASE);
+    jllvm_Unwind_Reason_Code stopResult =
         (*stop)(1, action, exception_object->exception_class, exception_object,
-                (struct _Unwind_Context *)(cursor), stop_parameter);
+                (struct jllvm_Unwind_Context *)(cursor), stop_parameter);
     _LIBUNWIND_TRACE_UNWINDING(
         "unwind_phase2_forced(ex_obj=%p): stop function returned %d",
         (void *)exception_object, stopResult);
-    if (stopResult != _URC_NO_REASON) {
+    if (stopResult != jllvm_URC_NO_REASON) {
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase2_forced(ex_obj=%p): stopped by stop function",
           (void *)exception_object);
-      return _URC_FATAL_PHASE2_ERROR;
+      return jllvm_URC_FATAL_PHASE2_ERROR;
     }
 
     ++framesWalked;
     // If there is a personality routine, tell it we are unwinding.
     if (frameInfo.handler != 0) {
-      _Unwind_Personality_Fn p =
-          (_Unwind_Personality_Fn)(intptr_t)(frameInfo.handler);
+      jllvm_Unwind_Personality_Fn p =
+          (jllvm_Unwind_Personality_Fn)(intptr_t)(frameInfo.handler);
       _LIBUNWIND_TRACE_UNWINDING(
           "unwind_phase2_forced(ex_obj=%p): calling personality function %p",
           (void *)exception_object, (void *)(uintptr_t)p);
-      _Unwind_Reason_Code personalityResult =
+      jllvm_Unwind_Reason_Code personalityResult =
           (*p)(1, action, exception_object->exception_class, exception_object,
-               (struct _Unwind_Context *)(cursor));
+               (struct jllvm_Unwind_Context *)(cursor));
       switch (personalityResult) {
-      case _URC_CONTINUE_UNWIND:
+      case jllvm_URC_CONTINUE_UNWIND:
         _LIBUNWIND_TRACE_UNWINDING("unwind_phase2_forced(ex_obj=%p): "
                                    "personality returned "
                                    "_URC_CONTINUE_UNWIND",
                                    (void *)exception_object);
         // Destructors called, continue unwinding
         break;
-      case _URC_INSTALL_CONTEXT:
+      case jllvm_URC_INSTALL_CONTEXT:
         _LIBUNWIND_TRACE_UNWINDING("unwind_phase2_forced(ex_obj=%p): "
                                    "personality returned "
                                    "_URC_INSTALL_CONTEXT",
@@ -394,7 +397,7 @@ unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
                                    "personality returned %d, "
                                    "_URC_FATAL_PHASE2_ERROR",
                                    (void *)exception_object, personalityResult);
-        return _URC_FATAL_PHASE2_ERROR;
+        return jllvm_URC_FATAL_PHASE2_ERROR;
       }
     }
   }
@@ -404,25 +407,26 @@ unwind_phase2_forced(unw_context_t *uc, unw_cursor_t *cursor,
   _LIBUNWIND_TRACE_UNWINDING("unwind_phase2_forced(ex_obj=%p): calling stop "
                              "function with _UA_END_OF_STACK",
                              (void *)exception_object);
-  _Unwind_Action lastAction =
-      (_Unwind_Action)(_UA_FORCE_UNWIND | _UA_CLEANUP_PHASE | _UA_END_OF_STACK);
+  jllvm_Unwind_Action lastAction =
+      (jllvm_Unwind_Action)(jllvm_UA_FORCE_UNWIND | jllvm_UA_CLEANUP_PHASE |
+                            jllvm_UA_END_OF_STACK);
   (*stop)(1, lastAction, exception_object->exception_class, exception_object,
-          (struct _Unwind_Context *)(cursor), stop_parameter);
+          (struct jllvm_Unwind_Context *)(cursor), stop_parameter);
 
   // Clean up phase did not resume at the frame that the search phase said it
   // would.
-  return _URC_FATAL_PHASE2_ERROR;
+  return jllvm_URC_FATAL_PHASE2_ERROR;
 }
 
 
 /// Called by __cxa_throw.  Only returns if there is a fatal error.
-_LIBUNWIND_EXPORT _Unwind_Reason_Code
-_Unwind_RaiseException(_Unwind_Exception *exception_object) {
+_LIBUNWIND_EXPORT jllvm_Unwind_Reason_Code
+jllvm_Unwind_RaiseException(jllvm_Unwind_Exception *exception_object) {
   _LIBUNWIND_TRACE_API("_Unwind_RaiseException(ex_obj=%p)",
                        (void *)exception_object);
-  unw_context_t uc;
-  unw_cursor_t cursor;
-  __unw_getcontext(&uc);
+  jllvm_unw_context_t uc;
+  jllvm_unw_cursor_t cursor;
+  jllvm__unw_getcontext(&uc);
 
   // Mark that this is a non-forced unwind, so _Unwind_Resume()
   // can do the right thing.
@@ -430,8 +434,9 @@ _Unwind_RaiseException(_Unwind_Exception *exception_object) {
   exception_object->private_2 = 0;
 
   // phase 1: the search phase
-  _Unwind_Reason_Code phase1 = unwind_phase1(&uc, &cursor, exception_object);
-  if (phase1 != _URC_NO_REASON)
+  jllvm_Unwind_Reason_Code phase1 =
+      unwind_phase1(&uc, &cursor, exception_object);
+  if (phase1 != jllvm_URC_NO_REASON)
     return phase1;
 
   // phase 2: the clean up phase
@@ -443,30 +448,31 @@ _Unwind_RaiseException(_Unwind_Exception *exception_object) {
 /// When _Unwind_RaiseException() is in phase2, it hands control
 /// to the personality function at each frame.  The personality
 /// may force a jump to a landing pad in that function, the landing
-/// pad code may then call _Unwind_Resume() to continue with the
-/// unwinding.  Note: the call to _Unwind_Resume() is from compiler
+/// pad code may then call jllvm_Unwind_Resume() to continue with the
+/// unwinding.  Note: the call to jllvm_Unwind_Resume() is from compiler
 /// generated user code.  All other _Unwind_* routines are called
 /// by the C++ runtime __cxa_* routines.
 ///
 /// Note: re-throwing an exception (as opposed to continuing the unwind)
 /// is implemented by having the code call __cxa_rethrow() which
-/// in turn calls _Unwind_Resume_or_Rethrow().
+/// in turn calls jllvm_Unwind_Resume_or_Rethrow().
 _LIBUNWIND_EXPORT void
-_Unwind_Resume(_Unwind_Exception *exception_object) {
-  _LIBUNWIND_TRACE_API("_Unwind_Resume(ex_obj=%p)", (void *)exception_object);
-  unw_context_t uc;
-  unw_cursor_t cursor;
-  __unw_getcontext(&uc);
+jllvm_Unwind_Resume(jllvm_Unwind_Exception *exception_object) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_Resume(ex_obj=%p)",
+                       (void *)exception_object);
+  jllvm_unw_context_t uc;
+  jllvm_unw_cursor_t cursor;
+  jllvm__unw_getcontext(&uc);
 
   if (exception_object->private_1 != 0)
     unwind_phase2_forced(&uc, &cursor, exception_object,
-                         (_Unwind_Stop_Fn) exception_object->private_1,
+                         (jllvm_Unwind_Stop_Fn)exception_object->private_1,
                          (void *)exception_object->private_2);
   else
     unwind_phase2(&uc, &cursor, exception_object);
 
   // Clients assume _Unwind_Resume() does not return, so all we can do is abort.
-  _LIBUNWIND_ABORT("_Unwind_Resume() can't return");
+  _LIBUNWIND_ABORT("jllvm_Unwind_Resume() can't return");
 }
 
 
@@ -474,14 +480,14 @@ _Unwind_Resume(_Unwind_Exception *exception_object) {
 /// Not used by C++.
 /// Unwinds stack, calling "stop" function at each frame.
 /// Could be used to implement longjmp().
-_LIBUNWIND_EXPORT _Unwind_Reason_Code
-_Unwind_ForcedUnwind(_Unwind_Exception *exception_object,
-                     _Unwind_Stop_Fn stop, void *stop_parameter) {
-  _LIBUNWIND_TRACE_API("_Unwind_ForcedUnwind(ex_obj=%p, stop=%p)",
+_LIBUNWIND_EXPORT jllvm_Unwind_Reason_Code
+jllvm_Unwind_ForcedUnwind(jllvm_Unwind_Exception *exception_object,
+                          jllvm_Unwind_Stop_Fn stop, void *stop_parameter) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_ForcedUnwind(ex_obj=%p, stop=%p)",
                        (void *)exception_object, (void *)(uintptr_t)stop);
-  unw_context_t uc;
-  unw_cursor_t cursor;
-  __unw_getcontext(&uc);
+  jllvm_unw_context_t uc;
+  jllvm_unw_cursor_t cursor;
+  jllvm__unw_getcontext(&uc);
 
   // Mark that this is a forced unwind, so _Unwind_Resume() can do
   // the right thing.
@@ -495,14 +501,14 @@ _Unwind_ForcedUnwind(_Unwind_Exception *exception_object,
 
 /// Called by personality handler during phase 2 to get LSDA for current frame.
 _LIBUNWIND_EXPORT uintptr_t
-_Unwind_GetLanguageSpecificData(struct _Unwind_Context *context) {
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
-  unw_proc_info_t frameInfo;
+jllvm_Unwind_GetLanguageSpecificData(struct jllvm_Unwind_Context *context) {
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
+  jllvm_unw_proc_info_t frameInfo;
   uintptr_t result = 0;
-  if (__unw_get_proc_info(cursor, &frameInfo) == UNW_ESUCCESS)
+  if (jllvm__unw_get_proc_info(cursor, &frameInfo) == jllvm_UNW_ESUCCESS)
     result = (uintptr_t)frameInfo.lsda;
   _LIBUNWIND_TRACE_API(
-      "_Unwind_GetLanguageSpecificData(context=%p) => 0x%" PRIxPTR,
+      "jllvm_Unwind_GetLanguageSpecificData(context=%p) => 0x%" PRIxPTR,
       (void *)context, result);
 #if !defined(_LIBUNWIND_SUPPORT_TBTAB_UNWIND)
   if (result != 0) {
@@ -518,13 +524,13 @@ _Unwind_GetLanguageSpecificData(struct _Unwind_Context *context) {
 /// Called by personality handler during phase 2 to find the start of the
 /// function.
 _LIBUNWIND_EXPORT uintptr_t
-_Unwind_GetRegionStart(struct _Unwind_Context *context) {
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
-  unw_proc_info_t frameInfo;
+jllvm_Unwind_GetRegionStart(struct jllvm_Unwind_Context *context) {
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
+  jllvm_unw_proc_info_t frameInfo;
   uintptr_t result = 0;
-  if (__unw_get_proc_info(cursor, &frameInfo) == UNW_ESUCCESS)
+  if (jllvm__unw_get_proc_info(cursor, &frameInfo) == jllvm_UNW_ESUCCESS)
     result = (uintptr_t)frameInfo.start_ip;
-  _LIBUNWIND_TRACE_API("_Unwind_GetRegionStart(context=%p) => 0x%" PRIxPTR,
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetRegionStart(context=%p) => 0x%" PRIxPTR,
                        (void *)context, result);
   return result;
 }
@@ -534,54 +540,55 @@ _Unwind_GetRegionStart(struct _Unwind_Context *context) {
 /// Called by personality handler during phase 2 if a foreign exception
 // is caught.
 _LIBUNWIND_EXPORT void
-_Unwind_DeleteException(_Unwind_Exception *exception_object) {
-  _LIBUNWIND_TRACE_API("_Unwind_DeleteException(ex_obj=%p)",
+jllvm_Unwind_DeleteException(jllvm_Unwind_Exception *exception_object) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_DeleteException(ex_obj=%p)",
                        (void *)exception_object);
   if (exception_object->exception_cleanup != NULL)
-    (*exception_object->exception_cleanup)(_URC_FOREIGN_EXCEPTION_CAUGHT,
+    (*exception_object->exception_cleanup)(jllvm_URC_FOREIGN_EXCEPTION_CAUGHT,
                                            exception_object);
 }
 
 /// Called by personality handler during phase 2 to get register values.
 _LIBUNWIND_EXPORT uintptr_t
-_Unwind_GetGR(struct _Unwind_Context *context, int index) {
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
+jllvm_Unwind_GetGR(struct jllvm_Unwind_Context *context, int index) {
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
   unw_word_t result;
-  __unw_get_reg(cursor, index, &result);
-  _LIBUNWIND_TRACE_API("_Unwind_GetGR(context=%p, reg=%d) => 0x%" PRIxPTR,
+  jllvm__unw_get_reg(cursor, index, &result);
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetGR(context=%p, reg=%d) => 0x%" PRIxPTR,
                        (void *)context, index, result);
   return (uintptr_t)result;
 }
 
 /// Called by personality handler during phase 2 to alter register values.
-_LIBUNWIND_EXPORT void _Unwind_SetGR(struct _Unwind_Context *context, int index,
-                                     uintptr_t value) {
-  _LIBUNWIND_TRACE_API("_Unwind_SetGR(context=%p, reg=%d, value=0x%0" PRIxPTR
-                       ")",
-                       (void *)context, index, value);
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
-  __unw_set_reg(cursor, index, value);
+_LIBUNWIND_EXPORT void jllvm_Unwind_SetGR(struct jllvm_Unwind_Context *context,
+                                          int index, uintptr_t new_value) {
+  _LIBUNWIND_TRACE_API(
+      "jllvm_Unwind_SetGR(context=%p, reg=%d, value=0x%0" PRIxPTR ")",
+      (void *)context, index, new_value);
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
+  jllvm__unw_set_reg(cursor, index, new_value);
 }
 
 /// Called by personality handler during phase 2 to get instruction pointer.
-_LIBUNWIND_EXPORT uintptr_t _Unwind_GetIP(struct _Unwind_Context *context) {
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
+_LIBUNWIND_EXPORT uintptr_t
+jllvm_Unwind_GetIP(struct jllvm_Unwind_Context *context) {
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
   unw_word_t result;
-  __unw_get_reg(cursor, UNW_REG_IP, &result);
-  _LIBUNWIND_TRACE_API("_Unwind_GetIP(context=%p) => 0x%" PRIxPTR,
+  jllvm__unw_get_reg(cursor, UNW_REG_IP, &result);
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_GetIP(context=%p) => 0x%" PRIxPTR,
                        (void *)context, result);
   return (uintptr_t)result;
 }
 
 /// Called by personality handler during phase 2 to alter instruction pointer,
-/// such as setting where the landing pad is, so _Unwind_Resume() will
+/// such as setting where the landing pad is, so jllvm_Unwind_Resume() will
 /// start executing in the landing pad.
-_LIBUNWIND_EXPORT void _Unwind_SetIP(struct _Unwind_Context *context,
-                                     uintptr_t value) {
-  _LIBUNWIND_TRACE_API("_Unwind_SetIP(context=%p, value=0x%0" PRIxPTR ")",
-                       (void *)context, value);
-  unw_cursor_t *cursor = (unw_cursor_t *)context;
-  __unw_set_reg(cursor, UNW_REG_IP, value);
+_LIBUNWIND_EXPORT void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *context,
+                                          uintptr_t new_value) {
+  _LIBUNWIND_TRACE_API("jllvm_Unwind_SetIP(context=%p, value=0x%0" PRIxPTR ")",
+                       (void *)context, new_value);
+  jllvm_unw_cursor_t *cursor = (jllvm_unw_cursor_t *)context;
+  jllvm__unw_set_reg(cursor, UNW_REG_IP, new_value);
 }
 
-#endif // !defined(_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)
+#endif // !defined(JLLVM_LIBUNWIND_ARM_EHABI) && !defined(__USING_SJLJ_EXCEPTIONS__)

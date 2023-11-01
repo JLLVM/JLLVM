@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __ARM_EHABI_UNWIND_H__
-#define __ARM_EHABI_UNWIND_H__
+#ifndef JLLVM__ARM_EHABI_UNWIND_H__
+#define JLLVM__ARM_EHABI_UNWIND_H__
 
 typedef uint32_t _Unwind_State;
 
@@ -27,10 +27,10 @@ typedef uint32_t _Unwind_EHT_Header;
 struct _Unwind_Control_Block;
 typedef struct _Unwind_Control_Block _Unwind_Control_Block;
 #define _Unwind_Exception _Unwind_Control_Block /* Alias */
-typedef uint8_t _Unwind_Exception_Class[8];
+typedef uint8_t jllvm_Unwind_Exception_Class[8];
 
 struct _Unwind_Control_Block {
-  _Unwind_Exception_Class exception_class;
+  jllvm_Unwind_Exception_Class exception_class;
   void (*exception_cleanup)(_Unwind_Reason_Code, _Unwind_Control_Block*);
 
   /* Unwinder cache, private fields for the unwinder's use */
@@ -64,7 +64,7 @@ struct _Unwind_Control_Block {
   long long int :0; /* Enforce the 8-byte alignment */
 } __attribute__((__aligned__(8)));
 
-typedef _Unwind_Reason_Code (*_Unwind_Personality_Fn)(
+typedef _Unwind_Reason_Code (*jllvm_Unwind_Personality_Fn)(
     _Unwind_State state, _Unwind_Exception *exceptionObject,
     struct _Unwind_Context *context);
 
@@ -139,32 +139,32 @@ _Unwind_VRS_Pop(_Unwind_Context *context, _Unwind_VRS_RegClass regclass,
 // link error when we are linking the program with libgcc.
 
 _LIBUNWIND_EXPORT_UNWIND_LEVEL1
-uintptr_t _Unwind_GetGR(struct _Unwind_Context *context, int index) {
+uintptr_t jllvm_Unwind_GetGR(struct jllvm_Unwind_Context *context, int index) {
   uintptr_t value = 0;
   _Unwind_VRS_Get(context, _UVRSC_CORE, (uint32_t)index, _UVRSD_UINT32, &value);
   return value;
 }
 
 _LIBUNWIND_EXPORT_UNWIND_LEVEL1
-void _Unwind_SetGR(struct _Unwind_Context *context, int index,
-                   uintptr_t value) {
-  _Unwind_VRS_Set(context, _UVRSC_CORE, (uint32_t)index, _UVRSD_UINT32, &value);
+void jllvm_Unwind_SetGR(struct jllvm_Unwind_Context *context, int index,
+                   uintptr_t new_value) {
+  _Unwind_VRS_Set(context, _UVRSC_CORE, (uint32_t)index, _UVRSD_UINT32, &new_value);
 }
 
 _LIBUNWIND_EXPORT_UNWIND_LEVEL1
-uintptr_t _Unwind_GetIP(struct _Unwind_Context *context) {
+uintptr_t jllvm_Unwind_GetIP(struct jllvm_Unwind_Context *context) {
   // remove the thumb-bit before returning
-  return _Unwind_GetGR(context, 15) & (~(uintptr_t)0x1);
+  return jllvm_Unwind_GetGR(context, 15) & (~(uintptr_t)0x1);
 }
 
 _LIBUNWIND_EXPORT_UNWIND_LEVEL1
-void _Unwind_SetIP(struct _Unwind_Context *context, uintptr_t value) {
-  uintptr_t thumb_bit = _Unwind_GetGR(context, 15) & ((uintptr_t)0x1);
-  _Unwind_SetGR(context, 15, value | thumb_bit);
+void jllvm_Unwind_SetIP(struct jllvm_Unwind_Context *, uintptr_t new_value) {
+  uintptr_t thumb_bit = jllvm_Unwind_GetGR(context, 15) & ((uintptr_t)0x1);
+  jllvm_Unwind_SetGR(context, 15, new_value | thumb_bit);
 }
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // __ARM_EHABI_UNWIND_H__
+#endif // JLLVM__ARM_EHABI_UNWIND_H__

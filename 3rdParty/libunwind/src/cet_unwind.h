@@ -10,10 +10,10 @@
 #ifndef LIBUNWIND_CET_UNWIND_H
 #define LIBUNWIND_CET_UNWIND_H
 
-#include "libunwind.h"
+#include "jllvm_libunwind.h"
 
 // Currently, CET is implemented on Linux x86 platforms.
-#if defined(_LIBUNWIND_TARGET_LINUX) && defined(__CET__) && defined(__SHSTK__)
+#if defined(JLLVM_LIBUNWIND_TARGET_LINUX) && defined(__CET__) && defined(__SHSTK__)
 #define _LIBUNWIND_USE_CET 1
 #endif
 
@@ -35,7 +35,7 @@
   } while (0)
 #endif
 
-extern void *__libunwind_cet_get_registers(unw_cursor_t *);
+extern void *__libunwind_cet_get_registers(jllvm_unw_cursor_t *);
 extern void *__libunwind_cet_get_jump_target(void);
 
 #endif

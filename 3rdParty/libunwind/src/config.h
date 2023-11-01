@@ -35,11 +35,11 @@
     #define _LIBUNWIND_SUPPORT_DWARF_UNWIND 1
   #endif
 #elif defined(_LIBUNWIND_IS_BAREMETAL)
-  #if !defined(_LIBUNWIND_ARM_EHABI)
+  #if !defined(JLLVM_LIBUNWIND_ARM_EHABI)
     #define _LIBUNWIND_SUPPORT_DWARF_UNWIND 1
     #define _LIBUNWIND_SUPPORT_DWARF_INDEX 1
   #endif
-#elif defined(__BIONIC__) && defined(_LIBUNWIND_ARM_EHABI)
+#elif defined(__BIONIC__) && defined(JLLVM_LIBUNWIND_ARM_EHABI)
   // For ARM EHABI, Bionic didn't implement dl_iterate_phdr until API 21. After
   // API 21, dl_iterate_phdr exists, but dl_unwind_find_exidx is much faster.
   #define _LIBUNWIND_USE_DL_UNWIND_FIND_EXIDX 1
@@ -55,7 +55,7 @@
 #else
   // Assume an ELF system with a dl_iterate_phdr function.
   #define _LIBUNWIND_USE_DL_ITERATE_PHDR 1
-  #if !defined(_LIBUNWIND_ARM_EHABI)
+  #if !defined(JLLVM_LIBUNWIND_ARM_EHABI)
     #define _LIBUNWIND_SUPPORT_DWARF_UNWIND 1
     #define _LIBUNWIND_SUPPORT_DWARF_INDEX 1
   #endif
@@ -226,7 +226,7 @@
 #ifdef __cplusplus
 // Used to fit UnwindCursor and Registers_xxx types against unw_context_t /
 // unw_cursor_t sized memory blocks.
-#if defined(_LIBUNWIND_IS_NATIVE_ONLY)
+#if defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
 # define COMP_OP ==
 #else
 # define COMP_OP <=

@@ -15,7 +15,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <libunwind.h>
+#include <jllvm_libunwind.h>
 #include <mach-o/compact_unwind_encoding.h>
 
 #include "Registers.hpp"
@@ -24,9 +24,9 @@
 #define EXTRACT_BITS(value, mask)                                              \
   ((value >> __builtin_ctz(mask)) & (((1 << __builtin_popcount(mask))) - 1))
 
-namespace libunwind {
+namespace jllvm_libunwind {
 
-#if defined(_LIBUNWIND_TARGET_I386)
+#if defined(JLLVM_LIBUNWIND_TARGET_I386)
 /// CompactUnwinder_x86 uses a compact unwind info to virtually "step" (aka
 /// unwind) by modifying a Registers_x86 register set
 template <typename A>
@@ -255,10 +255,10 @@ void CompactUnwinder_x86<A>::framelessUnwind(
   // old esp is before return address
   registers.setSP((uint32_t)returnAddressLocation + 4);
 }
-#endif // _LIBUNWIND_TARGET_I386
+#endif // JLLVM_LIBUNWIND_TARGET_I386
 
 
-#if defined(_LIBUNWIND_TARGET_X86_64)
+#if defined(JLLVM_LIBUNWIND_TARGET_X86_64)
 /// CompactUnwinder_x86_64 uses a compact unwind info to virtually "step" (aka
 /// unwind) by modifying a Registers_x86_64 register set
 template <typename A>
@@ -486,11 +486,11 @@ void CompactUnwinder_x86_64<A>::framelessUnwind(A &addressSpace,
   // old esp is before return address
   registers.setSP(returnAddressLocation + 8);
 }
-#endif // _LIBUNWIND_TARGET_X86_64
+#endif // JLLVM_LIBUNWIND_TARGET_X86_64
 
 
 
-#if defined(_LIBUNWIND_TARGET_AARCH64)
+#if defined(JLLVM_LIBUNWIND_TARGET_AARCH64)
 /// CompactUnwinder_arm64 uses a compact unwind info to virtually "step" (aka
 /// unwind) by modifying a Registers_arm64 register set
 template <typename A>
@@ -690,7 +690,7 @@ int CompactUnwinder_arm64<A>::stepWithCompactEncodingFrame(
 
   return UNW_STEP_SUCCESS;
 }
-#endif // _LIBUNWIND_TARGET_AARCH64
+#endif // JLLVM_LIBUNWIND_TARGET_AARCH64
 
 
 } // namespace libunwind
