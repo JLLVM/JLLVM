@@ -24,7 +24,7 @@ const jllvm::ClassObject* jllvm::jdk::ReflectionModel::getCallerClass(VirtualMac
 {
     const ClassObject* result = nullptr;
     unwindStack(
-        [&](UnwindFrame frame)
+        [&](const UnwindFrame& frame)
         {
             std::uintptr_t fp = frame.getFunctionPointer();
             std::optional<JavaMethodMetadata> data = virtualMachine.getJIT().getJavaMethodMetadata(fp);
