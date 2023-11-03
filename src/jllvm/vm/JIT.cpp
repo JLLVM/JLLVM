@@ -29,14 +29,14 @@
 #include <llvm/Transforms/Scalar/RewriteStatepointsForGC.h>
 
 #include <jllvm/compiler/Compiler.hpp>
+#include <jllvm/llvm/ClassObjectStubImportPass.hpp>
+#include <jllvm/llvm/MarkSanitizersGCLeafs.hpp>
 #include <jllvm/materialization/ClassObjectStubDefinitionsGenerator.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
 
 #include <utility>
 
-#include "ClassObjectStubImportPass.hpp"
-#include "MarkSanitizersGCLeafs.hpp"
 #include "StackMapRegistrationPlugin.hpp"
 
 #define DEBUG_TYPE "jvm"

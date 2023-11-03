@@ -1,0 +1,2 @@
+add_library(JLLVMLLVMPasses ClassObjectStubImportPass.cpp MarkSanitizersGCLeafs.cpp)
+target_link_libraries(JLLVMLLVMPasses PUBLIC LLVMPasses LLVMAnalysis JLLVMObject JLLVMCompiler)
