@@ -176,7 +176,7 @@ class Field
         char m_primitiveStorage[sizeof(double)];
         void** m_reference;
     };
-    bool m_isStatic;
+    AccessFlag m_accessFlags;
 
 public:
     // NOLINTBEGIN(cppcoreguidelines-pro-type-member-init)
@@ -184,20 +184,23 @@ public:
     // TODO: Remove when updating to clang-tidy 16
 
     /// Creates a new non-static field with the given name, type descriptor and its offset within an instance.
-    Field(llvm::StringRef name, FieldType type, std::uint16_t offset)
-        : m_name(name), m_type(type), m_offset(offset), m_isStatic(false)
+    Field(llvm::StringRef name, FieldType type, std::uint16_t offset, AccessFlag accessFlags)
+        : m_name(name), m_type(type), m_offset(offset), m_accessFlags(accessFlags)
     {
     }
 
     /// Creates a new static field of a reference type with the given name, type descriptor and a pointer to where the
     /// static reference is allocated.
-    Field(llvm::StringRef name, FieldType type, void** reference)
-        : m_name(name), m_type(type), m_reference(reference), m_isStatic(true)
+    Field(llvm::StringRef name, FieldType type, void** reference, AccessFlag accessFlags)
+        : m_name(name), m_type(type), m_reference(reference), m_accessFlags(accessFlags)
     {
     }
 
     /// Creates a new static field of a non-reference with the given name, type descriptor.
-    Field(llvm::StringRef name, FieldType type) : m_name(name), m_type(type), m_primitiveStorage{}, m_isStatic(true) {}
+    Field(llvm::StringRef name, FieldType type, AccessFlag accessFlags)
+        : m_name(name), m_type(type), m_primitiveStorage{}, m_accessFlags(accessFlags)
+    {
+    }
 
     // NOLINTEND(cppcoreguidelines-pro-type-member-init)
 
@@ -224,7 +227,13 @@ public:
     /// Returns true if this field is static.
     bool isStatic() const
     {
-        return m_isStatic;
+        return (m_accessFlags & AccessFlag::Static) != AccessFlag::None;
+    }
+
+    /// Returns true if this field is final.
+    bool isFinal() const
+    {
+        return (m_accessFlags & AccessFlag::Final) != AccessFlag::None;
     }
 
     /// Returns the address to the storage of this static variable.
@@ -386,6 +395,14 @@ public:
     }
 };
 
+/// Initialization status of a class
+enum class InitializationStatus : std::uint8_t
+{
+    Uninitialized = 0,
+    UnderInitialization = 1,
+    Initialized = 2,
+};
+
 /// Class object representing Java 'Class' objects. Class objects serve all introspections needs of Java
 /// and additionally serve as the type object of all Java objects. The end of every Class object additionally
 /// contains the VTable slots for virtual functions.
@@ -428,7 +445,7 @@ class ClassObject final : private llvm::TrailingObjects<ClassObject, VTableSlot>
     llvm::ArrayRef<std::uint32_t> m_gcMask;
     llvm::StringRef m_className;
     bool m_isPrimitive = false;
-    bool m_initialized = false;
+    InitializationStatus m_initialized = InitializationStatus::Uninitialized;
     const ClassFile* m_classFile = nullptr;
 
     ClassObject(const ClassObject* metaClass, std::uint32_t vTableSlots, std::int32_t fieldAreaSize,
@@ -500,8 +517,8 @@ public:
     /// Constructor for creating the class objects for primitive types with a size and name.
     ClassObject(std::uint32_t instanceSize, llvm::StringRef name);
 
-    /// Constructs a class object for a class type with the given 'metaClass', 'fieldAreaSize' and 'className'. The class
-    /// object has no methods, no v-table slots and implements no interfaces. Mostly used for testing purposes.
+    /// Constructs a class object for a class type with the given 'metaClass', 'fieldAreaSize' and 'className'. The
+    /// class object has no methods, no v-table slots and implements no interfaces. Mostly used for testing purposes.
     ClassObject(const ClassObject* metaClass, std::int32_t fieldAreaSize, llvm::StringRef className);
 
     /// Byte offset from the start of the class object to the field area size member.
@@ -737,14 +754,19 @@ public:
         return offsetof(ClassObject, m_initialized);
     }
 
-    bool isInitialized() const
+    bool isUnintialized() const
     {
-        return m_initialized;
+        return m_initialized == InitializationStatus::Uninitialized;
     }
 
-    void setInitialized(bool isInitialized)
+    bool isInitialized() const
     {
-        m_initialized = isInitialized;
+        return m_initialized == InitializationStatus::Initialized;
+    }
+
+    void setInitializationStatus(InitializationStatus status)
+    {
+        m_initialized = status;
     }
 
     /// Byte offset from the start of the class object to the start of the VTable.

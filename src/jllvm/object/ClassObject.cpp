@@ -88,9 +88,9 @@ jllvm::ClassObject* jllvm::ClassObject::create(llvm::BumpPtrAllocator& allocator
     void* storage =
         allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(allocatedVTableSlots), alignof(ClassObject));
     llvm::MutableArrayRef<Method> methodsAlloc = arrayRefAlloc(allocator, methods);
-    auto* result = new (storage)
-        ClassObject(metaClass, vTableSlots, fieldAreaSize, NonOwningFrozenSet(methodsAlloc, allocator),
-                    NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator), arrayRefAlloc(allocator, bases),
+    auto* result = new (storage) ClassObject(
+        metaClass, vTableSlots, fieldAreaSize, NonOwningFrozenSet(methodsAlloc, allocator),
+        NonOwningFrozenSet(arrayRefAlloc(allocator, fields), allocator), arrayRefAlloc(allocator, bases),
         arrayRefAlloc(allocator, iTables), classFile.getThisClass(), classFile, arrayRefAlloc(allocator, gcMask));
     for (Method& method : methodsAlloc)
     {
@@ -143,7 +143,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         ClassObject(metaClass, arrayFieldAreaSize,
                     stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()));
     result->m_componentTypeOrInterfaceId = componentType;
-    result->m_initialized = true;
+    result->m_initialized = InitializationStatus::Initialized;
     return result;
 }
 
@@ -152,7 +152,7 @@ jllvm::ClassObject::ClassObject(std::uint32_t instanceSize, llvm::StringRef name
 {
     // NOLINTBEGIN(*-prefer-member-initializer): https://github.com/llvm/llvm-project/issues/52818
     m_isPrimitive = true;
-    m_initialized = true;
+    m_initialized = InitializationStatus::Initialized;
     // NOLINTEND(*-prefer-member-initializer)
 }
 

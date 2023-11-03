@@ -116,6 +116,48 @@ llvm::CallInst* buildDirectMethodCall(llvm::IRBuilder<>& builder, const jllvm::M
     return call;
 }
 
+/// Returns a new global constant named 'mangledName' initialized from static final contents of 'field' given by its
+/// type (only primitive JVM types are allowed)
+llvm::GlobalVariable* createGlobalConstant(llvm::Module& module, llvm::StringRef mangledName, const jllvm::Field* field)
+{
+    auto* initializer = jllvm::match(
+        field->getType(),
+        [&](jllvm::BaseType baseType) -> llvm::Constant*
+        {
+            switch (baseType.getValue())
+            {
+                case jllvm::BaseType::Void: break;
+                case jllvm::BaseType::Boolean:
+                case jllvm::BaseType::Byte:
+                    return llvm::ConstantInt::get(llvm::Type::getInt8Ty(module.getContext()),
+                                                  *static_cast<const std::int8_t*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Short:
+                    return llvm::ConstantInt::get(llvm::Type::getInt16Ty(module.getContext()),
+                                                  *static_cast<const std::int16_t*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Char:
+                    return llvm::ConstantInt::get(llvm::Type::getInt16Ty(module.getContext()),
+                                                  *static_cast<const std::uint16_t*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Double:
+                    return llvm::ConstantFP::get(llvm::Type::getDoubleTy(module.getContext()),
+                                                 *static_cast<const double*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Float:
+                    return llvm::ConstantFP::get(llvm::Type::getFloatTy(module.getContext()),
+                                                 *static_cast<const float*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Int:
+                    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(module.getContext()),
+                                                  *static_cast<const std::int32_t*>(field->getAddressOfStatic()));
+                case jllvm::BaseType::Long:
+                    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(module.getContext()),
+                                                  *static_cast<const std::int64_t*>(field->getAddressOfStatic()));
+            }
+            llvm_unreachable("Fields of void type are not allowed");
+        },
+        [&](auto) -> llvm::Constant* { llvm_unreachable("Reference types are not allowed to be cached"); });
+
+    return new llvm::GlobalVariable(module, initializer->getType(), /*isConstant=*/true,
+                                    llvm::GlobalValue::InternalLinkage, initializer, mangledName);
+}
+
 } // namespace
 
 llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const ClassObject& classObject,
@@ -146,7 +188,7 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
     // Static field accesses trigger class object initializations.
-    if (field->isStatic() && !classObject.isInitialized())
+    if (field->isStatic() && classObject.isUnintialized())
     {
         buildClassInitializerInitStub(builder, classObject);
     }
@@ -154,8 +196,17 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     llvm::Value* returnValue;
     if (field->isStatic())
     {
-        returnValue = builder.CreateIntToPtr(
-            builder.getInt64(reinterpret_cast<std::uint64_t>(field->getAddressOfStatic())), returnType);
+        // Only sound if field is static, final, initialized and not a reference type
+        if (field->isFinal() && classObject.isInitialized() && !descriptor.isReference())
+        {
+            returnValue = createGlobalConstant(
+                module, mangleFieldAccess(classObject.getClassName(), fieldName, descriptor), field);
+        }
+        else
+        {
+            returnValue = builder.CreateIntToPtr(
+                builder.getInt64(reinterpret_cast<std::uint64_t>(field->getAddressOfStatic())), returnType);
+        }
     }
     else
     {
@@ -299,7 +350,7 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
-    if (!classObject.isInitialized())
+    if (classObject.isUnintialized())
     {
         buildClassInitializerInitStub(builder, classObject);
     }

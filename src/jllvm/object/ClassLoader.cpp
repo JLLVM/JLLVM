@@ -122,11 +122,12 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             FieldType descriptor = fieldInfo.getDescriptor(classFile);
             if (descriptor.isReference())
             {
-                fields.emplace_back(fieldInfo.getName(classFile), descriptor, m_allocateStatic());
+                fields.emplace_back(fieldInfo.getName(classFile), descriptor, m_allocateStatic(),
+                                    fieldInfo.getAccessFlags());
                 continue;
             }
 
-            fields.emplace_back(fieldInfo.getName(classFile), descriptor);
+            fields.emplace_back(fieldInfo.getName(classFile), descriptor, fieldInfo.getAccessFlags());
             continue;
         }
 
@@ -151,7 +152,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             [](const ObjectType&) { return sizeof(void*); }, [](const ArrayType&) { return sizeof(void*); });
         instanceSize = llvm::alignTo(instanceSize, fieldSizeAndAlignment);
         fields.emplace_back(fieldInfo.getName(classFile), fieldInfo.getDescriptor(classFile),
-                            instanceSize + sizeof(ObjectHeader));
+                            instanceSize + sizeof(ObjectHeader), fieldInfo.getAccessFlags());
         instanceSize += fieldSizeAndAlignment;
     }
     instanceSize = llvm::alignTo(instanceSize, alignof(ObjectHeader));
