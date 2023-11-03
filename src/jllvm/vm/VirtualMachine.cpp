@@ -328,12 +328,12 @@ std::int32_t jllvm::VirtualMachine::createNewHashCode()
 
 void jllvm::VirtualMachine::initialize(ClassObject& classObject)
 {
-    if (classObject.markedInitialized())
+    if (!classObject.isUnintialized())
     {
         return;
     }
 
-    classObject.markInitialized();
+    classObject.setInitializationStatus(InitializationStatus::UnderInitialization);
 
     // 5.5 Step 7:
     // Next, if C is a class rather than an interface, then let SC be its superclass and let SI1, ..., SIn be
@@ -363,5 +363,5 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
                      << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
     reinterpret_cast<void (*)()>(classInitializer->getAddress())();
-    classObject.setInitialized();
+    classObject.setInitializationStatus(InitializationStatus::Initialized);
 }

@@ -154,8 +154,8 @@ llvm::GlobalVariable* createGlobalConstant(llvm::Module& module, llvm::StringRef
         },
         [&](auto) -> llvm::Constant* { llvm_unreachable("Reference types are not allowed to be cached"); });
 
-    return new llvm::GlobalVariable(module, initializer->getType(), true, llvm::GlobalValue::InternalLinkage,
-                                    initializer, mangledName);
+    return new llvm::GlobalVariable(module, initializer->getType(), /*isConstant=*/true,
+                                    llvm::GlobalValue::InternalLinkage, initializer, mangledName);
 }
 
 } // namespace
@@ -188,7 +188,7 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
     // Static field accesses trigger class object initializations.
-    if (field->isStatic() && !classObject.markedInitialized())
+    if (field->isStatic() && classObject.isUnintialized())
     {
         buildClassInitializerInitStub(builder, classObject);
     }
@@ -197,7 +197,7 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     if (field->isStatic())
     {
         // Only sound if field is static, final, initialized and not a reference type
-        if (classObject.isInitialized() && !descriptor.isReference())
+        if (field->isFinal() && classObject.isInitialized() && !descriptor.isReference())
         {
             returnValue = createGlobalConstant(
                 module, mangleFieldAccess(classObject.getClassName(), fieldName, descriptor), field);
@@ -350,7 +350,7 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
-    if (!classObject.markedInitialized())
+    if (classObject.isUnintialized())
     {
         buildClassInitializerInitStub(builder, classObject);
     }

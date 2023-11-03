@@ -45,14 +45,6 @@ enum class Visibility : std::uint8_t
     Protected = 0b11
 };
 
-/// Initialization status of a class
-enum class InitializationStatus : std::uint8_t
-{
-    Uninitialized,
-    UnderInitialization,
-    Initialized,
-};
-
 /// Object for representing a classes method.
 class Method
 {
@@ -401,6 +393,14 @@ public:
     {
         return getTrailingObjects<VTableSlot>();
     }
+};
+
+/// Initialization status of a class
+enum class InitializationStatus : std::uint8_t
+{
+    Uninitialized = 0,
+    UnderInitialization = 1,
+    Initialized = 2,
 };
 
 /// Class object representing Java 'Class' objects. Class objects serve all introspections needs of Java
@@ -754,10 +754,9 @@ public:
         return offsetof(ClassObject, m_initialized);
     }
 
-    bool markedInitialized() const
+    bool isUnintialized() const
     {
-        return m_initialized == InitializationStatus::UnderInitialization
-               || m_initialized == InitializationStatus::Initialized;
+        return m_initialized == InitializationStatus::Uninitialized;
     }
 
     bool isInitialized() const
@@ -765,14 +764,9 @@ public:
         return m_initialized == InitializationStatus::Initialized;
     }
 
-    void markInitialized()
+    void setInitializationStatus(InitializationStatus status)
     {
-        m_initialized = InitializationStatus::UnderInitialization;
-    }
-
-    void setInitialized()
-    {
-        m_initialized = InitializationStatus::Initialized;
+        m_initialized = status;
     }
 
     /// Byte offset from the start of the class object to the start of the VTable.
