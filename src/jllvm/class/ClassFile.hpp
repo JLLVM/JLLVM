@@ -369,6 +369,12 @@ public:
     {
         return m_attributes;
     }
+
+    /// Returns the access flags of this field.
+    AccessFlag getAccessFlags() const
+    {
+        return m_accessFlags;
+    }
 };
 
 /// Info object of a method of the class represented by the class file.
