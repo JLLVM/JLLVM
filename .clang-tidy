@@ -71,7 +71,6 @@ Checks: >
   cppcoreguidelines-virtual-class-destructor,
   google-default-arguments,
   google-runtime-operator,
-  hicpp-exception-baseclass,
   hicpp-multiway-paths-covered,
   llvm-else-after-return,
   llvm-namespace-comment,

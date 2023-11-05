@@ -71,8 +71,8 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
 
     assert(arguments.size() <= argRegisterNumbers.size());
 
-    // Get the caller frame of this frame and set its frame values. This is required to restore all callee saved
-    // registers before entering 'fnPtr'.
+    // Get the caller frame of this frame and set registers in that frame. By going to the caller frame, its
+    // callee-saved registers are restored to the values right before the call.
     std::optional<UnwindFrame> maybeCallerFrame = this->callerFrame();
     assert(maybeCallerFrame && "Replacing bottom of stack is not supported");
     UnwindFrame& nextFrame = *maybeCallerFrame;
@@ -101,8 +101,8 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
 
         explicit ForcedException(const UnwindFrame& frame) : _Unwind_Exception{0}, frame(frame)
         {
-            // Identifier used by personality functions whether it knows the kind of exception. Mustn't match what C++
-            // uses.
+            // Identifier used by personality functions to identify the kind of exception object being thrown.
+            // Mustn't match what the C++ runtime uses.
             std::memcpy(&exception_class, "JLVMJAVA", sizeof(exception_class));
             exception_cleanup = +[](_Unwind_Reason_Code, _Unwind_Exception* exception)
             { delete static_cast<ForcedException*>(exception); };
@@ -111,14 +111,13 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
 
     // Exception object for the force unwind must be heap allocated as the stack unwinding destroys all local variables.
     auto* exception = new ForcedException(nextFrame);
-    // Unwind the C++ stack until we have reached the Java frame we want to replace. The program counter of the frame we
-    // want to replace is passed as 'stopPc' and then always compared with the current frame being unwound by the C++
+    // Unwind the C++ stack until the Java frame that should be replaced is reached. The program counter of that frame
+    // is passed as 'stopPc' and always compared with the current frame being unwound by the '_Unwind_ForcedUnwind'
     // implementation.
     _Unwind_ForcedUnwind(
         exception,
         +[](int, _Unwind_Action, std::uint64_t, _Unwind_Exception* exception, _Unwind_Context* context, void* stopPc)
         {
-            auto* forcedException = static_cast<ForcedException*>(exception);
             std::uintptr_t pc = _Unwind_GetIP(context);
             if (pc != reinterpret_cast<std::uintptr_t>(stopPc))
             {
@@ -128,6 +127,7 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
 
             // Reached the Java frame to replace. Get the internal cursor that all modifications have been performed on
             // so far and apply them.
+            auto* forcedException = static_cast<ForcedException*>(exception);
             jllvm_unw_cursor_t cursor = forcedException->frame.m_cursor;
             // Make sure to now erase the heap allocated exception object.
             _Unwind_DeleteException(exception);

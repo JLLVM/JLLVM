@@ -89,8 +89,9 @@ public:
     }
 
     /// Replaces this frame and all its direct or indirect callees with the execution of 'fnPtr' called with 'args'.
-    /// This first performs C++ stack unwinding to run any destructors all callee frames. 'fnPtr' is required to have
-    /// the same return type or a compatible return type as determined by the platform ABI.
+    /// This first performs C++ stack unwinding to run any destructors in all callee frames. 'fnPtr' is required to have
+    /// the same return type or a compatible return type as determined by the platform ABI as the function being
+    /// executed by this frame.
     /// The argument types and count supported by 'args' is platform dependent but must currently support at least two
     /// arguments of pointer types.
     template <class Ret, typename... Args>

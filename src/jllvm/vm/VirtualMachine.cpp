@@ -127,20 +127,6 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
     llvm_unreachable("Method resolution unexpectedly failed");
 }
 
-/// Exception thrown and caught by the VM if a Java exception is not handled at all.
-class UnhandledJavaException : public std::exception
-{
-    jllvm::Throwable* m_javaException;
-
-public:
-    explicit UnhandledJavaException(jllvm::Throwable* javaException) : m_javaException(javaException) {}
-
-    jllvm::Throwable* getJavaException() const
-    {
-        return m_javaException;
-    }
-};
-
 } // namespace
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
@@ -206,7 +192,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                   { return object->instanceOf(classObject); }},
         std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
         std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
-        std::pair{"jllvm_throw", [&](Throwable* object) { unwindStackForExceptionHandling(object); }},
+        std::pair{"jllvm_throw", [&](Throwable* object) { throwJavaException(object); }},
         std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
                   {
                       // This should have been checked inline in LLVM IR.
@@ -322,19 +308,17 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
         reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
         return 0;
     }
-    catch (const UnhandledJavaException& unhandledJavaException)
+    catch (const Throwable& activeException)
     {
-        Throwable* activeException = unhandledJavaException.getJavaException();
-
         // TODO: Use printStackTrace:()V in the future
 
         // Equivalent to Throwable:toString() (does not yet work).
-        std::string s = activeException->getClass()->getClassName().str();
+        std::string s = activeException.getClass()->getClassName().str();
         std::replace(s.begin(), s.end(), '/', '.');
         llvm::errs() << s;
-        if (activeException->detailMessage)
+        if (activeException.detailMessage)
         {
-            llvm::errs() << ": " << activeException->detailMessage->toUTF8();
+            llvm::errs() << ": " << activeException.detailMessage->toUTF8();
         }
         llvm::errs() << '\n';
 
@@ -386,7 +370,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
     reinterpret_cast<void (*)()>(classInitializer->getAddress())();
 }
 
-void jllvm::VirtualMachine::unwindStackForExceptionHandling(Throwable* exception)
+void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
 {
     unwindStack(
         [&](const UnwindFrame& frame)
@@ -451,5 +435,5 @@ void jllvm::VirtualMachine::unwindStackForExceptionHandling(Throwable* exception
 
     // If no Java frame is ready to handle the exception, unwind all of it completely.
     // The caller of Javas main or the start of a Java thread will catch this in C++ code.
-    throw UnhandledJavaException(exception);
+    throw *exception;
 }

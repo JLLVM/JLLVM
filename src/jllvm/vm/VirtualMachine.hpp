@@ -62,8 +62,6 @@ class VirtualMachine
     // Instances of 'Model::State', subtypes of ModelState.
     std::vector<std::unique_ptr<ModelState>> m_modelState;
 
-    [[noreturn]] void unwindStackForExceptionHandling(Throwable* exception);
-
 public:
     explicit VirtualMachine(BootOptions&& options);
 
@@ -139,6 +137,13 @@ public:
         auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
         return invokeJava<Ret>(addr, args...);
     }
+
+    /// Throws a Java exception which can be caught by exception handlers in Java. This also causes stack unwinding in
+    /// C++ code, executing destructors as a C++ exception would.
+    /// If no Java exception handler exists, 'exception' will be thrown as a C++ exception which can be caught as a
+    /// 'const Throwable&'. It is otherwise not possible to catch 'exception' from C++ code if a exception handler was
+    /// found in Java code.
+    [[noreturn]] void throwJavaException(Throwable* exception);
 
     /// Default constructs a 'Model::State' instance within the VM and returns it.
     /// The lifetime of this object is equal to the lifetime of the VM.
