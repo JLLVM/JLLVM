@@ -35,7 +35,6 @@ public:
     {
     }
 
-    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const MethodInfo* methodInfo,
-              const ClassFile* classFile, const Method* method, const ClassObject* classObject) override;
+    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
 };
 } // namespace jllvm

@@ -216,11 +216,11 @@ void jllvm::JIT::add(const jllvm::ClassFile* classFile, const ClassObject* class
 
         if (info.isNative())
         {
-            llvm::cantFail(m_jniLayer.add(m_main, &info, classFile, &method, classObject));
+            llvm::cantFail(m_jniLayer.add(m_main, &method));
             continue;
         }
 
-        llvm::cantFail(m_byteCodeOnDemandLayer.add(m_main, &info, classFile, &method, classObject));
+        llvm::cantFail(m_byteCodeOnDemandLayer.add(m_main, &method));
     }
 }
 

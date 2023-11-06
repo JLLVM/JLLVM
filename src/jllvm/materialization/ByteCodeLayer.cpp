@@ -19,18 +19,7 @@
 
 #include "ByteCodeMaterializationUnit.hpp"
 
-llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo,
-                                      const ClassFile* classFile, const Method* method, const ClassObject* classObject)
+llvm::Error jllvm::ByteCodeLayer::add(llvm::orc::JITDylib& dylib, const Method* method)
 {
-    return dylib.define(
-        std::make_unique<ByteCodeMaterializationUnit>(*this, methodInfo, classFile, method, classObject));
-}
-
-llvm::orc::MaterializationUnit::Interface jllvm::ByteCodeLayer::getSymbolsProvided(const MethodInfo* methodInfo,
-                                                                                   const ClassFile* classFile)
-{
-    llvm::orc::SymbolFlagsMap result;
-    auto name = mangleDirectMethodCall(*methodInfo, *classFile);
-    result[m_interner(name)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
-    return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
+    return dylib.define(std::make_unique<ByteCodeMaterializationUnit>(*this, method));
 }

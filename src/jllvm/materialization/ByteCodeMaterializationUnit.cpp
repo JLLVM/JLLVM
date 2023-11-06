@@ -13,7 +13,23 @@
 
 #include "ByteCodeMaterializationUnit.hpp"
 
+#include <jllvm/compiler/ClassObjectStubMangling.hpp>
+
 void jllvm::ByteCodeMaterializationUnit::materialize(std::unique_ptr<llvm::orc::MaterializationResponsibility> r)
 {
-    m_layer.emit(std::move(r), m_methodInfo, m_classFile, m_method, m_classObject);
+    m_layer.emit(std::move(r), m_method);
+}
+
+jllvm::ByteCodeMaterializationUnit::ByteCodeMaterializationUnit(jllvm::ByteCodeLayer& layer, const Method* method)
+    : llvm::orc::MaterializationUnit(
+          [&]
+          {
+              llvm::orc::SymbolFlagsMap result;
+              auto name = mangleDirectMethodCall(method);
+              result[layer.getInterner()(name)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
+              return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
+          }()),
+      m_layer(layer),
+      m_method(method)
+{
 }

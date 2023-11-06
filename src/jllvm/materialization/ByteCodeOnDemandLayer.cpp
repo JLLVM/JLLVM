@@ -38,8 +38,7 @@ jllvm::ByteCodeOnDemandLayer::PerDylibResources&
 }
 
 void jllvm::ByteCodeOnDemandLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                        const jllvm::MethodInfo* methodInfo, const jllvm::ClassFile* classFile,
-                                        const Method* method, const ClassObject* classObject)
+                                        const Method* method)
 {
     auto& pdr = getPerDylibResources(mr->getTargetJITDylib());
 
@@ -50,7 +49,7 @@ void jllvm::ByteCodeOnDemandLayer::emit(std::unique_ptr<llvm::orc::Materializati
     }
 
     // Add materialization unit to the implementation dylib.
-    llvm::cantFail(m_baseLayer.add(pdr.getImplDylib(), methodInfo, classFile, method, classObject));
+    llvm::cantFail(m_baseLayer.add(pdr.getImplDylib(), method));
 
     // Use a lazy-reexport to create the required symbols instead. The reexport will emit the stubs in this dylib
     // satisfying the dynamic linker. Once they are called, lookups are done in the implementation dylib causing
