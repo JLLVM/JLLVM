@@ -138,8 +138,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         llvm::SmallVector<llvm::Value*> args{environment};
         if (method->isStatic())
         {
-            args.push_back(builder.CreateIntToPtr(
-                builder.getInt64(reinterpret_cast<std::uintptr_t>(method->getClassObject())), referenceType));
+            args.push_back(classObjectGlobal(*module, method->getClassObject()->getDescriptor()));
         }
 
         for (llvm::Argument& arg : function->args())
@@ -199,8 +198,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         llvm::consumeError(lookup.takeError());
         llvm::Type* ptrType = builder.getPtrTy();
 
-        llvm::Value* methodPtr =
-            builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(method)), ptrType);
+        llvm::Value* methodPtr = methodGlobal(*module, method);
 
         llvm::Value* exception =
             builder.CreateCall(module->getOrInsertFunction("jllvm_build_unsatisfied_link_error",

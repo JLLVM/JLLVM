@@ -49,14 +49,13 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                 }
                 return generateFieldAccessStub(module, *classObject, fieldAccess.fieldName, fieldAccess.descriptor);
             },
-            [&](FieldType fieldType) -> llvm::Function*
+            [&](DemangledLoadClassObject loadClassObject) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(fieldType);
-                if (!classObject)
+                if (!m_classLoader.forNameLoaded(loadClassObject.classObject))
                 {
                     return nullptr;
                 }
-                return generateClassObjectAccessStub(module, *classObject);
+                return generateClassObjectAccessStub(module, loadClassObject.classObject);
             },
             [&](const DemangledStaticCall& staticCall) -> llvm::Function*
             {
@@ -98,7 +97,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
                 return generateSpecialMethodCallStub(module, *classObject, specialCall.methodName,
                                                      specialCall.descriptor, callerClass, *objectClass);
             },
-            [](std::monostate) -> llvm::Function* { return nullptr; });
+            [](...) -> llvm::Function* { return nullptr; });
         if (!definition)
         {
             continue;

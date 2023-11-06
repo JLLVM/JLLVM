@@ -57,6 +57,6 @@ llvm::Function* generateSpecialMethodCallStub(llvm::Module& module, const ClassO
 llvm::Function* generateStaticCallStub(llvm::Module& module, const ClassObject& classObject, llvm::StringRef methodName,
                                        MethodType descriptor, const ClassObject& objectClass);
 
-llvm::Function* generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject);
+llvm::Function* generateClassObjectAccessStub(llvm::Module& module, FieldType classObject);
 
 } // namespace jllvm
