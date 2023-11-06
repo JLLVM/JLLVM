@@ -103,9 +103,9 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
         // Otherwise, create a stub containing a compiler callback. The compile callback will be called on the very
         // first invocation of the symbol and will redirect the stub to point to the compiled function. This
         // effectively implements both the lazy compilation and lazy class loading.
-        llvm::cantFail(m_stubsManager->createStub(
+        llvm::cantFail(m_stubsManager.createStub(
             name,
-            llvm::cantFail(m_callbackManager.getCompileCallback(
+            llvm::cantFail(m_callbackManager->getCompileCallback(
                 [this, demangleVariant, name, symbol]
                 {
                     llvm::orc::ThreadSafeModule module =
@@ -114,11 +114,11 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
                     llvm::cantFail(m_baseLayer.add(m_impl, std::move(module)));
                     llvm::JITTargetAddress address =
                         llvm::cantFail(m_baseLayer.getExecutionSession().lookup({&m_impl}, symbol)).getAddress();
-                    llvm::cantFail(m_stubsManager->updatePointer(name, address));
+                    llvm::cantFail(m_stubsManager.updatePointer(name, address));
                     return address;
                 })),
             llvm::JITSymbolFlags::Exported));
-        generated[symbol] = m_stubsManager->findStub(name, true);
+        generated[symbol] = m_stubsManager.findStub(name, true);
     }
 
     if (generated.empty())
