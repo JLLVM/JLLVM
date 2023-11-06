@@ -174,7 +174,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
                                      methods, fields, interfaces, classFile);
     }
     m_mapping.insert({ObjectType(className), result});
-    m_prepareClassObject(&classFile, *result);
+    m_prepareClassObject(*result);
 
     return *result;
 }
@@ -264,7 +264,7 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
 }
 
 jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
-                                llvm::unique_function<void(const ClassFile*, ClassObject&)>&& prepareClassObject,
+                                llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
                                 llvm::unique_function<void**()> allocateStatic)
     : m_classPaths(std::move(classPaths)),
       m_prepareClassObject(std::move(prepareClassObject)),

@@ -167,9 +167,9 @@ public:
             llvm::orc::absoluteSymbols({{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
-    /// Adds and registers a class file in the JIT. This has to be done prior to being able to lookup and execute
+    /// Adds and registers a class in the JIT. This has to be done prior to being able to lookup and execute
     /// any methods defined within the class file.
-    void add(const ClassFile* classFile, const ClassObject* classObject);
+    void add(const ClassObject* classObject);
 
     /// Returns the interner used by the JIT.
     llvm::orc::MangleAndInterner& getInterner()

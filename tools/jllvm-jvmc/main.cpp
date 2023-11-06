@@ -123,7 +123,7 @@ int main(int argc, char** argv)
     classPath.emplace_back(llvm::sys::path::parent_path(inputFile));
 
     jllvm::ClassLoader loader(
-        std::move(classPath), [](const jllvm::ClassFile*, jllvm::ClassObject&) {},
+        std::move(classPath), [](jllvm::ClassObject&) {},
         [&]() -> void** { return new (allocator.Allocate<void*>()) void* {}; });
 
     loader.loadBootstrapClasses();

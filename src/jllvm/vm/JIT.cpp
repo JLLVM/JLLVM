@@ -203,18 +203,18 @@ jllvm::JIT::~JIT()
     llvm::cantFail(m_epciu->cleanup());
 }
 
-void jllvm::JIT::add(const jllvm::ClassFile* classFile, const ClassObject* classObject)
+void jllvm::JIT::add(const ClassObject* classObject)
 {
-    for (auto&& [info, method] : llvm::zip(classFile->getMethods(), classObject->getMethods()))
+    for (const Method& method : classObject->getMethods())
     {
-        if (info.isAbstract())
+        if (method.isAbstract())
         {
             continue;
         }
 
         LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleDirectMethodCall(&method) << " to JIT Link graph\n"; });
 
-        if (info.isNative())
+        if (method.isNative())
         {
             llvm::cantFail(m_jniLayer.add(m_main, &method));
             continue;

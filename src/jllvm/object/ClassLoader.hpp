@@ -41,7 +41,7 @@ class ClassLoader
     std::list<ClassFile> m_classFiles;
 
     std::vector<std::string> m_classPaths;
-    llvm::unique_function<void(const ClassFile*, ClassObject&)> m_prepareClassObject;
+    llvm::unique_function<void(ClassObject&)> m_prepareClassObject;
     llvm::unique_function<void**()> m_allocateStatic;
     std::size_t m_interfaceIdCounter = 0;
 
@@ -63,8 +63,7 @@ public:
     /// 'prepareClassObject' is called when a class file has been loaded and a class object derived from it. This can
     /// be used to register the class object or prepare it in an additional action outside of the class loader.
     /// 'allocateStatic' should allocate and return 'pointer sized' storage for any static variables of reference type.
-    ClassLoader(std::vector<std::string>&& classPaths,
-                llvm::unique_function<void(const ClassFile*, ClassObject&)>&& prepareClassObject,
+    ClassLoader(std::vector<std::string>&& classPaths, llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
                 llvm::unique_function<void**()> allocateStatic);
 
     ~ClassLoader();
