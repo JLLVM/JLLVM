@@ -34,11 +34,6 @@ requires(std::is_integral_v<T>) struct CppToLLVMType<T>
     {
         return llvm::IntegerType::getIntNTy(*context, sizeof(T) * CHAR_BIT);
     }
-
-    static llvm::Value* getConstant(T value, llvm::IRBuilder<>& builder)
-    {
-        return builder.getIntN(sizeof(T) * CHAR_BIT, value);
-    }
 };
 
 /// Specialization for float.
@@ -48,11 +43,6 @@ struct CppToLLVMType<float>
     static llvm::Type* get(llvm::LLVMContext* context)
     {
         return llvm::Type::getFloatTy(*context);
-    }
-
-    static llvm::Value* getConstant(float value, llvm::IRBuilder<>& builder)
-    {
-        return llvm::ConstantFP::get(builder.getFloatTy(), value);
     }
 };
 
@@ -64,11 +54,6 @@ struct CppToLLVMType<double>
     {
         return llvm::Type::getDoubleTy(*context);
     }
-
-    static llvm::Value* getConstant(double value, llvm::IRBuilder<>& builder)
-    {
-        return llvm::ConstantFP::get(builder.getDoubleTy(), value);
-    }
 };
 
 /// Specialization for void.
@@ -78,12 +63,6 @@ struct CppToLLVMType<void>
     static llvm::Type* get(llvm::LLVMContext* context)
     {
         return llvm::Type::getVoidTy(*context);
-    }
-
-    template <class T>
-    static llvm::Value* getConstant(T, llvm::IRBuilder<>&)
-    {
-        return nullptr;
     }
 };
 
@@ -95,12 +74,6 @@ requires(!std::is_base_of_v<ObjectInterface, T>) struct CppToLLVMType<T*>
     {
         return llvm::PointerType::get(*context, 0);
     }
-
-    static llvm::Value* getConstant(T* value, llvm::IRBuilder<>& builder)
-    {
-        return builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(value)),
-                                      get(&builder.getContext()));
-    }
 };
 
 /// Specialization for Objects type.
@@ -110,12 +83,6 @@ struct CppToLLVMType<T*>
     static llvm::Type* get(llvm::LLVMContext* context)
     {
         return referenceType(*context);
-    }
-
-    static llvm::Value* getConstant(const jllvm::ObjectInterface* object, llvm::IRBuilder<>& builder)
-    {
-        return builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(object)),
-                                      get(&builder.getContext()));
     }
 };
 
