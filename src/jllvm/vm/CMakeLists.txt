@@ -14,13 +14,13 @@
 llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
 
 add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp StackMapRegistrationPlugin.cpp
-        JNIImplementation.cpp NativeImplementation.cpp MarkSanitizersGCLeafs.cpp native/IO.cpp
+        JNIImplementation.cpp NativeImplementation.cpp native/IO.cpp
         native/Lang.cpp native/JDK.cpp native/Security.cpp
-        ClassObjectStubImportPass.cpp)
+)
 target_link_libraries(JLLVMVirtualMachine
-        PRIVATE ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
+        PRIVATE JLLVMLLVMPasses ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
         PUBLIC JLLVMClassParser JLLVMObject JLLVMGC JLLVMMaterialization JLLVMUnwinder LLVMExecutionEngine LLVMOrcJIT
-        LLVMJITLink LLVMPasses
+        LLVMJITLink
         )
 
 set(JAVA_INCLUDE_PATH "${JAVA_HOME}/../include")
