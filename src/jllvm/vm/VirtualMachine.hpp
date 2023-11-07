@@ -50,7 +50,6 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     StringInterner m_stringInterner;
-    GCRootRef<Throwable> m_activeException = static_cast<GCRootRef<Throwable>>(m_gc.allocateStatic());
     JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
@@ -138,6 +137,13 @@ public:
         auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
         return invokeJava<Ret>(addr, args...);
     }
+
+    /// Throws a Java exception which can be caught by exception handlers in Java. This also causes stack unwinding in
+    /// C++ code, executing destructors as a C++ exception would.
+    /// If no Java exception handler exists, 'exception' will be thrown as a C++ exception which can be caught as a
+    /// 'const Throwable&'. It is otherwise not possible to catch 'exception' from C++ code if a exception handler was
+    /// found in Java code.
+    [[noreturn]] void throwJavaException(Throwable* exception);
 
     /// Default constructs a 'Model::State' instance within the VM and returns it.
     /// The lifetime of this object is equal to the lifetime of the VM.

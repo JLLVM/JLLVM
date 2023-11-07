@@ -81,7 +81,7 @@ void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const jllvm::Clas
 
     builder.CreateCall(
         module->getOrInsertFunction("jllvm_initialize_class_object", builder.getVoidTy(), classObjectLLVM->getType()),
-        classObjectLLVM);
+        classObjectLLVM, llvm::OperandBundleDef("deopt", std::nullopt));
 
     builder.CreateBr(continueBlock);
 
@@ -111,7 +111,7 @@ llvm::CallInst* buildDirectMethodCall(llvm::IRBuilder<>& builder, const jllvm::M
         mangleDirectMethodCall(method),
         jllvm::descriptorToType(method->getType(), method->isStatic(), builder.getContext()));
     applyABIAttributes(llvm::cast<llvm::Function>(callee.getCallee()), method->getType(), method->isStatic());
-    llvm::CallInst* call = builder.CreateCall(callee, args);
+    llvm::CallInst* call = builder.CreateCall(callee, args, llvm::OperandBundleDef("deopt", std::nullopt));
     applyABIAttributes(call, method->getType(), method->isStatic());
     return call;
 }
@@ -259,7 +259,7 @@ llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& module, jl
         llvm::Value* vtblSlot = builder.CreateGEP(builder.getInt8Ty(), thisClassObject, {totalOffset});
         llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), vtblSlot);
 
-        auto* call = builder.CreateCall(functionType, callee, args);
+        auto* call = builder.CreateCall(functionType, callee, args, llvm::OperandBundleDef("deopt", std::nullopt));
         applyABIAttributes(call, descriptor, /*isStatic=*/false);
         buildRetCall(builder, call);
         return function;
@@ -301,7 +301,7 @@ llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& module, jl
         builder.CreateGEP(iTableType(builder.getContext()), iTable, {builder.getInt32(0), builder.getInt32(1), slot});
     llvm::Value* callee = builder.CreateLoad(builder.getPtrTy(), iTableSlot);
 
-    auto* call = builder.CreateCall(functionType, callee, args);
+    auto* call = builder.CreateCall(functionType, callee, args, llvm::OperandBundleDef("deopt", std::nullopt));
     applyABIAttributes(call, descriptor, /*isStatic=*/false);
     buildRetCall(builder, call);
 

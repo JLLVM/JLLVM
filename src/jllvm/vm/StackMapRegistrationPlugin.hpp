@@ -17,16 +17,25 @@
 
 #include <jllvm/gc/GarbageCollector.hpp>
 
+#include <utility>
+
+#include "JIT.hpp"
+
 namespace jllvm
 {
 /// JIT link plugin for extracting the LLVM generated stack map section out of materialized objects and notifying
 /// the GC about newly added entries.
 class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
 {
-    jllvm::GarbageCollector& m_gc;
+    GarbageCollector& m_gc;
+    std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> m_deoptEntryParsed;
 
 public:
-    explicit StackMapRegistrationPlugin(jllvm::GarbageCollector& gc) : m_gc(gc) {}
+    explicit StackMapRegistrationPlugin(GarbageCollector& gc,
+                                        std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> deoptEntryParsed)
+        : m_gc(gc), m_deoptEntryParsed(std::move(deoptEntryParsed))
+    {
+    }
 
     llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility&) override;
 

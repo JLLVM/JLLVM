@@ -18,6 +18,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <jllvm_unwind.h>
+#include <unwind.h>
 
 #define DEBUG_TYPE "unwinder"
 
@@ -53,6 +54,90 @@ std::uintptr_t jllvm::UnwindFrame::getFunctionPointer() const
 jllvm::UnwindFrame::UnwindFrame(const jllvm_unw_context_t& context) : m_cursor()
 {
     cantFail(jllvm_unw_init_local(&m_cursor, const_cast<jllvm_unw_context_t*>(&context)));
+}
+
+void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPointer,
+                                                       llvm::ArrayRef<std::uint64_t> arguments) const
+{
+#if defined(__x86_64__) && !defined(_WIN32)
+    constexpr bool stackGrowsDown = true;
+    constexpr bool returnAddressOnStack = true;
+    constexpr std::array<int, argMax> argRegisterNumbers = {UNW_X86_64_RDI, UNW_X86_64_RSI, UNW_X86_64_RDX,
+                                                            UNW_X86_64_RCX, UNW_X86_64_R8,  UNW_X86_64_R9};
+
+#else
+    #error Code not ported for this architecture yet
+#endif
+
+    assert(arguments.size() <= argRegisterNumbers.size());
+
+    // Get the caller frame of this frame and set registers in that frame. By going to the caller frame, its
+    // callee-saved registers are restored to the values right before the call.
+    std::optional<UnwindFrame> maybeCallerFrame = this->callerFrame();
+    assert(maybeCallerFrame && "Replacing bottom of stack is not supported");
+    UnwindFrame& nextFrame = *maybeCallerFrame;
+
+    // The stack pointer value of the caller is right before the call. If the platform also pushes a return address on
+    // the stack, adjust the stack pointer past the return address as it would be on functon entry.
+    std::uintptr_t nextStack = nextFrame.getIntegerRegister(UNW_REG_SP);
+    if constexpr (returnAddressOnStack)
+    {
+        nextStack += (stackGrowsDown ? -1 : 1) * sizeof(void (*)());
+    }
+
+    nextFrame.setIntegerRegister(UNW_REG_IP, functionPointer);
+    nextFrame.setIntegerRegister(UNW_REG_SP, nextStack);
+
+    // Set the function arguments.
+    for (std::size_t i = 0; i < arguments.size(); i++)
+    {
+        nextFrame.setIntegerRegister(argRegisterNumbers[i], arguments[i]);
+    }
+
+    // Exception object for the force unwind of the C++ stack.
+    struct ForcedException : _Unwind_Exception
+    {
+        UnwindFrame frame;
+
+        explicit ForcedException(const UnwindFrame& frame) : _Unwind_Exception{0}, frame(frame)
+        {
+            // Identifier used by personality functions to identify the kind of exception object being thrown.
+            // Mustn't match what the C++ runtime uses.
+            std::memcpy(&exception_class, "JLVMJAVA", sizeof(exception_class));
+            exception_cleanup = +[](_Unwind_Reason_Code, _Unwind_Exception* exception)
+            { delete static_cast<ForcedException*>(exception); };
+        }
+    };
+
+    // Exception object for the force unwind must be heap allocated as the stack unwinding destroys all local variables.
+    auto* exception = new ForcedException(nextFrame);
+    // Unwind the C++ stack until the Java frame that should be replaced is reached. The program counter of that frame
+    // is passed as 'stopPc' and always compared with the current frame being unwound by the '_Unwind_ForcedUnwind'
+    // implementation.
+    _Unwind_ForcedUnwind(
+        exception,
+        +[](int, _Unwind_Action, std::uint64_t, _Unwind_Exception* exception, _Unwind_Context* context, void* stopPc)
+        {
+            std::uintptr_t pc = _Unwind_GetIP(context);
+            if (pc != reinterpret_cast<std::uintptr_t>(stopPc))
+            {
+                // Continue unwinding.
+                return _URC_NO_REASON;
+            }
+
+            // Reached the Java frame to replace. Get the internal cursor that all modifications have been performed on
+            // so far and apply them.
+            auto* forcedException = static_cast<ForcedException*>(exception);
+            jllvm_unw_cursor_t cursor = forcedException->frame.m_cursor;
+            // Make sure to now erase the heap allocated exception object.
+            _Unwind_DeleteException(exception);
+            jllvm_unw_resume(&cursor);
+
+            llvm_unreachable("resume should not have returned");
+        },
+        reinterpret_cast<void*>(getProgramCounter()));
+
+    llvm_unreachable("_Unwind_ForcedUnwind should not have returned");
 }
 
 namespace

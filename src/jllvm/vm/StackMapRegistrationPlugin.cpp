@@ -88,7 +88,46 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                 }
 
                 entries.clear();
-                for (std::uint16_t i = 3; i < record.getNumLocations(); i++)
+                std::uint32_t deoptCount = record.getLocation(2).getSmallConstant();
+                if (deoptCount != 0)
+                {
+                    std::uint16_t bytecodeOffset = record.getLocation(3).getSmallConstant();
+                    std::uint16_t numLocals = record.getLocation(4).getSmallConstant();
+                    JIT::DeoptEntry entry{bytecodeOffset};
+                    entry.locals.reserve(numLocals);
+                    for (std::uint32_t i = 5; i < 5 + deoptCount; i++)
+                    {
+                        auto loc = record.getLocation(i);
+                        switch (loc.getKind())
+                        {
+                            case decltype(parser)::LocationKind::Register:
+                                entry.locals.emplace_back(JIT::DeoptEntry::Register{loc.getDwarfRegNum()});
+                                break;
+                            case decltype(parser)::LocationKind::Direct:
+                                assert(loc.getSizeInBytes() <= 8 && "Java values are 8 bytes at most");
+                                entry.locals.emplace_back(JIT::DeoptEntry::Direct{loc.getDwarfRegNum(), loc.getOffset(),
+                                                                                  loc.getSizeInBytes()});
+                                break;
+                            case decltype(parser)::LocationKind::Indirect:
+                                assert(loc.getSizeInBytes() <= 8 && "Java values are 8 bytes at most");
+                                entry.locals.emplace_back(JIT::DeoptEntry::Indirect{
+                                    loc.getDwarfRegNum(), loc.getOffset(), loc.getSizeInBytes()});
+                                break;
+
+                            case decltype(parser)::LocationKind::Constant:
+                                entry.locals.emplace_back(JIT::DeoptEntry::Constant{loc.getSmallConstant()});
+                                break;
+                            case decltype(parser)::LocationKind::ConstantIndex:
+                                entry.locals.emplace_back(
+                                    JIT::DeoptEntry::Constant{parser.getConstant(loc.getConstantIndex()).getValue()});
+                                break;
+                        }
+                    }
+
+                    m_deoptEntryParsed(addr, std::move(entry));
+                }
+
+                for (std::uint16_t i = 3 + deoptCount; i < record.getNumLocations(); i++)
                 {
                     auto loc = record.getLocation(i);
                     switch (loc.getKind())

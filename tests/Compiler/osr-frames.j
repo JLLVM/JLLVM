@@ -46,12 +46,13 @@
 ; EXC: %[[GEP:.*]] = getelementptr ptr, ptr %[[LOCALS]], i32 1
 ; EXC: %[[LOAD:.*]] = load ptr addrspace(1), ptr %[[GEP]]
 ; EXC: store ptr addrspace(1) %[[LOAD]], ptr %[[LOCAL1]]
+; CHECK: call void @jllvm_osr_frame_delete(ptr %[[OPERANDS]])
 
 ; Entry continues to start of bytecode as usual.
 ; ENTRY: br label %[[ENTRY:[[:alnum:]]+]]
 
 ; ENTRY: [[ENTRY]]:
-; ENTRY-NEXT: call void @"Static Call to Test.foo:()V"()
+; ENTRY: call void @"Static Call to Test.foo:()V"()
 
 ; LOOP: br label %[[LOOP_HEADER:[[:alnum:]]+]]
 
@@ -71,19 +72,9 @@ L15:
 
 ; LOOP: [[LOOP_HEADER]]:
 ; LOOP-NEXT: %[[ARG:.*]] = load i32, ptr %[[OP0]]
-; LOOP-NEXT: call void @"Static Call to Test.bar:(I)V"(
+; LOOP: call void @"Static Call to Test.bar:(I)V"(
 ; LOOP-SAME: i32{{.*}}%[[ARG]]
 ; LOOP-SAME: )
-; LOOP: br i1 %{{.*}}, label %{{.*}}, label %[[EXC_HANDLER:[[:alnum:]]+]]
-
-; Check that despite OSRing into the middle of a 'try', that the exception handler after the bar call still leads to
-; calling the finally block.
-
-; LOOP: [[EXC_HANDLER]]:
-; LOOP-NEXT: %[[PHI:.*]] = phi
-; LOOP-NEXT: store ptr addrspace(1) null, ptr @activeException
-; LOOP-NEXT: store ptr addrspace(1) %[[PHI]], ptr %[[OP0]]
-; LOOP-NEXT: br label %[[L25CODE:[[:alnum:]]+]]
 
 ; Check that the basic block was split correctly and that the iinc and iload_0 still lead to the OSR entry.
 
@@ -92,11 +83,6 @@ L15:
 ; LOOP-NEXT: %[[LOCAL0_LOAD:.*]] = load i32, ptr %[[LOCAL0]]
 ; LOOP-NEXT: store i32 %[[LOCAL0_LOAD]], ptr %[[OP0]]
 ; LOOP-NEXT: br label %[[LOOP_HEADER]]
-
-; LOOP: {{^}}[[L25CODE]]:
-; LOOP-NEXT: %[[OP0_LOAD:.*]] = load ptr addrspace(1), ptr %[[OP0]]
-; LOOP-NEXT: store ptr addrspace(1) %[[OP0_LOAD]], ptr %[[LOCAL1]]
-; LOOP-NEXT: call void @"Static Call to Test.foobar:()V"()
 
     invokestatic Test/bar(I)V
 L19:
@@ -112,7 +98,9 @@ L25:
 ; EXC-NEXT: store ptr addrspace(1) %[[LOAD_LOCAL1]], ptr %[[OP0]]
 ; EXC-NEXT: %[[LOAD_OP0:.*]] = load ptr addrspace(1), ptr %[[OP0]]
 
-; EXC: store ptr addrspace(1) %[[LOAD_OP0]], ptr @activeException
+; EXC: %[[PHI:.*]] = phi ptr addrspace(1)
+; EXC-SAME: %[[LOAD_OP0]]
+; EXC-NEXT: call void @jllvm_throw(ptr addrspace(1) %[[PHI]])
     aload_1
     athrow
 L31:
