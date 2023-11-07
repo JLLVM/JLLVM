@@ -33,7 +33,9 @@ class UnwindFrame
 
     explicit UnwindFrame(const jllvm_unw_cursor_t& cursor) : m_cursor(cursor) {}
 
-    template <std::invocable<UnwindFrame&> F>
+    // This should be restricted with 'std::invocable<UnwindFrame&>' but isn't to workaround
+    // https://github.com/llvm/llvm-project/issues/71595
+    template <class F>
     friend bool unwindStack(F&& f);
 
     UnwindFrame(const jllvm_unw_context_t& context);
@@ -118,7 +120,7 @@ enum class UnwindAction
 /// discarded and not applied.
 /// 'f' may return instances of 'UnwindAction' to control the unwinding process. Otherwise, the stack is fully unwound.
 /// Returns true if stack unwinding was interrupted.
-template <std::invocable<UnwindFrame&> F>
+template <class F>
 bool unwindStack(F&& f)
 {
     // Note that it is required for this function to be called here. Specifically, the frame calling
