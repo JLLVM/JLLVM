@@ -25,8 +25,6 @@
 namespace jllvm
 {
 
-struct ByteCodeTypeInfo;
-
 /// Class for Java bytecode typechecking
 /// This works by iterating over the bytecode of a Java method extracting the basic blocks
 /// and the types on the stack at the start of the block then constructing a map of basic block starting
@@ -46,6 +44,15 @@ public:
     using BasicBlockMap = llvm::DenseMap<std::uint16_t, TypeStack>;
     using PossibleRetsMap = llvm::DenseMap<std::uint16_t, llvm::DenseSet<std::uint16_t>>;
 
+    /// Point in the 'ByteCodeTypeChecker' where the local variable and operand stack types should be extracted.
+    /// A local variable may be null in which case the local variable is currently uninitialized.
+    struct TypeInfo
+    {
+        std::uint16_t offset{};
+        std::vector<JVMType> operandStack;
+        std::vector<JVMType> locals;
+    };
+
 private:
     llvm::LLVMContext& m_context;
     const ClassFile& m_classFile;
@@ -60,15 +67,12 @@ private:
     llvm::Type* m_floatType;
     llvm::Type* m_intType;
     llvm::Type* m_longType;
-    ByteCodeTypeInfo& m_byteCodeTypeInfo;
+    TypeInfo m_byteCodeTypeInfo;
 
     void checkBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset, TypeStack typeStack);
 
-    void check();
-
 public:
-    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile, const Code& code, MethodType methodType,
-                        ByteCodeTypeInfo& byteCodeTypeInfo)
+    ByteCodeTypeChecker(llvm::LLVMContext& context, const ClassFile& classFile, const Code& code, MethodType methodType)
         : m_context{context},
           m_classFile{classFile},
           m_code{code},
@@ -77,16 +81,17 @@ public:
           m_doubleType{llvm::Type::getDoubleTy(m_context)},
           m_floatType{llvm::Type::getFloatTy(m_context)},
           m_intType{llvm::Type::getInt32Ty(m_context)},
-          m_longType{llvm::Type::getInt64Ty(m_context)},
-          m_byteCodeTypeInfo(byteCodeTypeInfo)
+          m_longType{llvm::Type::getInt64Ty(m_context)}
     {
         // Types of local variables at method entry are the arguments of the parameters.
         for (auto&& [paramType, local] : llvm::zip(methodType.parameters(), m_locals))
         {
             local = descriptorToType(paramType, context);
         }
-        check();
     }
+
+    /// Type-checks the entire java method, returning the 'ByteCodeTypeInfo' for the instruction at 'offset'.
+    const TypeInfo& checkAndGetTypeInfo(std::uint16_t offset);
 
     /// Creates a mapping between each 'ret' instruction and the offsets inside the bytecode where it could return to.
     PossibleRetsMap makeRetToMap() const;
@@ -95,17 +100,6 @@ public:
     {
         return m_basicBlocks;
     }
-};
-
-/// Point in the 'ByteCodeTypeChecker' where the local variable and operand stack types should be extracted.
-/// 'offset' must be initialized to the required offset prior to passing this struct to 'ByteCodeTypeChecker'
-/// constructor. After the constructor call, 'operandStack' and 'locals' will be set with their types at a
-/// given offset. A local variable may be null in which case the local variable is currently uninitialized.
-struct ByteCodeTypeInfo
-{
-    std::uint16_t offset;
-    std::vector<ByteCodeTypeChecker::JVMType> operandStack;
-    std::vector<ByteCodeTypeChecker::JVMType> locals;
 };
 
 /// Class for JVM operand stack

@@ -32,7 +32,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
     assert(code && "method to compile must have a code attribute");
     compileMethodBody(function, *classObject, stringInterner, method.getType(), *code,
                       [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack&,
-                          const ByteCodeTypeInfo&)
+                          const ByteCodeTypeChecker::TypeInfo&)
                       {
                           // Arguments are put into the locals. According to the specification, i64s and doubles are
                           // split into two locals. We don't actually do that, we just put them into the very first
@@ -72,7 +72,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     compileMethodBody(
         function, *classObject, stringInterner, method.getType(), *code,
         [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack& operandStack,
-            const ByteCodeTypeInfo& typeInfo)
+            const ByteCodeTypeChecker::TypeInfo& typeInfo)
         {
             // Initialize the operand stack and the local variables from the two input arrays. Using the type info from
             // the type checker, it is possible to load the exact types required.
