@@ -46,7 +46,7 @@ public:
 
     /// Point in the 'ByteCodeTypeChecker' where the local variable and operand stack types should be extracted.
     /// A local variable may be null in which case the local variable is currently uninitialized.
-    struct ByteCodeTypeInfo
+    struct TypeInfo
     {
         std::uint16_t offset{};
         std::vector<JVMType> operandStack;
@@ -67,7 +67,7 @@ private:
     llvm::Type* m_floatType;
     llvm::Type* m_intType;
     llvm::Type* m_longType;
-    ByteCodeTypeInfo m_byteCodeTypeInfo;
+    TypeInfo m_byteCodeTypeInfo;
 
     void checkBasicBlock(llvm::ArrayRef<char> block, std::uint16_t offset, TypeStack typeStack);
 
@@ -91,7 +91,7 @@ public:
     }
 
     /// Type-checks the entire java method, returning the 'ByteCodeTypeInfo' for the instruction at 'offset'.
-    const ByteCodeTypeInfo& checkAndGetTypeInfo(std::uint16_t offset);
+    const TypeInfo& checkAndGetTypeInfo(std::uint16_t offset);
 
     /// Creates a mapping between each 'ret' instruction and the offsets inside the bytecode where it could return to.
     PossibleRetsMap makeRetToMap() const;

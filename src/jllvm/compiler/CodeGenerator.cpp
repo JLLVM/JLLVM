@@ -211,7 +211,7 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_functionMethodType};
 
     // Perform the type check as the information is potentially required in the prologue generation.
-    const auto& typeInfo = checker.checkAndGetTypeInfo(offset);
+    const ByteCodeTypeChecker::TypeInfo& typeInfo = checker.checkAndGetTypeInfo(offset);
 
     generatePrologue(m_builder, m_locals, m_operandStack, typeInfo);
 

@@ -440,7 +440,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
     }
 }
 
-const ByteCodeTypeChecker::ByteCodeTypeInfo& ByteCodeTypeChecker::checkAndGetTypeInfo(std::uint16_t offset)
+const ByteCodeTypeChecker::TypeInfo& ByteCodeTypeChecker::checkAndGetTypeInfo(std::uint16_t offset)
 {
     for (const auto& exception : m_code.getExceptionTable())
     {
