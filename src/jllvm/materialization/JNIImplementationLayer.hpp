@@ -38,7 +38,6 @@ std::string formJNIMethodName(const Method* method, bool withType);
 class JNIImplementationLayer : public ByteCodeLayer
 {
     llvm::orc::JITDylib& m_jniImpls;
-    std::unique_ptr<llvm::orc::IndirectStubsManager> m_stubsManager;
     llvm::orc::IRLayer& m_irLayer;
     llvm::DataLayout m_dataLayout;
     void* m_jniNativeFunctions;
