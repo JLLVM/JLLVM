@@ -440,7 +440,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
     }
 }
 
-void ByteCodeTypeChecker::check()
+const ByteCodeTypeChecker::ByteCodeTypeInfo& ByteCodeTypeChecker::checkAndGetTypeInfo(std::uint16_t offset)
 {
     for (const auto& exception : m_code.getExceptionTable())
     {
@@ -452,6 +452,7 @@ void ByteCodeTypeChecker::check()
 
     m_basicBlocks.insert({0, {}});
     m_offsetStack.push_back(0);
+    m_byteCodeTypeInfo.offset = offset;
 
     while (!m_offsetStack.empty())
     {
@@ -460,6 +461,8 @@ void ByteCodeTypeChecker::check()
 
         checkBasicBlock(m_code.getCode().drop_front(startOffset), startOffset, m_basicBlocks[startOffset]);
     }
+
+    return m_byteCodeTypeInfo;
 }
 
 ByteCodeTypeChecker::PossibleRetsMap ByteCodeTypeChecker::makeRetToMap() const

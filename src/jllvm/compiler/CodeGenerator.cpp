@@ -208,10 +208,10 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     // We need pointer size bytes, since that is the largest type we may store in a local.
     std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
 
+    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_functionMethodType};
+
     // Perform the type check as the information is potentially required in the prologue generation.
-    ByteCodeTypeInfo typeInfo;
-    typeInfo.offset = offset;
-    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_functionMethodType, typeInfo};
+    const auto& typeInfo = checker.checkAndGetTypeInfo(offset);
 
     generatePrologue(m_builder, m_locals, m_operandStack, typeInfo);
 
@@ -225,7 +225,8 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
         iter->second.block = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
         iter->second.block->moveAfter(&m_function->getEntryBlock());
         iter->second.state.resize(typeInfo.operandStack.size());
-        llvm::transform(typeInfo.operandStack, iter->second.state.begin(), [&](ByteCodeTypeChecker::JVMType type)
+        llvm::transform(typeInfo.operandStack, iter->second.state.begin(),
+                        [&](ByteCodeTypeChecker::JVMType type)
                         { return type.is<llvm::Type*>() ? type.get<llvm::Type*>() : m_builder.getPtrTy(); });
     }
 

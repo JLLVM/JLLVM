@@ -147,8 +147,9 @@ public:
     CodeGenerator(CodeGenerator&&) = delete;
     CodeGenerator& operator=(CodeGenerator&&) = delete;
 
-    using PrologueGenFn = llvm::function_ref<void(llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals,
-                                                  OperandStack& operandStack, const ByteCodeTypeInfo& typeInfo)>;
+    using PrologueGenFn =
+        llvm::function_ref<void(llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals,
+                                OperandStack& operandStack, const ByteCodeTypeChecker::ByteCodeTypeInfo& typeInfo)>;
 
     /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
     /// and have at most 'maxLocals' local variables. 'generatePrologue' is used to initialize the local variables and
