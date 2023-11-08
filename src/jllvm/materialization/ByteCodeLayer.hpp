@@ -23,7 +23,6 @@ namespace jllvm
 /// Base class layer for any layers operating on JVM Bytecode.
 class ByteCodeLayer
 {
-protected:
     llvm::orc::MangleAndInterner& m_interner;
 
 public:
@@ -35,17 +34,16 @@ public:
     ByteCodeLayer(ByteCodeLayer&&) = delete;
     ByteCodeLayer& operator=(ByteCodeLayer&&) = delete;
 
+    llvm::orc::MangleAndInterner& getInterner() const
+    {
+        return m_interner;
+    }
+
     /// Method called by the JIT to emit the requested symbols.
-    virtual void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const MethodInfo* methodInfo,
-                      const ClassFile* classFile, const Method* method, const ClassObject* classObject) = 0;
+    virtual void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) = 0;
 
     /// Adds a materialization unit for the given method and class file to 'dylib'.
-    llvm::Error add(llvm::orc::JITDylib& dylib, const MethodInfo* methodInfo, const ClassFile* classFile,
-                    const Method* method, const ClassObject* classObject);
-
-    /// Returns the map of symbols provided by the method and class file.
-    llvm::orc::MaterializationUnit::Interface getSymbolsProvided(const MethodInfo* methodInfo,
-                                                                 const ClassFile* classFile);
+    llvm::Error add(llvm::orc::JITDylib& dylib, const Method* method);
 };
 
 } // namespace jllvm

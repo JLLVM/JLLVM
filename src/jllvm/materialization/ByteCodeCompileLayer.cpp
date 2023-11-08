@@ -23,10 +23,9 @@
 #define DEBUG_TYPE "jvm"
 
 void jllvm::ByteCodeCompileLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                       const MethodInfo* methodInfo, const ClassFile* classFile, const Method* method,
-                                       const ClassObject* classObject)
+                                       const Method* method)
 {
-    std::string methodName = mangleDirectMethodCall(*methodInfo, *classFile);
+    std::string methodName = mangleDirectMethodCall(method);
     LLVM_DEBUG({ llvm::dbgs() << "Emitting LLVM IR for " << methodName << '\n'; });
 
     auto context = std::make_unique<llvm::LLVMContext>();

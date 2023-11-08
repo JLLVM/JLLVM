@@ -29,6 +29,8 @@ std::string formJNIMethodName(llvm::StringRef className, llvm::StringRef methodN
 
 std::string formJNIMethodName(llvm::StringRef className, llvm::StringRef methodName);
 
+std::string formJNIMethodName(const Method* method, bool withType);
+
 /// Layer implementing all JIT functionality related to the Java Native Interface. It is also where any JNI symbols
 /// must be registered to be called at runtime. Its implementation roughly boils down to creating compile stubs for any
 /// native methods registered and then looking up and generating bridge code once the native method has actually
@@ -68,7 +70,6 @@ public:
         llvm::cantFail(m_jniImpls.define(std::move(materializationUnit)));
     }
 
-    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const MethodInfo* methodInfo,
-              const ClassFile* classFile, const Method* method, const ClassObject* classObject) override;
+    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
 };
 } // namespace jllvm

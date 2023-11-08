@@ -62,9 +62,17 @@ std::string jllvm::formJNIMethodName(llvm::StringRef className, llvm::StringRef 
     return result;
 }
 
+std::string jllvm::formJNIMethodName(const Method* method, bool withType)
+{
+    if (withType)
+    {
+        return formJNIMethodName(method->getClassObject()->getClassName(), method->getName(), method->getType());
+    }
+    return formJNIMethodName(method->getClassObject()->getClassName(), method->getName());
+}
+
 void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                         const jllvm::MethodInfo* methodInfo, const jllvm::ClassFile* classFile,
-                                         const Method* method, const ClassObject* classObject)
+                                         const Method* method)
 {
     // Things that should happen here:
     // 1. Materialize a stub calling a compile callback to be called when the native method is called.
@@ -77,7 +85,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
     llvm::orc::SymbolFlagsMap map = mr->getSymbols();
 
-    std::string key = mangleDirectMethodCall(*methodInfo, *classFile);
+    std::string key = mangleDirectMethodCall(method);
     llvm::cantFail(m_stubsManager->createStub(
         key,
         llvm::cantFail(m_callbackManager.getCompileCallback(
@@ -85,14 +93,13 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
             {
                 // Reference:
                 // https://docs.oracle.com/en/java/javase/17/docs/specs/jni/design.html#resolving-native-method-names
-                std::string jniName = formJNIMethodName(classFile->getThisClass(), methodInfo->getName(*classFile));
-                auto lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
+                std::string jniName = formJNIMethodName(method, /*withType=*/false);
+                auto lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, getInterner()(jniName));
                 if (!lookup)
                 {
                     llvm::consumeError(lookup.takeError());
-                    jniName = formJNIMethodName(classFile->getThisClass(), methodInfo->getName(*classFile),
-                                                methodInfo->getDescriptor(*classFile));
-                    lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, m_interner(jniName));
+                    jniName = formJNIMethodName(method, /*withType=*/true);
+                    lookup = m_jniImpls.getExecutionSession().lookup({&m_jniImpls}, getInterner()(jniName));
                 }
 
                 std::string bridgeName = key;
@@ -112,14 +119,14 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     debugBuilder.createSubroutineType(debugBuilder.getOrCreateTypeArray({})), 1, llvm::DINode::FlagZero,
                     llvm::DISubprogram::SPFlagDefinition);
 
-                MethodType methodType = methodInfo->getDescriptor(*classFile);
-                auto* function = llvm::Function::Create(descriptorToType(methodType, methodInfo->isStatic(), *context),
+                MethodType methodType = method->getType();
+                auto* function = llvm::Function::Create(descriptorToType(methodType, method->isStatic(), *context),
                                                         llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
                 function->setSubprogram(subprogram);
 
-                applyABIAttributes(function, methodType, methodInfo->isStatic());
+                applyABIAttributes(function, methodType, method->isStatic());
                 function->clearGC();
-                addJavaMethodMetadata(function, {classObject, method});
+                addJavaMethodMetadata(function, {method->getClassObject(), method});
 
                 llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
@@ -137,10 +144,11 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                     builder.CreateCall(module->getOrInsertFunction("jllvm_push_local_frame", builder.getVoidTy()));
 
                     llvm::SmallVector<llvm::Value*> args{environment};
-                    if (methodInfo->isStatic())
+                    if (method->isStatic())
                     {
                         args.push_back(builder.CreateIntToPtr(
-                            builder.getInt64(reinterpret_cast<std::uintptr_t>(classObject)), referenceType));
+                            builder.getInt64(reinterpret_cast<std::uintptr_t>(method->getClassObject())),
+                            referenceType));
                     }
 
                     for (llvm::Argument& arg : function->args())
@@ -230,9 +238,9 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                 llvm::cantFail(
                     m_irLayer.add(m_jniBridges, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
 
-                llvm::JITTargetAddress bridgeMethod =
-                    llvm::cantFail(m_jniBridges.getExecutionSession().lookup({&m_jniBridges}, m_interner(bridgeName)))
-                        .getAddress();
+                llvm::JITTargetAddress bridgeMethod = llvm::cantFail(m_jniBridges.getExecutionSession().lookup(
+                                                                         {&m_jniBridges}, getInterner()(bridgeName)))
+                                                          .getAddress();
 
                 llvm::cantFail(m_stubsManager->updatePointer(key, bridgeMethod));
 
