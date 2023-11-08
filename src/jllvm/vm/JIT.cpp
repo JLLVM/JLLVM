@@ -347,19 +347,28 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
     std::uint64_t* localsPtr = operandPtr + 1;
     llvm::copy(locals, localsPtr);
 
-    auto context = std::make_unique<llvm::LLVMContext>();
-    auto module = std::make_unique<llvm::Module>("name", *context);
-
-    module->setDataLayout(m_dataLayout);
-    module->setTargetTriple(LLVM_HOST_TRIPLE);
-
+    // Lookup the OSR version if it has already been compiled. If not, compile and add it now.
     const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->method;
-    compileOSRMethod(*module, byteCodeOffset, method, m_stringInterner);
+    llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
+    llvm::Expected<llvm::JITEvaluatedSymbol> osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
+    if (!osrMethod)
+    {
+        llvm::consumeError(osrMethod.takeError());
+        auto context = std::make_unique<llvm::LLVMContext>();
+        auto module = std::make_unique<llvm::Module>("name", *context);
 
-    llvm::cantFail(m_optimizeLayer.add(m_main, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+        module->setDataLayout(m_dataLayout);
+        module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    llvm::JITEvaluatedSymbol osrMethod =
-        llvm::cantFail(m_session->lookup({&m_main}, m_interner(mangleOSRMethod(&method, byteCodeOffset))));
-    frame.resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()),
-                                    operandPtr, localsPtr);
+        compileOSRMethod(*module, byteCodeOffset, method, m_stringInterner);
+
+        llvm::cantFail(
+            m_optimizeLayer.add(m_javaJITSymbols, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+        osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
+    }
+
+    frame.resumeExecutionAtFunction(
+        reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(llvm::cantFail(std::move(osrMethod)).getAddress()),
+        operandPtr, localsPtr);
 }
