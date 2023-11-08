@@ -38,29 +38,19 @@ std::string formJNIMethodName(const Method* method, bool withType);
 class JNIImplementationLayer : public ByteCodeLayer
 {
     llvm::orc::JITDylib& m_jniImpls;
-    llvm::orc::JITDylib& m_jniBridges;
-    std::unique_ptr<llvm::orc::IndirectStubsManager> m_stubsManager;
-    llvm::orc::JITCompileCallbackManager& m_callbackManager;
     llvm::orc::IRLayer& m_irLayer;
     llvm::DataLayout m_dataLayout;
     void* m_jniNativeFunctions;
 
 public:
-    JNIImplementationLayer(llvm::orc::ExecutionSession& session,
-                           std::unique_ptr<llvm::orc::IndirectStubsManager> stubsManager,
-                           llvm::orc::JITCompileCallbackManager& callbackManager, llvm::orc::MangleAndInterner& mangler,
-                           llvm::orc::IRLayer& irLayer, const llvm::DataLayout& dataLayout, void* jniNativeFunctions,
-                           llvm::orc::JITDylib& implementationDylib)
+    JNIImplementationLayer(llvm::orc::ExecutionSession& session, llvm::orc::MangleAndInterner& mangler,
+                           llvm::orc::IRLayer& irLayer, const llvm::DataLayout& dataLayout, void* jniNativeFunctions)
         : ByteCodeLayer(mangler),
           m_jniImpls(session.createBareJITDylib("<jni>")),
-          m_jniBridges(session.createBareJITDylib("<jniBridge>")),
-          m_stubsManager(std::move(stubsManager)),
-          m_callbackManager(callbackManager),
           m_irLayer(irLayer),
           m_dataLayout(dataLayout),
           m_jniNativeFunctions(jniNativeFunctions)
     {
-        m_jniBridges.addToLinkOrder(implementationDylib);
     }
 
     /// Adds a new materialization unit to the JNI dylib which will be used to lookup any symbols when 'native' methods

@@ -28,8 +28,8 @@ namespace jllvm
 /// called.
 class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerator
 {
-    std::unique_ptr<llvm::orc::IndirectStubsManager> m_stubsManager;
-    llvm::orc::JITCompileCallbackManager& m_callbackManager;
+    llvm::orc::IndirectStubsManager& m_stubsManager;
+    std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
     llvm::orc::IRLayer& m_baseLayer;
     llvm::orc::JITDylib& m_impl;
     llvm::DataLayout m_dataLayout;
@@ -37,19 +37,20 @@ class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerato
     ClassObject* m_objectClassCache = nullptr;
 
 public:
-    explicit ClassObjectStubDefinitionsGenerator(std::unique_ptr<llvm::orc::IndirectStubsManager> stubsManager,
-                                                 llvm::orc::JITCompileCallbackManager& callbackManager,
+    explicit ClassObjectStubDefinitionsGenerator(llvm::orc::IndirectStubsManager& stubsManager,
                                                  llvm::orc::IRLayer& baseLayer, const llvm::DataLayout& dataLayout,
-                                                 llvm::orc::JITDylib& attachedTo, ClassLoader& classLoader)
-        : m_stubsManager(std::move(stubsManager)),
-          m_callbackManager(callbackManager),
+                                                 const llvm::orc::JITDylibSearchOrder& linkOrder,
+                                                 ClassLoader& classLoader)
+        : m_stubsManager(stubsManager),
+          m_callbackManager(llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
+              llvm::Triple(LLVM_HOST_TRIPLE), baseLayer.getExecutionSession(),
+              llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
           m_baseLayer(baseLayer),
           m_impl(m_baseLayer.getExecutionSession().createBareJITDylib("<classObjectStubs>")),
           m_dataLayout(dataLayout),
           m_classLoader(classLoader)
     {
-        attachedTo.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& dylibSearchOrder)
-                                   { m_impl.setLinkOrder(dylibSearchOrder); });
+        m_impl.setLinkOrder(linkOrder);
     }
 
     llvm::Error tryToGenerate(llvm::orc::LookupState&, llvm::orc::LookupKind, llvm::orc::JITDylib& dylib,

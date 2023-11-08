@@ -29,7 +29,6 @@
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
-#include <jllvm/materialization/ByteCodeOnDemandLayer.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
@@ -43,11 +42,23 @@ namespace jllvm
 class JIT
 {
     std::unique_ptr<llvm::orc::ExecutionSession> m_session;
-    llvm::orc::JITDylib& m_main;
-    llvm::orc::JITDylib& m_implementation;
+    /// Dylib containing ALL Java methods of all class objects ever added to the JIT. These stubs can change through
+    /// the lifetime of the VM to dispatch to compile callbacks, JIT compiled methods and potentially more in the
+    /// future.
+    /// These stubs are also the only public interface into the JIT.
+    llvm::orc::JITDylib& m_externalStubs;
+    /// Dylib containing only the actual JIT compiled Java methods.
+    llvm::orc::JITDylib& m_javaJITSymbols;
+    /// Dylib containing all additional symbols required by 'm_javaJITSymbols' to link correctly, but are not part of
+    /// the public interface of the JIT.
+    llvm::orc::JITDylib& m_javaJITImplDetails;
     std::unique_ptr<llvm::orc::EPCIndirectionUtils> m_epciu;
     std::unique_ptr<llvm::TargetMachine> m_targetMachine;
-    std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
+    llvm::orc::LazyCallThroughManager& m_lazyCallThroughManager;
+    /// Stub manager used through the JIT but most importantly for the stubs within 'm_externalStubs'. The manager can
+    /// be used to redirect these stubs to different implementations of the methods.
+    std::unique_ptr<llvm::orc::IndirectStubsManager> m_externalStubsManager;
+
     ClassLoader& m_classLoader;
     StringInterner& m_stringInterner;
 
@@ -58,7 +69,6 @@ class JIT
     llvm::orc::IRCompileLayer m_compilerLayer;
     llvm::orc::IRTransformLayer m_optimizeLayer;
     ByteCodeCompileLayer m_byteCodeCompileLayer;
-    ByteCodeOnDemandLayer m_byteCodeOnDemandLayer;
     JNIImplementationLayer m_jniLayer;
 
     llvm::DenseSet<void*> m_javaFrames;
@@ -146,7 +156,7 @@ public:
     void addImplementationSymbol(std::string symbol, const F& f)
         requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
     {
-        llvm::cantFail(m_implementation.define(
+        llvm::cantFail(m_javaJITImplDetails.define(
             createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner)));
     }
 
@@ -154,7 +164,7 @@ public:
     template <class Ret, class... Args>
     void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
     {
-        llvm::cantFail(m_implementation.define(llvm::orc::absoluteSymbols(
+        llvm::cantFail(m_javaJITImplDetails.define(llvm::orc::absoluteSymbols(
             {{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(f, llvm::JITSymbolFlags::Exported
                                                                                | llvm::JITSymbolFlags::Callable)}})));
     }
@@ -163,7 +173,7 @@ public:
     template <class T>
     void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
     {
-        llvm::cantFail(m_implementation.define(
+        llvm::cantFail(m_javaJITImplDetails.define(
             llvm::orc::absoluteSymbols({{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
@@ -218,7 +228,7 @@ public:
     llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef className, llvm::StringRef methodName,
                                                     MethodType methodDescriptor)
     {
-        return m_session->lookup({&m_main},
+        return m_session->lookup({&m_externalStubs},
                                  m_interner(mangleDirectMethodCall(className, methodName, methodDescriptor)));
     }
 };

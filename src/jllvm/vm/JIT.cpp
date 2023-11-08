@@ -116,13 +116,13 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
                 StringInterner& stringInterner, void* jniFunctions)
     : m_session(std::move(session)),
-      m_main(llvm::cantFail(m_session->createJITDylib("<main>"))),
-      m_implementation(llvm::cantFail(m_session->createJITDylib("<implementation>"))),
+      m_externalStubs(llvm::cantFail(m_session->createJITDylib("<stubs>"))),
+      m_javaJITSymbols(llvm::cantFail(m_session->createJITDylib("<javaJIT>"))),
+      m_javaJITImplDetails(llvm::cantFail(m_session->createJITDylib("<implementation>"))),
       m_epciu(std::move(epciu)),
       m_targetMachine(llvm::cantFail(builder.createTargetMachine())),
-      m_callbackManager(llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
-          llvm::Triple(LLVM_HOST_TRIPLE), *m_session,
-          llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))),
+      m_lazyCallThroughManager(m_epciu->getLazyCallThroughManager()),
+      m_externalStubsManager(m_epciu->createIndirectStubsManager()),
       m_classLoader(classLoader),
       m_stringInterner(stringInterner),
       m_dataLayout(layout),
@@ -136,15 +136,23 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                           return std::move(tsm);
                       }),
       m_byteCodeCompileLayer(stringInterner, m_optimizeLayer, m_interner, m_dataLayout),
-      m_byteCodeOnDemandLayer(m_byteCodeCompileLayer, *m_session, m_interner,
-                              llvm::orc::createLocalIndirectStubsManagerBuilder(llvm::Triple(LLVM_HOST_TRIPLE)),
-                              m_epciu->getLazyCallThroughManager()),
-      m_jniLayer(*m_session, m_epciu->createIndirectStubsManager(), *m_callbackManager, m_interner, m_optimizeLayer,
-                 m_dataLayout, jniFunctions, m_implementation)
+      m_jniLayer(*m_session, m_interner, m_optimizeLayer, m_dataLayout, jniFunctions)
 {
-    m_main.addToLinkOrder(m_implementation);
-    m_main.addGenerator(std::make_unique<ClassObjectStubDefinitionsGenerator>(
-        m_epciu->createIndirectStubsManager(), *m_callbackManager, m_optimizeLayer, m_dataLayout, m_main, classLoader));
+    // JITted Java methods mustn't lookup symbols within 'm_javaJITSymbols', as these are always JITted methods, but
+    // rather resolve direct method calls to the stubs in 'm_externalStubs'. All other required symbols are in the
+    // dylib for implementation details.
+    m_javaJITSymbols.setLinkOrder({{&m_externalStubs, llvm::orc::JITDylibLookupFlags::MatchExportedSymbolsOnly},
+                                   {&m_javaJITImplDetails, llvm::orc::JITDylibLookupFlags::MatchExportedSymbolsOnly}},
+                                  /*LinkAgainstThisJITDylibFirst=*/false);
+
+    m_javaJITSymbols.withLinkOrderDo(
+        [&](const llvm::orc::JITDylibSearchOrder& searchOrder)
+        {
+            // The functions created by the stub class object stub definitions generator are also considered an
+            // implementation detail and may only link against the stubs.
+            m_javaJITImplDetails.addGenerator(std::make_unique<ClassObjectStubDefinitionsGenerator>(
+                *m_externalStubsManager, m_optimizeLayer, m_dataLayout, searchOrder, classLoader));
+        });
 
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
@@ -161,7 +169,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
-    m_implementation.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+    m_javaJITImplDetails.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
         m_dataLayout.getGlobalPrefix(),
         /*Allow=*/[](const llvm::orc::SymbolStringPtr& symbolStringPtr)
         { return (*symbolStringPtr).starts_with("__asan"); })));
@@ -205,6 +213,7 @@ jllvm::JIT::~JIT()
 
 void jllvm::JIT::add(const ClassObject* classObject)
 {
+    llvm::orc::IndirectStubsManager::StubInitsMap stubInits;
     for (const Method& method : classObject->getMethods())
     {
         if (method.isAbstract())
@@ -212,16 +221,48 @@ void jllvm::JIT::add(const ClassObject* classObject)
             continue;
         }
 
-        LLVM_DEBUG({ llvm::dbgs() << "Adding " << mangleDirectMethodCall(&method) << " to JIT Link graph\n"; });
+        std::string symbolName = mangleDirectMethodCall(&method);
+        llvm::orc::SymbolStringPtr mangledSymbol = m_interner(symbolName);
+        LLVM_DEBUG({ llvm::dbgs() << "Adding " << symbolName << " to JIT Link graph\n"; });
 
+        // Register the Java method in the corresponding layer.
         if (method.isNative())
         {
-            llvm::cantFail(m_jniLayer.add(m_main, &method));
-            continue;
+            llvm::cantFail(m_jniLayer.add(m_javaJITSymbols, &method));
+        }
+        else
+        {
+            llvm::cantFail(m_byteCodeCompileLayer.add(m_javaJITSymbols, &method));
         }
 
-        llvm::cantFail(m_byteCodeOnDemandLayer.add(m_main, &method));
+        // Create a stub entry for this method. Right now, we by default create a trampoline which upon being called
+        // will lookup the method within 'm_javaJITSymbols'.
+        stubInits[symbolName] = {llvm::cantFail(m_lazyCallThroughManager.getCallThroughTrampoline(
+                                     m_javaJITSymbols, mangledSymbol,
+                                     [=, this](llvm::JITTargetAddress executorAddr)
+                                     {
+                                         // After having compiled and resolved the method, update the stub to point
+                                         // to the resolved method instead.
+                                         return m_externalStubsManager->updatePointer(symbolName, executorAddr);
+                                     })),
+                                 llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
     }
+
+    if (stubInits.empty())
+    {
+        return;
+    }
+
+    // Create the stubs and define them with the direct method call mangling in the external stubs dylib.
+    llvm::cantFail(m_externalStubsManager->createStubs(stubInits));
+
+    llvm::orc::SymbolMap methods;
+    for (llvm::StringRef stubName : llvm::map_range(stubInits, [](auto&& entry) { return entry.first(); }))
+    {
+        methods[m_interner(stubName)] = m_externalStubsManager->findStub(stubName, /*ExportedStubOnly=*/true);
+    }
+
+    llvm::cantFail(m_externalStubs.define(llvm::orc::absoluteSymbols(std::move(methods))));
 }
 
 void jllvm::JIT::optimize(llvm::Module& module)
@@ -306,19 +347,28 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
     std::uint64_t* localsPtr = operandPtr + 1;
     llvm::copy(locals, localsPtr);
 
-    auto context = std::make_unique<llvm::LLVMContext>();
-    auto module = std::make_unique<llvm::Module>("name", *context);
-
-    module->setDataLayout(m_dataLayout);
-    module->setTargetTriple(LLVM_HOST_TRIPLE);
-
+    // Lookup the OSR version if it has already been compiled. If not, compile and add it now.
     const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->method;
-    compileOSRMethod(*module, byteCodeOffset, method, m_stringInterner);
+    llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
+    llvm::Expected<llvm::JITEvaluatedSymbol> osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
+    if (!osrMethod)
+    {
+        llvm::consumeError(osrMethod.takeError());
+        auto context = std::make_unique<llvm::LLVMContext>();
+        auto module = std::make_unique<llvm::Module>("name", *context);
 
-    llvm::cantFail(m_optimizeLayer.add(m_main, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+        module->setDataLayout(m_dataLayout);
+        module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    llvm::JITEvaluatedSymbol osrMethod =
-        llvm::cantFail(m_session->lookup({&m_main}, m_interner(mangleOSRMethod(&method, byteCodeOffset))));
-    frame.resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()),
-                                    operandPtr, localsPtr);
+        compileOSRMethod(*module, byteCodeOffset, method, m_stringInterner);
+
+        llvm::cantFail(
+            m_optimizeLayer.add(m_javaJITSymbols, llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+        osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
+    }
+
+    frame.resumeExecutionAtFunction(
+        reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(llvm::cantFail(std::move(osrMethod)).getAddress()),
+        operandPtr, localsPtr);
 }
