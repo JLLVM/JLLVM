@@ -14,6 +14,7 @@
 #pragma once
 
 #include <llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h>
+#include <llvm/Object/StackMapParser.h>
 
 #include <jllvm/gc/GarbageCollector.hpp>
 
@@ -29,6 +30,12 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
 {
     GarbageCollector& m_gc;
     std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> m_deoptEntryParsed;
+
+    using StackMapParser = llvm::StackMapParser<llvm::support::endianness::native>;
+
+    /// Converts a location in the stackmap into an equivalent 'FrameValue<T>'.
+    template <class T>
+    FrameValue<T> toFrameValue(const StackMapParser::LocationAccessor& loc, StackMapParser& parser);
 
 public:
     explicit StackMapRegistrationPlugin(GarbageCollector& gc,

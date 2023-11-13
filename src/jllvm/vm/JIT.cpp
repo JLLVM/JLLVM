@@ -314,25 +314,8 @@ llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame
 
     const DeoptEntry& entry = iter->second;
 
-    llvm::SmallVector<std::uint64_t> result(entry.locals.size());
-    for (auto&& [location, dest] : llvm::zip(entry.locals, result))
-    {
-        dest = match(
-            location, [&](DeoptEntry::Constant constant) { return constant.constant; },
-            [&](DeoptEntry::Register reg) { return frame.getIntegerRegister(reg.registerNumber); },
-            [&](DeoptEntry::Indirect indirect)
-            {
-                auto* framePointer =
-                    reinterpret_cast<char*>(frame.getIntegerRegister(indirect.registerNumber)) + indirect.offset;
-                std::uint64_t value = 0;
-                std::memcpy(&value, framePointer, indirect.size);
-                return value;
-            },
-            [&](DeoptEntry::Direct /*direct*/) -> std::uint64_t
-            { llvm_unreachable("not doing stack allocations yet"); });
-    }
-
-    return result;
+    return llvm::to_vector(
+        llvm::map_range(entry.locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.read(frame); }));
 }
 
 void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
