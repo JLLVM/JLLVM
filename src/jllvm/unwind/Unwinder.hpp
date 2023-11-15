@@ -106,14 +106,11 @@ public:
     }
 };
 
-/// Class representing a specific location of a value within a 'UnwindFrame'.
+/// Class representing a specific location of a value interpreted as type 'T' within a 'UnwindFrame'.
 /// A 'FrameValue' is only ever valid for a specific program counter within frames of a specific function.
 /// Mapping the program counter and/or function pointer to frame values is performed by the stackmap.
 /// A 'FrameValue' itself does not have any mechanism to validate reading from the correct frame.
-/// 'T' can be used to make a stronger typed 'FrameValue' which is known to contain a value of type 'T'.
-/// Note that this type is trivially copyable, a standard layout type and small enough to be passed by value rather
-/// than const reference.
-template <class T = void>
+template <class T>
 class FrameValue
 {
     enum class Tag : std::uint8_t
@@ -215,13 +212,12 @@ public:
     }
 
     /// Read the values represented by the 'FrameValue' within 'frame'.
-    /// 'U' is the interpretation of the value and must be a type greater or equal in size than the actual value.
-    /// The resulting value is zero-extended and then bitcast to 'U'.
-    template <class U>
-    U read(const UnwindFrame& frame) const
+    /// 'T' is used as the interpretation of the result and must be a type greater or equal in size to the read
+    /// value. The read value is zero-extended and then bitcast to 'T'.
+    T read(const UnwindFrame& frame) const
     {
-        static_assert(sizeof(U) <= sizeof(std::uint64_t), "cannot read values larger than 64 bit");
-        static_assert(std::is_trivially_copyable_v<U>, "bitcast is only valid for trivially copyable types");
+        static_assert(sizeof(T) <= sizeof(std::uint64_t), "cannot read values larger than 64 bit");
+        static_assert(std::is_trivially_copyable_v<T>, "bitcast is only valid for trivially copyable types");
 
         std::uint64_t result{};
         switch (m_union.accessTag.tag)
@@ -229,12 +225,12 @@ public:
             case Tag::Constant: result = m_union.constant.constant; break;
             case Tag::Register: result = frame.getIntegerRegister(m_union.inRegister.registerNumber); break;
             case Tag::Direct:
-                assert(sizeof(U) == sizeof(void*) && "type read must be equal to pointer size");
+                assert(sizeof(T) == sizeof(void*) && "type read must be equal to pointer size");
                 result = frame.getIntegerRegister(m_union.direct.registerNumber) + m_union.direct.offset;
                 break;
             case Tag::Indirect:
             {
-                assert(sizeof(U) >= m_union.indirect.size && "type read must be large enough for the value");
+                assert(sizeof(T) >= m_union.indirect.size && "type read must be large enough for the value");
                 auto* ptr = reinterpret_cast<char*>(frame.getIntegerRegister(m_union.indirect.registerNumber)
                                                     + m_union.indirect.offset);
                 std::memcpy(&result, ptr, m_union.indirect.size);
@@ -242,13 +238,7 @@ public:
             }
             default: llvm_unreachable("invalid tag");
         }
-        return llvm::bit_cast<U>(static_cast<NextSizedUInt<U>>(result));
-    }
-
-    /// Overload of 'read' for strongly typed 'FrameValue's, interpreting the value as 'T'.
-    T read(const UnwindFrame& frame) const requires(!std::is_void_v<T>)
-    {
-        return read<T>(frame);
+        return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(result));
     }
 };
 
