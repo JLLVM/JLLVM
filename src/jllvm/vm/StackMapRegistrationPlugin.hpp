@@ -37,6 +37,10 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
     template <class T>
     FrameValue<T> toFrameValue(const StackMapParser::LocationAccessor& loc, StackMapParser& parser);
 
+    /// Converts a location in the stackmap into an equivalent 'WriteableFrameValue<T>'.
+    template <class T>
+    std::optional<WriteableFrameValue<T>> toWriteableFrameValue(const StackMapParser::LocationAccessor& loc);
+
 public:
     explicit StackMapRegistrationPlugin(GarbageCollector& gc,
                                         std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> deoptEntryParsed)

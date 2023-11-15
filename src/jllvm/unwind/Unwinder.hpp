@@ -112,9 +112,13 @@ public:
 /// A 'FrameValue' is only ever valid for a specific program counter within frames of a specific function.
 /// Mapping the program counter and/or function pointer to frame values is performed by the stackmap.
 /// A 'FrameValue' itself does not have any mechanism to validate reading from the correct frame.
+///
+/// The value a 'FrameValue' is referring to may be either a scalar or a vector (in the mathematical/register sense,
+/// not C++'s vector). The latter e.g. occurs if after vectorization, a vector of GC pointers exists within a method.
 template <class T>
 class FrameValue
 {
+protected:
     enum class Tag : std::uint8_t
     {
         /// Value was constant folded.
@@ -213,10 +217,11 @@ public:
         return result;
     }
 
-    /// Read the values represented by the 'FrameValue' within 'frame'.
+    /// Reads a scalar value represented by the 'FrameValue' within 'frame'.
     /// 'T' is used as the interpretation of the result and must be a type greater or equal in size to the read
     /// value. The read value is zero-extended and then bitcast to 'T'.
-    T read(const UnwindFrame& frame) const
+    /// It is undefined behaviour (assert in debug mode) if the frame value refers to a vector of values.
+    T readScalar(const UnwindFrame& frame) const
     {
         static_assert(sizeof(T) <= sizeof(std::uint64_t), "cannot read values larger than 64 bit");
         static_assert(std::is_trivially_copyable_v<T>, "bitcast is only valid for trivially copyable types");
@@ -241,6 +246,72 @@ public:
             default: llvm_unreachable("invalid tag");
         }
         return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(result));
+    }
+
+    /// Reads a vector value represented by the 'FrameValue' from 'frame' and assigns it to 'vector'.
+    /// If the frame value refers to a scalar value, the vector will contain the single scalar as its only value.
+    /// Note that the out parameter is chosen to preserve the capacity of the vector.
+    void readVector(llvm::SmallVectorImpl<T>& vector, const UnwindFrame& frame) const
+    {
+        // Only indirect can read a vector, all others always read scalars.
+        if (m_union.accessTag.tag != Tag::Indirect)
+        {
+            vector.assign({readScalar(frame)});
+            return;
+        }
+
+        assert(m_union.indirect.size % sizeof(T) == 0 && "element type mismatch");
+        vector.resize(m_union.indirect.size / sizeof(T));
+        auto* ptr = reinterpret_cast<char*>(frame.getIntegerRegister(m_union.indirect.registerNumber)
+                                            + m_union.indirect.offset);
+        std::memcpy(vector.data(), ptr, m_union.indirect.size);
+    }
+};
+
+/// Extension of 'FrameValue' that is additionally capable of writing to the location of the frame value.
+template <class T>
+class WriteableFrameValue : public FrameValue<T>
+{
+    using Base = FrameValue<T>;
+
+public:
+    /// Creates a 'WriteableFrameValue' that is within a CSR register.
+    static WriteableFrameValue inRegister(int registerNumber)
+    {
+        WriteableFrameValue result;
+        result.m_union.inRegister = {Base::Tag::Register, registerNumber};
+        return result;
+    }
+
+    /// Creates a 'WriteableFrameValue' that has been spilled into a location on the stack.
+    static WriteableFrameValue indirect(std::uint8_t size, int registerNumber, std::int32_t offset)
+    {
+        WriteableFrameValue result;
+        result.m_union.indirect = {Base::Tag::Indirect, size, registerNumber, offset};
+        return result;
+    }
+
+    /// Writes the values in 'vector' back to the location in 'frame'. 'vector' must be equal in size to the 'vector'
+    /// argument after a call to 'readVector'.
+    void writeVector(llvm::ArrayRef<T> vector, UnwindFrame& frame) const
+    {
+        switch (this->m_union.accessTag.tag)
+        {
+            case Base::Tag::Register:
+                assert(vector.size() == 1 && "vector must have exactly one element when writing to register");
+                frame.setIntegerRegister(this->m_union.inRegister.registerNumber,
+                                         static_cast<std::uintptr_t>(llvm::bit_cast<NextSizedUInt<T>>(vector.front())));
+                return;
+            case Base::Tag::Indirect:
+            {
+                assert(this->m_union.indirect.size == sizeof(T) * vector.size() && "size mismatch");
+                auto* ptr = reinterpret_cast<char*>(frame.getIntegerRegister(this->m_union.indirect.registerNumber)
+                                                    + this->m_union.indirect.offset);
+                std::memcpy(ptr, vector.data(), this->m_union.indirect.size);
+                return;
+            }
+            default: llvm_unreachable("invalid tag for writeable frame value");
+        }
     }
 };
 

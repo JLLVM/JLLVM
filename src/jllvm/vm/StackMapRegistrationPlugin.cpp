@@ -42,6 +42,21 @@ jllvm::FrameValue<T> jllvm::StackMapRegistrationPlugin::toFrameValue(const Stack
     llvm_unreachable("invalid kind");
 }
 
+template <class T>
+std::optional<jllvm::WriteableFrameValue<T>>
+    jllvm::StackMapRegistrationPlugin::toWriteableFrameValue(const StackMapParser::LocationAccessor& loc)
+{
+    switch (loc.getKind())
+    {
+        case StackMapParser::LocationKind::Register: return WriteableFrameValue<T>::inRegister(loc.getDwarfRegNum());
+        case StackMapParser::LocationKind::Indirect:
+            return WriteableFrameValue<T>::indirect(loc.getSizeInBytes(), loc.getDwarfRegNum(), loc.getOffset());
+        case StackMapParser::LocationKind::Constant:
+        case StackMapParser::LocationKind::ConstantIndex: return std::nullopt;
+        default: llvm_unreachable("location is not writeable");
+    }
+}
+
 void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::MaterializationResponsibility&,
                                                          llvm::jitlink::LinkGraph&,
                                                          llvm::jitlink::PassConfiguration& config)
@@ -91,7 +106,7 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
 
             llvm::StackMapParser<llvm::support::endianness::native> parser({start, size});
 
-            llvm::SmallVector<jllvm::StackMapEntry> entries;
+            llvm::SmallVector<StackMapEntry> entries;
             auto currFunc = parser.functions_begin();
             std::size_t recordCount = 0;
             for (auto&& record : parser.records())
@@ -121,29 +136,20 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                     m_deoptEntryParsed(addr, std::move(entry));
                 }
 
-                for (std::uint16_t i = 3 + deoptCount; i < record.getNumLocations(); i++)
+                for (std::uint16_t i = 3 + deoptCount; i < record.getNumLocations(); i += 2)
                 {
-                    auto loc = record.getLocation(i);
-                    switch (loc.getKind())
+                    std::optional<WriteableFrameValue<ObjectInterface*>> basePtr =
+                        toWriteableFrameValue<ObjectInterface*>(record.getLocation(i));
+                    std::optional<WriteableFrameValue<std::byte*>> derivedPtr =
+                        toWriteableFrameValue<std::byte*>(record.getLocation(i + 1));
+                    if (!derivedPtr)
                     {
-                        case decltype(parser)::LocationKind::Register:
-                        case decltype(parser)::LocationKind::Direct:
-                        case decltype(parser)::LocationKind::Indirect:
-                        {
-                            entries.push_back({static_cast<jllvm::StackMapEntry::Type>(loc.getKind()),
-                                               static_cast<std::uint8_t>(loc.getSizeInBytes() / sizeof(void*)),
-                                               loc.getDwarfRegNum(),
-                                               loc.getKind() != decltype(parser)::LocationKind::Register ?
-                                                   static_cast<std::uint32_t>(loc.getOffset()) :
-                                                   0});
-                            break;
-                        }
-                        case decltype(parser)::LocationKind::Constant:
-                        case decltype(parser)::LocationKind::ConstantIndex: continue;
+                        continue;
                     }
+                    assert(basePtr
+                           && "writeable derived pointer without writeable base pointer should not be possible");
+                    entries.push_back({*basePtr, *derivedPtr});
                 }
-                llvm::sort(entries);
-                entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
                 m_gc.addStackMapEntries(addr, entries);
             }
 
