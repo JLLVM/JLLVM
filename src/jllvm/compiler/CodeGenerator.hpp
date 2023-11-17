@@ -80,6 +80,11 @@ class CodeGenerator
     /// The original call is replaced and erased.
     void addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst);
 
+    /// Creates a new call from 'callInst' which contains the deoptimization information required for generating a Java
+    /// backtrace. This is equal to using 'addExceptionHandlingDeopts' but with the number of local variables set to
+    /// zero.
+    void addBytecodeOffsetOnlyDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst);
+
     void generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
                                        llvm::ArrayRef<llvm::Value*> builderArgs);
 
