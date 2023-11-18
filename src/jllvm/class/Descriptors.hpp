@@ -180,7 +180,7 @@ public:
         return getValue() == Char || getValue() == Boolean;
     }
 
-    bool operator==(const BaseType&) const = default;
+    constexpr bool operator==(const BaseType&) const = default;
 };
 
 /// <ObjectType> ::= 'L' <ClassName> ';'
@@ -198,7 +198,7 @@ public:
         return {m_name, m_size};
     }
 
-    bool operator==(const ObjectType&) const = default;
+    constexpr bool operator==(const ObjectType&) const = default;
 };
 
 /// <ArrayType> ::= '[' <FieldType>
@@ -480,12 +480,6 @@ constexpr FieldType::FieldType(std::string_view text) : m_arrayCount(text.find_f
 constexpr bool FieldType::isReference() const
 {
     return holds_alternative<ObjectType>(*this) || holds_alternative<ArrayType>(*this);
-}
-
-constexpr bool FieldType::isWide() const
-{
-    std::optional<BaseType> baseType = get_if<BaseType>(this);
-    return baseType == BaseType::Long || baseType == BaseType::Double;
 }
 
 } // namespace jllvm
