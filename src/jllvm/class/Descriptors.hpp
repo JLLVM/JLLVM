@@ -485,10 +485,6 @@ constexpr bool FieldType::isReference() const
 constexpr bool FieldType::isWide() const
 {
     std::optional<BaseType> baseType = get_if<BaseType>(this);
-    if (!baseType)
-    {
-        return false;
-    }
     return *baseType == BaseType::Long || *baseType == BaseType::Double;
 }
 
