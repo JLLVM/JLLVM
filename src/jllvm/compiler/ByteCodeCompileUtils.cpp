@@ -119,6 +119,30 @@ llvm::FunctionType* jllvm::descriptorToType(MethodType type, bool isStatic, llvm
     return llvm::FunctionType::get(descriptorToType(type.returnType(), context), args, false);
 }
 
+llvm::Value* jllvm::extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm::Value* value)
+{
+    return match(
+        type,
+        [&](BaseType baseType)
+        {
+            switch (baseType.getValue())
+            {
+                case BaseType::Boolean:
+                case BaseType::Byte:
+                case BaseType::Short:
+                {
+                    return builder.CreateSExt(value, builder.getInt32Ty());
+                }
+                case BaseType::Char:
+                {
+                    return builder.CreateZExt(value, builder.getInt32Ty());
+                }
+                default: return value;
+            }
+        },
+        [&](const auto&) { return value; });
+}
+
 void jllvm::addJavaMethodMetadata(llvm::Function* function, const JavaMethodMetadata& metadata)
 {
     std::string sectionName = "java";

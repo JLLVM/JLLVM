@@ -30,23 +30,30 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
 
     auto* code = methodInfo.getAttributes().find<Code>();
     assert(code && "method to compile must have a code attribute");
-    compileMethodBody(function, *classObject, stringInterner, method.getType(), *code,
-                      [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack&,
-                          const ByteCodeTypeChecker::TypeInfo&)
-                      {
-                          // Arguments are put into the locals. According to the specification, i64s and doubles are
-                          // split into two locals. We don't actually do that, we just put them into the very first
-                          // local, but we still have to skip over the following local as if we didn't.
-                          const auto* nextLocal = locals.begin();
-                          for (auto& arg : function->args())
-                          {
-                              builder.CreateStore(&arg, *nextLocal++);
-                              if (arg.getType()->isIntegerTy(64) || arg.getType()->isDoubleTy())
-                              {
-                                  nextLocal++;
-                              }
-                          }
-                      });
+    compileMethodBody(
+        function, method, stringInterner, *code,
+        [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack&, const ByteCodeTypeChecker::TypeInfo&)
+        {
+            // Arguments are put into the locals. According to the specification, i64s and doubles are
+            // split into two locals. We don't actually do that, we just put them into the very first
+            // local, but we still have to skip over the following local as if we didn't.
+            auto nextLocal = locals.begin();
+            std::size_t functionArgsBegin = 0;
+            if (!method.isStatic())
+            {
+                functionArgsBegin = 1;
+                *nextLocal++ = function->getArg(0);
+            }
+            for (auto&& [arg, paramType] :
+                 llvm::zip_equal(llvm::drop_begin(function->args(), functionArgsBegin), method.getType().parameters()))
+            {
+                *nextLocal++ = extendToStackType(builder, paramType, &arg);
+                if (paramType.isWide())
+                {
+                    nextLocal++;
+                }
+            }
+        });
 
     return function;
 }
@@ -70,8 +77,8 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     llvm::Value* localsInput = function->getArg(1);
 
     compileMethodBody(
-        function, *classObject, stringInterner, method.getType(), *code,
-        [&](llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals, OperandStack& operandStack,
+        function, method, stringInterner, *code,
+        [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
             const ByteCodeTypeChecker::TypeInfo& typeInfo)
         {
             // Initialize the operand stack and the local variables from the two input arrays. Using the type info from
@@ -98,7 +105,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
                        && "OSR into frame containing 'returnAddress' instances is not supported");
                 llvm::Value* gep = builder.CreateConstGEP1_32(localsInput->getType(), localsInput, index);
                 llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
-                builder.CreateStore(load, local);
+                local = load;
             }
 
             // The OSR frame is responsible for deleting its input arrays as the frame that originally allocated the

@@ -107,30 +107,6 @@ llvm::FunctionCallee throwFunction(llvm::Module* module)
     return function;
 }
 
-llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm::Value* value)
-{
-    return match(
-        type,
-        [&](BaseType baseType)
-        {
-            switch (baseType.getValue())
-            {
-                case BaseType::Boolean:
-                case BaseType::Byte:
-                case BaseType::Short:
-                {
-                    return builder.CreateSExt(value, builder.getInt32Ty());
-                }
-                case BaseType::Char:
-                {
-                    return builder.CreateZExt(value, builder.getInt32Ty());
-                }
-                default: return value;
-            }
-        },
-        [&](const auto&) { return value; });
-}
-
 inline bool isCategoryTwo(llvm::Type* type)
 {
     return type->isIntegerTy(64) || type->isDoubleTy();
@@ -205,10 +181,7 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     // This is currently the case for self-recursive functions.
     m_builder.SetCurrentDebugLocation(llvm::DILocation::get(m_builder.getContext(), 1, 1, subprogram));
 
-    // We need pointer size bytes, since that is the largest type we may store in a local.
-    std::generate(m_locals.begin(), m_locals.end(), [&] { return m_builder.CreateAlloca(m_builder.getPtrTy()); });
-
-    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_functionMethodType};
+    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_method};
 
     // Perform the type check as the information is potentially required in the prologue generation.
     const ByteCodeTypeChecker::TypeInfo& typeInfo = checker.checkAndGetTypeInfo(offset);
@@ -224,10 +197,12 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     {
         iter->second.block = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
         iter->second.block->moveAfter(&m_function->getEntryBlock());
-        iter->second.state.resize(typeInfo.operandStack.size());
-        llvm::transform(typeInfo.operandStack, iter->second.state.begin(),
-                        [&](ByteCodeTypeChecker::JVMType type)
-                        { return type.is<llvm::Type*>() ? type.get<llvm::Type*>() : m_builder.getPtrTy(); });
+        iter->second.operandState.resize(typeInfo.operandStack.size());
+        ByteCodeTypeChecker::transformJVMToLLVMType(m_builder.getContext(), typeInfo.operandStack,
+                                                    iter->second.operandState.begin());
+        iter->second.variableState.resize(typeInfo.locals.size());
+        ByteCodeTypeChecker::transformJVMToLLVMType(m_builder.getContext(), typeInfo.locals,
+                                                    iter->second.variableState.begin());
     }
 
     generateCodeBody(code, offset);
@@ -247,14 +222,16 @@ void CodeGenerator::createBasicBlocks(const ByteCodeTypeChecker& checker)
 {
     for (const auto& [offset, state] : checker.getBasicBlocks())
     {
-        OperandStack::State stack{state.size()};
+        auto&& [operandStackResult, localsResult] = state;
+        OperandStack::State stack{operandStackResult.size()};
+        LocalVariables::State locals{localsResult.size()};
 
-        llvm::transform(state, stack.begin(),
-                        [&](ByteCodeTypeChecker::JVMType type)
-                        { return type.is<llvm::Type*>() ? type.get<llvm::Type*>() : m_builder.getPtrTy(); });
+        ByteCodeTypeChecker::transformJVMToLLVMType(m_builder.getContext(), operandStackResult, stack.begin());
+        ByteCodeTypeChecker::transformJVMToLLVMType(m_builder.getContext(), localsResult, locals.begin());
 
         m_basicBlocks.insert(
-            {offset, {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(stack)}});
+            {offset,
+             {llvm::BasicBlock::Create(m_builder.getContext(), "", m_function), std::move(stack), std::move(locals)}});
     }
 
     m_retToMap = checker.makeRetToMap();
@@ -306,7 +283,8 @@ void CodeGenerator::generateCodeBody(const Code& code, std::uint16_t startOffset
             // order of instructions in bytecode.
             block->moveAfter(m_builder.GetInsertBlock());
             m_builder.SetInsertPoint(block);
-            m_operandStack.setState(result->second.state);
+            m_operandStack.setState(result->second.operandState);
+            m_locals.setState(result->second.variableState);
         }
 
         // Compute the exception handlers active right before the new offset.
@@ -398,7 +376,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
     auto generateRet = [&](auto& ret)
     {
-        llvm::Value* retAddress = m_builder.CreateLoad(m_builder.getPtrTy(), m_locals[ret.index]);
+        llvm::Value* retAddress = m_locals[ret.index];
         auto& retLocations = m_retToMap[ret.offset];
         auto* indirectBr = m_builder.CreateIndirectBr(retAddress, retLocations.size());
         for (auto location : retLocations)
@@ -467,27 +445,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](AConstNull)
         { m_operandStack.push_back(llvm::ConstantPointerNull::get(referenceType(m_builder.getContext()))); },
-        [&](OneOf<ALoad, DLoad, FLoad, ILoad, LLoad> load)
-        {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                [&](ALoad) { return referenceType(m_builder.getContext()); },
-                [&](DLoad) { return m_builder.getDoubleTy(); }, [&](FLoad) { return m_builder.getFloatTy(); },
-                [&](ILoad) { return m_builder.getInt32Ty(); }, [&](LLoad) { return m_builder.getInt64Ty(); });
-
-            m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[load.index]));
-        },
+        [&](OneOf<ALoad, DLoad, FLoad, ILoad, LLoad> load) { m_operandStack.push_back(m_locals[load.index]); },
         [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0, ALoad1, DLoad1, FLoad1, ILoad1, LLoad1, ALoad2, DLoad2,
                   FLoad2, ILoad2, LLoad2, ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>)
         {
-            auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid load operation"); },
-                [&](OneOf<ALoad0, ALoad1, ALoad2, ALoad3>) { return referenceType(m_builder.getContext()); },
-                [&](OneOf<DLoad0, DLoad1, DLoad2, DLoad3>) { return m_builder.getDoubleTy(); },
-                [&](OneOf<FLoad0, FLoad1, FLoad2, FLoad3>) { return m_builder.getFloatTy(); },
-                [&](OneOf<ILoad0, ILoad1, ILoad2, ILoad3>) { return m_builder.getInt32Ty(); },
-                [&](OneOf<LLoad0, LLoad1, LLoad2, LLoad3>) { return m_builder.getInt64Ty(); });
-
             auto index = match(
                 operation, [](...) -> std::uint8_t { llvm_unreachable("Invalid load operation"); },
                 [&](OneOf<ALoad0, DLoad0, FLoad0, ILoad0, LLoad0>) { return 0; },
@@ -495,7 +456,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](OneOf<ALoad2, DLoad2, FLoad2, ILoad2, LLoad2>) { return 2; },
                 [&](OneOf<ALoad3, DLoad3, FLoad3, ILoad3, LLoad3>) { return 3; });
 
-            m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[index]));
+            m_operandStack.push_back(m_locals[index]);
         },
         [&](ANewArray aNewArray)
         {
@@ -535,7 +496,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 operation, [](...) {},
                 [&](IReturn)
                 {
-                    if (m_functionMethodType.returnType() == BaseType(BaseType::Boolean))
+                    if (m_method.getType().returnType() == BaseType(BaseType::Boolean))
                     {
                         value = m_builder.CreateAnd(value, m_builder.getInt32(1));
                     }
@@ -559,8 +520,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                                                    {m_builder.getInt32(0), m_builder.getInt32(1)});
             m_operandStack.push_back(m_builder.CreateLoad(m_builder.getInt32Ty(), gep));
         },
-        [&](OneOf<AStore, DStore, FStore, IStore, LStore> store)
-        { m_builder.CreateStore(m_operandStack.pop_back(), m_locals[store.index]); },
+        [&](OneOf<AStore, DStore, FStore, IStore, LStore> store) { m_locals[store.index] = m_operandStack.pop_back(); },
         [&](OneOf<AStore0, DStore0, FStore0, IStore0, LStore0, AStore1, DStore1, FStore1, IStore1, LStore1, AStore2,
                   DStore2, FStore2, IStore2, LStore2, AStore3, DStore3, FStore3, IStore3, LStore3>)
         {
@@ -571,7 +531,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 [&](OneOf<AStore2, DStore2, FStore2, IStore2, LStore2>) { return 2; },
                 [&](OneOf<AStore3, DStore3, FStore3, IStore3, LStore3>) { return 3; });
 
-            m_builder.CreateStore(m_operandStack.pop_back(), m_locals[index]);
+            m_locals[index] = m_operandStack.pop_back();
         },
         [&](AThrow)
         {
@@ -1042,8 +1002,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](IInc iInc)
         {
-            llvm::Value* local = m_builder.CreateLoad(m_builder.getInt32Ty(), m_locals[iInc.index]);
-            m_builder.CreateStore(m_builder.CreateAdd(local, m_builder.getInt32(iInc.byte)), m_locals[iInc.index]);
+            llvm::Value* local = m_locals[iInc.index];
+            m_locals[iInc.index] = m_builder.CreateAdd(local, m_builder.getInt32(iInc.byte));
         },
         // TODO: InvokeDynamic
         [&](OneOf<InvokeInterface, InvokeSpecial, InvokeVirtual> invoke)
@@ -1461,17 +1421,15 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](Wide wide)
         {
-            llvm::Type* type;
             switch (wide.opCode)
             {
-                default: llvm_unreachable("Invalid wide operation");
                 case OpCodes::AStore:
                 case OpCodes::DStore:
                 case OpCodes::FStore:
                 case OpCodes::IStore:
                 case OpCodes::LStore:
                 {
-                    m_builder.CreateStore(m_operandStack.pop_back(), m_locals[wide.index]);
+                    m_locals[wide.index] = m_operandStack.pop_back();
                     return;
                 }
                 case OpCodes::Ret:
@@ -1481,39 +1439,14 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 }
                 case OpCodes::IInc:
                 {
-                    llvm::Value* local = m_builder.CreateLoad(m_builder.getInt32Ty(), m_locals[wide.index]);
-                    m_builder.CreateStore(m_builder.CreateAdd(local, m_builder.getInt32(*wide.value)),
-                                          m_locals[wide.index]);
+                    llvm::Value* local = m_locals[wide.index];
+                    m_locals[wide.index] = m_builder.CreateAdd(local, m_builder.getInt32(*wide.value));
                     return;
                 }
-                case OpCodes::ALoad:
-                {
-                    type = referenceType(m_builder.getContext());
-                    break;
-                }
-                case OpCodes::DLoad:
-                {
-                    type = m_builder.getDoubleTy();
-                    break;
-                }
-                case OpCodes::FLoad:
-                {
-                    type = m_builder.getFloatTy();
-                    break;
-                }
-                case OpCodes::ILoad:
-                {
-                    type = m_builder.getInt32Ty();
-                    break;
-                }
-                case OpCodes::LLoad:
-                {
-                    type = m_builder.getInt64Ty();
-                    break;
-                }
+                default: break;
             }
 
-            m_operandStack.push_back(m_builder.CreateLoad(type, m_locals[wide.index]));
+            m_operandStack.push_back(m_locals[wide.index]);
         });
 
     return fallsThrough;
@@ -1528,12 +1461,29 @@ void CodeGenerator::addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llv
     deoptOperands.reserve(2 + m_locals.size());
     deoptOperands.push_back(m_builder.getInt16(byteCodeOffset));
     deoptOperands.push_back(m_builder.getInt16(m_locals.size()));
-    for (llvm::AllocaInst* local : m_locals)
-    {
-        // For now conservatively always load with 'referenceType'. This may lead to worse codegen due to more bytes
-        // being moved than required but ensures that GC pointers in local variables are properly kept alive.
-        deoptOperands.push_back(m_builder.CreateLoad(referenceType(m_builder.getContext()), local));
-    }
+    llvm::transform(m_locals, std::back_inserter(deoptOperands),
+                    [&](llvm::Value* value) -> llvm::Value*
+                    {
+                        // Uninitialized locals placed in the optimization state as poison values.
+                        if (!value)
+                        {
+                            return llvm::PoisonValue::get(m_builder.getInt8Ty());
+                        }
+
+                        // The deoptimization code is currently incapable of reading floats and doubles as on
+                        // architectures like x86 they may be spilled or put in registers larger than the pointer width
+                        // (e.g. 16 bytes). Bitcast them to integer types for the time being.
+                        if (value->getType()->isFloatTy())
+                        {
+                            return m_builder.CreateBitCast(value, m_builder.getInt32Ty());
+                        }
+                        if (value->getType()->isDoubleTy())
+                        {
+                            return m_builder.CreateBitCast(value, m_builder.getInt64Ty());
+                        }
+                        return value;
+                    });
+
     llvm::CallBase* newCall = llvm::CallBase::addOperandBundle(
         callInst, llvm::LLVMContext::OB_deopt, llvm::OperandBundleDef("deopt", std::move(deoptOperands)), callInst);
     callInst->replaceAllUsesWith(newCall);

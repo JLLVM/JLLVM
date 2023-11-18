@@ -14,6 +14,7 @@
 #pragma once
 
 #include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/InstrTypes.h>
 #include <llvm/IR/LLVMContext.h>
 
@@ -55,6 +56,11 @@ llvm::FunctionType* descriptorToType(MethodType type, bool isStatic, llvm::LLVMC
 /// the operand stack at entry and the second to an array as large as the local variables at entry. These are used to
 /// initialize the operand stack and local variables respectively.
 llvm::FunctionType* osrMethodSignature(MethodType methodType, llvm::LLVMContext& context);
+
+/// Generates code using 'builder' to convert 'value', which is of the corresponding LLVM type of 'type', to the
+/// corresponding LLVM type as is used on the JVM operand stack.
+/// This is essentially just signed-extending or zero-extending integers less than 'int' to 'int'.
+llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm::Value* value);
 
 /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
 struct JavaMethodMetadata
