@@ -482,6 +482,12 @@ constexpr bool FieldType::isReference() const
     return holds_alternative<ObjectType>(*this) || holds_alternative<ArrayType>(*this);
 }
 
+constexpr bool FieldType::isWide() const
+{
+    std::optional<BaseType> baseType = get_if<BaseType>(this);
+    return *baseType == BaseType::Long || *baseType == BaseType::Double;
+}
+
 } // namespace jllvm
 
 namespace llvm
