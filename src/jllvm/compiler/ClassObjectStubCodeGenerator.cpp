@@ -66,8 +66,7 @@ void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const jllvm::Clas
     llvm::Function* function = builder.GetInsertBlock()->getParent();
     llvm::Module* module = function->getParent();
 
-    llvm::Value* classObjectLLVM =
-        builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(&classObject)), builder.getPtrTy());
+    llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(*module, classObject.getDescriptor());
     auto* initializedGEP = builder.CreateGEP(builder.getInt8Ty(), classObjectLLVM,
                                              builder.getInt32(jllvm::ClassObject::getInitializedOffset()));
     auto* initialized =
@@ -366,19 +365,18 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
     return function;
 }
 
-llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, const ClassObject& classObject)
+llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, FieldType classObject)
 {
     auto* functionType = llvm::FunctionType::get(referenceType(module.getContext()), /*isVarArg=*/false);
 
     auto* function = llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
-                                            mangleClassObjectAccess(classObject.getDescriptor()), module);
+                                            mangleClassObjectAccess(classObject), module);
     applyABIAttributes(function);
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
 
-    llvm::Value* pointer = builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uint64_t>(&classObject)),
-                                                  function->getReturnType());
+    llvm::Value* pointer = classObjectGlobal(module, classObject);
     builder.CreateRet(pointer);
 
     return function;

@@ -38,6 +38,12 @@ llvm::Type* objectHeaderType(llvm::LLVMContext& context);
 /// This is a pointer tagged with an address space for the sake of the GC.
 llvm::PointerType* referenceType(llvm::LLVMContext& context);
 
+/// Returns the global variable importing the class object of the given descriptor.
+llvm::GlobalVariable* classObjectGlobal(llvm::Module& module, FieldType classObject);
+
+/// Returns the global variable importing the given method.
+llvm::GlobalVariable* methodGlobal(llvm::Module& module, const Method* method);
+
 /// Returns the corresponding LLVM type for a given Java field descriptor.
 llvm::Type* descriptorToType(FieldType type, llvm::LLVMContext& context);
 

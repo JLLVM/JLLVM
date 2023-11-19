@@ -37,11 +37,8 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
             ClassObject& classObject = classLoader.forName(ObjectType(fieldAccess.className));
             generateFieldAccessStub(*module, classObject, fieldAccess.fieldName, fieldAccess.descriptor);
         },
-        [&](FieldType fieldType)
-        {
-            ClassObject& classObject = classLoader.forName(fieldType);
-            generateClassObjectAccessStub(*module, classObject);
-        },
+        [&](DemangledLoadClassObject demangledLoadClassObject)
+        { generateClassObjectAccessStub(*module, demangledLoadClassObject.classObject); },
         [&](const DemangledStaticCall& staticCall)
         {
             ClassObject& classObject = classLoader.forName(ObjectType(staticCall.className));
@@ -65,7 +62,7 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
             generateSpecialMethodCallStub(*module, classObject, specialCall.methodName, specialCall.descriptor,
                                           callerClass, *objectClass);
         },
-        [](std::monostate) { llvm_unreachable("not possible"); });
+        [](...) { llvm_unreachable("not possible"); });
     return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 }
 
@@ -97,6 +94,14 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
         DemangledVariant demangleVariant = demangleStubSymbolName(name);
         if (holds_alternative<std::monostate>(demangleVariant))
         {
+            continue;
+        }
+
+        // Globals are resolved immediately. Its not possible to use a compile stub or the like.
+        if (auto* classObjectGlobal = get_if<DemangledClassObjectGlobal>(&demangleVariant))
+        {
+            generated[symbol] =
+                llvm::JITEvaluatedSymbol::fromPointer(&m_classLoader.forName(classObjectGlobal->classObject));
             continue;
         }
 

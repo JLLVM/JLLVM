@@ -100,6 +100,18 @@ std::string mangleStaticCall(llvm::StringRef className, llvm::StringRef methodNa
 /// <class-object-access> ::= 'Load ' <descriptor>
 std::string mangleClassObjectAccess(FieldType descriptor);
 
+/// Mangling for a global importing a class object.
+///
+/// Syntax:
+/// <class-object-global> ::= <descriptor>
+std::string mangleClassObjectGlobal(FieldType descriptor);
+
+/// Mangling for a global importing a method.
+///
+/// Syntax:
+/// <method-global> ::= '&' <direct-call>
+std::string mangleMethodGlobal(const Method* method);
+
 /// A call produced via 'mangleFieldAccess'.
 struct DemangledFieldAccess
 {
@@ -134,8 +146,21 @@ struct DemangledSpecialCall
     std::optional<FieldType> callerClass;
 };
 
-using DemangledVariant = swl::variant<std::monostate, DemangledFieldAccess, DemangledMethodResolutionCall,
-                                      DemangledStaticCall, FieldType, DemangledSpecialCall>;
+/// A call produced via 'mangleClassObjectAccess'.
+struct DemangledLoadClassObject
+{
+    FieldType classObject;
+};
+
+/// A global produced via 'mangleClassObjectGlobal'.
+struct DemangledClassObjectGlobal
+{
+    FieldType classObject;
+};
+
+using DemangledVariant =
+    swl::variant<std::monostate, DemangledFieldAccess, DemangledMethodResolutionCall, DemangledStaticCall,
+                 DemangledLoadClassObject, DemangledSpecialCall, DemangledClassObjectGlobal>;
 
 /// Attempts to demangle a symbol produced by any of the 'mangle*' functions above with the exception of
 /// 'mangleDirectMethodCall'.

@@ -214,12 +214,19 @@ jllvm::JIT::~JIT()
 void jllvm::JIT::add(const ClassObject* classObject)
 {
     llvm::orc::IndirectStubsManager::StubInitsMap stubInits;
+    llvm::orc::SymbolMap methodGlobals;
     for (const Method& method : classObject->getMethods())
     {
         if (method.isAbstract())
         {
             continue;
         }
+
+        // Register the method in the JIT symbol table in case any code references it. This is done for methods as
+        // there is exactly one symbol per method but not for class objects, as there are infinitely many class objects
+        // due to being able to create array class objects of other class objects.
+        // Class objects are therefore created on demand in 'ClassObjectStubDefinitionsGenerator'.
+        methodGlobals[m_interner(mangleMethodGlobal(&method))] = llvm::JITEvaluatedSymbol::fromPointer(&method);
 
         std::string symbolName = mangleDirectMethodCall(&method);
         llvm::orc::SymbolStringPtr mangledSymbol = m_interner(symbolName);
@@ -252,6 +259,9 @@ void jllvm::JIT::add(const ClassObject* classObject)
     {
         return;
     }
+
+    // Define the methods in the implementation details dylib.
+    llvm::cantFail(m_javaJITImplDetails.define(llvm::orc::absoluteSymbols(std::move(methodGlobals))));
 
     // Create the stubs and define them with the direct method call mangling in the external stubs dylib.
     llvm::cantFail(m_externalStubsManager->createStubs(stubInits));

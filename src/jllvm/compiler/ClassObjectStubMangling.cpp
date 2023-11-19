@@ -82,6 +82,16 @@ std::string jllvm::mangleClassObjectAccess(FieldType descriptor)
     return (classObjectPrefix + descriptor.textual()).str();
 }
 
+std::string jllvm::mangleClassObjectGlobal(FieldType descriptor)
+{
+    return descriptor.textual();
+}
+
+std::string jllvm::mangleMethodGlobal(const Method* method)
+{
+    return '&' + mangleDirectMethodCall(method);
+}
+
 jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName)
 {
     bool isStatic = false;
@@ -116,11 +126,15 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
     // class object load if a valid 'FieldType'.
     if (symbolName.empty())
     {
-        if (isClassObjectLoad && FieldType::verify(className))
+        if (!FieldType::verify(className))
         {
-            return FieldType(className);
+            return std::monostate{};
         }
-        return std::monostate{};
+        if (isClassObjectLoad)
+        {
+            return DemangledLoadClassObject{FieldType(className)};
+        }
+        return DemangledClassObjectGlobal{FieldType(className)};
     }
 
     // Class object load cannot contain a dot.

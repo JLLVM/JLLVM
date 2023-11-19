@@ -16,8 +16,12 @@
 #include <llvm/ADT/Triple.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/Module.h>
 
 #include <jllvm/support/Variant.hpp>
+
+#include "ClassObjectStubMangling.hpp"
 
 llvm::Type* jllvm::arrayRefType(llvm::LLVMContext& context)
 {
@@ -47,6 +51,37 @@ llvm::Type* jllvm::objectHeaderType(llvm::LLVMContext& context)
 llvm::PointerType* jllvm::referenceType(llvm::LLVMContext& context)
 {
     return llvm::PointerType::get(context, 1);
+}
+
+namespace
+{
+/// Get or insert a global of the given 'name' in 'module' which has external linkage and simply imports the symbol
+/// 'name'.
+llvm::GlobalVariable* getOrInsertImportingGlobal(llvm::Module& module, llvm::StringRef name, unsigned addressSpace)
+{
+    if (llvm::GlobalVariable* variable = module.getGlobalVariable(name))
+    {
+        return variable;
+    }
+
+    // The actual storage type given here is irrelevant as LLVM makes no assumptions about the size and actual type of
+    // external globals.
+    auto* storageType = llvm::IntegerType::get(module.getContext(), 8);
+    return new llvm::GlobalVariable(module, storageType, /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
+                                    /*Initializer=*/nullptr, name, nullptr, llvm::GlobalValue::NotThreadLocal,
+                                    addressSpace,
+                                    /*isExternallyInitialized=*/true);
+}
+} // namespace
+
+llvm::GlobalVariable* jllvm::classObjectGlobal(llvm::Module& module, FieldType classObject)
+{
+    return getOrInsertImportingGlobal(module, mangleClassObjectGlobal(classObject), /*addressSpace=*/1);
+}
+
+llvm::GlobalVariable* jllvm::methodGlobal(llvm::Module& module, const Method* method)
+{
+    return getOrInsertImportingGlobal(module, mangleMethodGlobal(method), /*addressSpace=*/0);
 }
 
 llvm::Type* jllvm::descriptorToType(FieldType type, llvm::LLVMContext& context)
@@ -96,14 +131,8 @@ void jllvm::addJavaMethodMetadata(llvm::Function* function, const JavaMethodMeta
     auto* ptrType = llvm::PointerType::get(function->getContext(), 0);
     function->setPrefixData(llvm::ConstantStruct::get(
         llvm::StructType::get(function->getContext(), {referenceType(function->getContext()), ptrType}),
-        {llvm::ConstantExpr::getIntToPtr(
-             llvm::ConstantInt::get(llvm::IntegerType::get(function->getContext(), 8 * sizeof(std::uintptr_t)),
-                                    reinterpret_cast<std::uintptr_t>(metadata.classObject)),
-             referenceType(function->getContext())),
-         llvm::ConstantExpr::getIntToPtr(
-             llvm::ConstantInt::get(llvm::IntegerType::get(function->getContext(), 8 * sizeof(std::uintptr_t)),
-                                    reinterpret_cast<std::uintptr_t>(metadata.method)),
-             ptrType)}));
+        {classObjectGlobal(*function->getParent(), metadata.classObject->getDescriptor()),
+         methodGlobal(*function->getParent(), metadata.method)}));
     function->setSection(sectionName);
 }
 
