@@ -35,9 +35,9 @@ runs:
         ref: release/16.x
         path: llvm-project
 
-    - name: Cache LLVM Build
+    - name: Try restore LLVM Build
       id: cache-llvm-build
-      uses: actions/cache@v3
+      uses: actions/cache/restore@v3
       with:
         path: |
           llvm-build 
@@ -129,6 +129,15 @@ runs:
         $ext = 'o'
         Remove-Item '${{github.workspace}}/llvm-build' -Recurse -Include "*.$ext"
         Remove-Item '${{github.workspace}}/llvm-optimized-tblgen' -Recurse -Include "*.$ext"
+
+    - name: Save LLVM Build
+      if: steps.cache-llvm-build.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v3
+      with:
+        path: |
+          llvm-build 
+          llvm-optimized-tblgen
+        key: ${{inputs.cache-key}}
 
     - name: Output build dir
       id: output-build-dir
