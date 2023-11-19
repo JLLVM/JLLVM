@@ -85,16 +85,17 @@ class CodeGenerator
     /// zero.
     void addBytecodeOffsetOnlyDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst);
 
-    void generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
-                                       llvm::ArrayRef<llvm::Value*> builderArgs);
+    void generateBuiltinExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* condition,
+                                       llvm::StringRef builderName, llvm::ArrayRef<llvm::Value*> builderArgs);
 
-    void generateNullPointerCheck(llvm::Value* object);
+    void generateNullPointerCheck(std::uint16_t byteCodeOffset, llvm::Value* object);
 
-    void generateArrayIndexCheck(llvm::Value* array, llvm::Value* index);
+    void generateArrayIndexCheck(std::uint16_t byteCodeOffset, llvm::Value* array, llvm::Value* index);
 
-    void generateNegativeArraySizeCheck(llvm::Value* size);
+    void generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset, llvm::Value* size);
 
-    llvm::BasicBlock* generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred);
+    llvm::BasicBlock* generateHandlerChain(std::uint16_t byteCodeOffset, llvm::Value* exception,
+                                           llvm::BasicBlock* newPred);
 
     llvm::Value* loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index);
 
