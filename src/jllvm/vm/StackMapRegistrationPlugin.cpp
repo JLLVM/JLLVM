@@ -25,6 +25,23 @@ llvm::Error jllvm::StackMapRegistrationPlugin::notifyRemovingResources(llvm::orc
     return llvm::Error::success();
 }
 
+template <class T>
+jllvm::FrameValue<T> jllvm::StackMapRegistrationPlugin::toFrameValue(const StackMapParser::LocationAccessor& loc,
+                                                                     StackMapParser& parser)
+{
+    switch (loc.getKind())
+    {
+        case StackMapParser::LocationKind::Register: return FrameValue<T>::inRegister(loc.getDwarfRegNum());
+        case StackMapParser::LocationKind::Direct: return FrameValue<T>::direct(loc.getDwarfRegNum(), loc.getOffset());
+        case StackMapParser::LocationKind::Indirect:
+            return FrameValue<T>::indirect(loc.getSizeInBytes(), loc.getDwarfRegNum(), loc.getOffset());
+        case StackMapParser::LocationKind::Constant: return FrameValue<T>::constant(loc.getSmallConstant());
+        case StackMapParser::LocationKind::ConstantIndex:
+            return FrameValue<T>::constant(parser.getConstant(loc.getConstantIndex()).getValue());
+    }
+    llvm_unreachable("invalid kind");
+}
+
 void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::MaterializationResponsibility&,
                                                          llvm::jitlink::LinkGraph&,
                                                          llvm::jitlink::PassConfiguration& config)
@@ -95,33 +112,10 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                     std::uint16_t numLocals = record.getLocation(4).getSmallConstant();
                     JIT::DeoptEntry entry{bytecodeOffset};
                     entry.locals.reserve(numLocals);
-                    for (std::uint32_t i = 5; i < 5 + deoptCount; i++)
+                    for (std::uint32_t i = 5; i < 5 + numLocals; i++)
                     {
                         auto loc = record.getLocation(i);
-                        switch (loc.getKind())
-                        {
-                            case decltype(parser)::LocationKind::Register:
-                                entry.locals.emplace_back(JIT::DeoptEntry::Register{loc.getDwarfRegNum()});
-                                break;
-                            case decltype(parser)::LocationKind::Direct:
-                                assert(loc.getSizeInBytes() <= 8 && "Java values are 8 bytes at most");
-                                entry.locals.emplace_back(JIT::DeoptEntry::Direct{loc.getDwarfRegNum(), loc.getOffset(),
-                                                                                  loc.getSizeInBytes()});
-                                break;
-                            case decltype(parser)::LocationKind::Indirect:
-                                assert(loc.getSizeInBytes() <= 8 && "Java values are 8 bytes at most");
-                                entry.locals.emplace_back(JIT::DeoptEntry::Indirect{
-                                    loc.getDwarfRegNum(), loc.getOffset(), loc.getSizeInBytes()});
-                                break;
-
-                            case decltype(parser)::LocationKind::Constant:
-                                entry.locals.emplace_back(JIT::DeoptEntry::Constant{loc.getSmallConstant()});
-                                break;
-                            case decltype(parser)::LocationKind::ConstantIndex:
-                                entry.locals.emplace_back(
-                                    JIT::DeoptEntry::Constant{parser.getConstant(loc.getConstantIndex()).getValue()});
-                                break;
-                        }
+                        entry.locals.push_back(toFrameValue<std::uint64_t>(loc, parser));
                     }
 
                     m_deoptEntryParsed(addr, std::move(entry));

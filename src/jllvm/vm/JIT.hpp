@@ -78,29 +78,7 @@ public:
     {
         std::uint16_t bytecodeOffset;
 
-        struct Constant
-        {
-            std::uint64_t constant;
-        };
-        struct Register
-        {
-            int registerNumber;
-        };
-        struct Direct
-        {
-            int registerNumber;
-            std::int32_t offset;
-            unsigned size;
-        };
-        struct Indirect
-        {
-            int registerNumber;
-            std::int32_t offset;
-            unsigned size;
-        };
-        using Location = swl::variant<Constant, Register, Direct, Indirect>;
-
-        std::vector<Location> locals;
+        std::vector<FrameValue<std::uint64_t>> locals;
     };
 
 private:

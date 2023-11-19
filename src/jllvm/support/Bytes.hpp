@@ -21,6 +21,13 @@
 
 namespace jllvm
 {
+
+/// Smallest unsigned integer type that is at least as large as 'T'.
+template <class T>
+requires(sizeof(T) <= sizeof(std::uint64_t)) using NextSizedUInt =
+    std::conditional_t<sizeof(T) <= 2, std::conditional_t<sizeof(T) <= 1, std::uint8_t, std::uint16_t>,
+                       std::conditional_t<(sizeof(T) > 4), std::uint64_t, std::uint32_t>>;
+
 /// Reads an instance of 'T' from 'bytes', advancing 'bytes' by the amount of bytes read.
 /// 'T' must be a trivially copyable type for this to be legal.
 /// Note: This function is mainly used to support parsing JVM formats which are all big endian.
@@ -29,11 +36,9 @@ namespace jllvm
 template <class T>
 T consume(llvm::ArrayRef<char>& bytes)
 {
-    static_assert(std::is_trivially_copyable_v<T> && sizeof(T) <= 8, "T must be trivially copyable");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
     assert(bytes.size() >= sizeof(T));
-    std::conditional_t<sizeof(T) <= 2, std::conditional_t<sizeof(T) <= 1, std::uint8_t, std::uint16_t>,
-                       std::conditional_t<(sizeof(T) > 4), std::uint64_t, std::uint32_t>>
-        asBytes;
+    NextSizedUInt<T> asBytes;
     std::memcpy(&asBytes, bytes.data(), sizeof(T));
     bytes = bytes.drop_front(sizeof(T));
     asBytes = llvm::support::endian::byte_swap(asBytes, llvm::support::big);
@@ -46,10 +51,8 @@ T consume(llvm::ArrayRef<char>& bytes)
 template <class T>
 T consume(const char*& bytes)
 {
-    static_assert(std::is_trivially_copyable_v<T> && sizeof(T) <= 8, "T must be trivially copyable");
-    std::conditional_t<sizeof(T) <= 2, std::conditional_t<sizeof(T) <= 1, std::uint8_t, std::uint16_t>,
-                       std::conditional_t<(sizeof(T) > 4), std::uint64_t, std::uint32_t>>
-        asBytes;
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    NextSizedUInt<T> asBytes;
     std::memcpy(&asBytes, bytes, sizeof(T));
     bytes += sizeof(T);
     asBytes = llvm::support::endian::byte_swap(asBytes, llvm::support::big);

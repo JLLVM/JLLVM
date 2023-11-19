@@ -15,6 +15,8 @@
 
 #include <llvm/ADT/ArrayRef.h>
 
+#include <jllvm/support/Bytes.hpp>
+
 #include <concepts>
 #include <cstdint>
 #include <type_traits>
@@ -101,6 +103,142 @@ public:
     {
         std::array<std::uint64_t, sizeof...(args)> array{llvm::bit_cast<std::uint64_t>(args)...};
         resumeExecutionAtFunctionImpl(reinterpret_cast<std::uintptr_t>(fnPtr), array);
+    }
+};
+
+/// Class representing a specific location of a value interpreted as type 'T' within a 'UnwindFrame'.
+/// A 'FrameValue' is only ever valid for a specific program counter within frames of a specific function.
+/// Mapping the program counter and/or function pointer to frame values is performed by the stackmap.
+/// A 'FrameValue' itself does not have any mechanism to validate reading from the correct frame.
+template <class T>
+class FrameValue
+{
+    enum class Tag : std::uint8_t
+    {
+        /// Value was constant folded.
+        Constant = 0,
+        /// Value is within a callee-saved register.
+        Register = 1,
+        /// Value is the result of an 'alloca' instruction.
+        Direct = 2,
+        /// Value is spilled on the stack.
+        Indirect = 3,
+    };
+
+    /// Type used to safely access the tag regardless of active union member.
+    /// This is legal due to the common initial sequence rule:
+    /// https://en.cppreference.com/w/cpp/language/data_members#Standard_layout.
+    /// Using an explicit tag inside of the union is beneficial as it allows reducing padding inbetween the tag and
+    /// fields after. Using a tagged union rather than a variant so that 'FrameValue' is a standard layout type that
+    /// can safely be interoperated with form LLVM.
+    struct TagOnly
+    {
+        Tag tag;
+    };
+
+    struct Constant
+    {
+        Tag tag;
+        std::uint64_t constant;
+    };
+
+    struct Register
+    {
+        Tag tag;
+        /// Dwarf register number of the register containing the value.
+        int registerNumber;
+    };
+
+    struct Direct
+    {
+        Tag tag;
+        /// Dwarf register number of the register containing the frame pointer.
+        int registerNumber;
+        std::int32_t offset;
+    };
+
+    struct Indirect
+    {
+        Tag tag;
+        std::uint8_t size;
+        /// Dwarf register number of the register containing the frame pointer.
+        int registerNumber;
+        std::int32_t offset;
+    };
+
+    union
+    {
+        // The first union member is used when default initializing. This initializes it to a constant with 0 as value.
+        Constant constant{};
+        TagOnly accessTag;
+        Register inRegister;
+        Direct direct;
+        Indirect indirect;
+    } m_union{};
+
+public:
+    FrameValue() = default;
+
+    /// Creates a 'FrameValue' with a constant value.
+    static FrameValue constant(std::uint64_t constant)
+    {
+        FrameValue result;
+        result.m_union.constant = {Tag::Constant, constant};
+        return result;
+    }
+
+    /// Creates a 'FrameValue' that is within a CSR register.
+    static FrameValue inRegister(int registerNumber)
+    {
+        FrameValue result;
+        result.m_union.inRegister = {Tag::Register, registerNumber};
+        return result;
+    }
+
+    /// Creates a 'FrameValue' that is a stack allocation.
+    static FrameValue direct(int registerNumber, std::int32_t offset)
+    {
+        FrameValue result;
+        result.m_union.direct = {Tag::Direct, registerNumber, offset};
+        return result;
+    }
+
+    /// Creates a 'FrameValue' that has been spilled into a location on the stack.
+    static FrameValue indirect(std::uint8_t size, int registerNumber, std::int32_t offset)
+    {
+        FrameValue result;
+        result.m_union.indirect = {Tag::Indirect, size, registerNumber, offset};
+        return result;
+    }
+
+    /// Read the values represented by the 'FrameValue' within 'frame'.
+    /// 'T' is used as the interpretation of the result and must be a type greater or equal in size to the read
+    /// value. The read value is zero-extended and then bitcast to 'T'.
+    T read(const UnwindFrame& frame) const
+    {
+        static_assert(sizeof(T) <= sizeof(std::uint64_t), "cannot read values larger than 64 bit");
+        static_assert(std::is_trivially_copyable_v<T>, "bitcast is only valid for trivially copyable types");
+
+        std::uint64_t result{};
+        switch (m_union.accessTag.tag)
+        {
+            case Tag::Constant: result = m_union.constant.constant; break;
+            case Tag::Register: result = frame.getIntegerRegister(m_union.inRegister.registerNumber); break;
+            case Tag::Direct:
+                assert(sizeof(T) == sizeof(void*) && "type read must be equal to pointer size");
+                result = frame.getIntegerRegister(m_union.direct.registerNumber) + m_union.direct.offset;
+                break;
+            case Tag::Indirect:
+            {
+                assert(sizeof(T) >= m_union.indirect.size && "type read must be large enough for the value");
+                auto* ptr = reinterpret_cast<char*>(frame.getIntegerRegister(m_union.indirect.registerNumber)
+                                                    + m_union.indirect.offset);
+                std::memcpy(&result, ptr, m_union.indirect.size);
+                break;
+            }
+            default: llvm_unreachable("invalid tag");
+        }
+        return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(result));
     }
 };
 
