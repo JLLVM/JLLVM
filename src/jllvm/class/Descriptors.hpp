@@ -180,7 +180,7 @@ public:
         return getValue() == Char || getValue() == Boolean;
     }
 
-    constexpr bool operator==(const BaseType&) const = default;
+    bool operator==(const BaseType&) const = default;
 };
 
 /// <ObjectType> ::= 'L' <ClassName> ';'
@@ -198,7 +198,7 @@ public:
         return {m_name, m_size};
     }
 
-    constexpr bool operator==(const ObjectType&) const = default;
+    bool operator==(const ObjectType&) const = default;
 };
 
 /// <ArrayType> ::= '[' <FieldType>
