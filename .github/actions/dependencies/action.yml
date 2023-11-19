@@ -38,7 +38,7 @@ runs:
       shell: bash
       run: |
         sudo apt update
-        sudo apt install lld lld-15 clang-15 g++-13
+        sudo apt install lld lld-15 clang-15 g++-13 llvm
 
     - name: Generate compiler hash
       id: compiler-hash
