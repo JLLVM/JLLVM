@@ -44,7 +44,7 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
     template <class T>
     std::optional<WriteableFrameValue<T>> toWriteableFrameValue(const StackMapParser::LocationAccessor& loc);
 
-    void parseJITEntry(JavaMethodMetadata::JITData& metadata, StackMapParser::RecordAccessor& record,
+    void parseJITEntry(JavaMethodMetadata::JITData& jitData, StackMapParser::RecordAccessor& record,
                        StackMapParser& parser, std::uint64_t functionAddress);
 
 public:
