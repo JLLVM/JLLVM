@@ -26,6 +26,7 @@
 
 #include "InteropHelpers.hpp"
 #include "JIT.hpp"
+#include "JavaFrame.hpp"
 
 namespace jllvm
 {
@@ -144,6 +145,34 @@ public:
     /// 'const Throwable&'. It is otherwise not possible to catch 'exception' from C++ code if a exception handler was
     /// found in Java code.
     [[noreturn]] void throwJavaException(Throwable* exception);
+
+    /// Performs stack unwinding, calling 'f' for every Java frame encountered.
+    /// 'f' may optionally return a 'UnwindAction' to control whether unwinding should continue.
+    /// Returns true if 'UnwindAction::UnwindAction' was ever returned.
+    template <std::invocable<JavaFrame> F>
+    bool unwindJavaStack(F&& f)
+    {
+        return unwindStack(
+            [&, this](UnwindFrame& frame)
+            {
+                const JavaMethodMetadata* metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
+                if (!metadata)
+                {
+                    return UnwindAction::ContinueUnwinding;
+                }
+
+                using T = decltype(f(std::declval<JavaFrame>()));
+                if constexpr (std::is_void_v<T>)
+                {
+                    f(JavaFrame(*metadata, frame));
+                    return UnwindAction::ContinueUnwinding;
+                }
+                else
+                {
+                    return f(JavaFrame(*metadata, frame));
+                }
+            });
+    }
 
     /// Default constructs a 'Model::State' instance within the VM and returns it.
     /// The lifetime of this object is equal to the lifetime of the VM.

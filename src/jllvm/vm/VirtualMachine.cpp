@@ -377,21 +377,19 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
 
 void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
 {
-    unwindStack(
-        [&](const UnwindFrame& frame)
+    unwindJavaStack(
+        [&](JavaFrame frame)
         {
-            const JavaMethodMetadata* metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
-            if (!metadata || !metadata->isJIT())
+            std::optional<std::uint16_t> byteCodeOffset = frame.getByteCodeOffset();
+            if (!byteCodeOffset)
             {
-                return UnwindAction::ContinueUnwinding;
+                return;
             }
 
-            std::uint16_t byteCodeOffset = metadata->getJITData()[frame.getProgramCounter()].byteCodeOffset;
-
-            Code* code = metadata->getMethod()->getMethodInfo().getAttributes().find<Code>();
+            Code* code = frame.getMethod()->getMethodInfo().getAttributes().find<Code>();
             assert(code && "cannot be in a Java frame of a method without code");
 
-            const ClassFile& classFile = *metadata->getClassObject()->getClassFile();
+            const ClassFile& classFile = *frame.getClassObject()->getClassFile();
             // Exception handler to use is the very first one in the [start, end) range where the type of the exception
             // is an instance of the catch type.
             std::optional<std::uint16_t> handlerPc;
@@ -427,11 +425,10 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
 
             if (!handlerPc)
             {
-                return UnwindAction::ContinueUnwinding;
+                return;
             }
 
             m_jit.doExceptionOnStackReplacement(frame, *handlerPc, exception);
-            return UnwindAction::StopUnwinding;
         });
 
     // If no Java frame is ready to handle the exception, unwind all of it completely.

@@ -23,22 +23,15 @@ const jllvm::ClassObject* jllvm::jdk::ReflectionModel::getCallerClass(VirtualMac
                                                                       GCRootRef<ClassObject> classObject)
 {
     const ClassObject* result = nullptr;
-    unwindStack(
-        [&](const UnwindFrame& frame)
+    virtualMachine.unwindJavaStack(
+        [&](JavaFrame frame)
         {
-            std::uintptr_t fp = frame.getFunctionPointer();
-            const JavaMethodMetadata* data = virtualMachine.getJIT().getJavaMethodMetadata(fp);
-            if (!data)
-            {
-                return UnwindAction::ContinueUnwinding;
-            }
-
-            if (data->getClassObject() == classObject)
+            if (frame.getClassObject() == classObject)
             {
                 return UnwindAction::ContinueUnwinding;
             }
             // TODO: If the method has the Java annotation '@CallerSensitive' it should be skipped by this method.
-            result = data->getClassObject();
+            result = frame.getClassObject();
             return UnwindAction::StopUnwinding;
         });
     return result;

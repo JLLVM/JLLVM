@@ -37,6 +37,8 @@
 
 #include <memory>
 
+#include "JavaFrame.hpp"
+
 namespace jllvm
 {
 class JIT
@@ -72,8 +74,6 @@ class JIT
     JNIImplementationLayer m_jniLayer;
 
     llvm::DenseSet<std::uintptr_t> m_javaFrames;
-
-    llvm::SmallVector<std::uint64_t> readLocals(const UnwindFrame& frame) const;
 
     void optimize(llvm::Module& module);
 
@@ -169,7 +169,7 @@ public:
     /// method at the JVM bytecode corresponding to 'byteCodeOffset'. This method is meant to be used for executing
     /// exception handlers and therefore puts only 'exception' on the operand stack.
     /// 'frame' must be the execution of a Java method.
-    [[noreturn]] void doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
+    [[noreturn]] void doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset,
                                                     Throwable* exception);
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
