@@ -13,15 +13,26 @@
 
 #include "StackMapRegistrationPlugin.hpp"
 
-#include <llvm/Object/StackMapParser.h>
+#include <llvm/ADT/ScopeExit.h>
 
 llvm::Error jllvm::StackMapRegistrationPlugin::notifyFailed(llvm::orc::MaterializationResponsibility&)
 {
     return llvm::Error::success();
 }
 
-llvm::Error jllvm::StackMapRegistrationPlugin::notifyRemovingResources(llvm::orc::JITDylib&, llvm::orc::ResourceKey)
+llvm::Error jllvm::StackMapRegistrationPlugin::notifyRemovingResources(llvm::orc::JITDylib&,
+                                                                       llvm::orc::ResourceKey resourceKey)
 {
+    auto iter = m_needsCleanup.find(resourceKey);
+    if (iter != m_needsCleanup.end())
+    {
+        // Call the destructors of any JIT metadata that was placed in the removed code sections.
+        for (const JavaMethodMetadata::JITData* jitData : iter->second)
+        {
+            jitData->JavaMethodMetadata::JITData::~JITData();
+        }
+        m_needsCleanup.erase(iter);
+    }
     return llvm::Error::success();
 }
 
@@ -57,20 +68,45 @@ std::optional<jllvm::WriteableFrameValue<T>>
     }
 }
 
-void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::MaterializationResponsibility&,
+void jllvm::StackMapRegistrationPlugin::parseJITEntry(JavaMethodMetadata::JITData& jitData,
+                                                      StackMapParser::RecordAccessor& record, StackMapParser& parser,
+                                                      std::uint64_t functionAddress)
+{
+    enum
+    {
+        DeoptCountPos = 2,
+        BytecodeDeoptPos = 3,
+        NumLocalsPos = 4,
+        LocalsStartPos = 5,
+    };
+
+    assert(record.getLocation(DeoptCountPos).getSmallConstant() != 0 && "jit frame must have deopt values");
+
+    std::uint64_t addr = functionAddress + record.getInstructionOffset();
+    std::uint16_t byteCodeOffset = record.getLocation(BytecodeDeoptPos).getSmallConstant();
+    std::uint16_t numLocals = record.getLocation(NumLocalsPos).getSmallConstant();
+
+    std::vector<FrameValue<std::uint64_t>> locals(numLocals);
+    for (std::uint32_t i = LocalsStartPos; i < LocalsStartPos + numLocals; i++)
+    {
+        locals[i - LocalsStartPos] = toFrameValue<std::uint64_t>(record.getLocation(i), parser);
+    }
+
+    jitData.insert(addr, {byteCodeOffset, std::move(locals)});
+}
+
+void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::MaterializationResponsibility& mr,
                                                          llvm::jitlink::LinkGraph&,
                                                          llvm::jitlink::PassConfiguration& config)
 {
+    llvm::orc::ResourceKey resourceKey;
+    llvm::cantFail(mr.withResourceKeyDo([&](llvm::orc::ResourceKey key) { resourceKey = key; }));
+
     // Prevent the stackmap symbol from being garbage collected by marking it as alive prior to pruning.
     config.PrePrunePasses.emplace_back(
         [&](llvm::jitlink::LinkGraph& g)
         {
-            llvm::StringRef stackMapSectionName = ".llvm_stackmaps";
-            if (g.getTargetTriple().isOSBinFormatMachO())
-            {
-                stackMapSectionName = "__LLVM_STACKMAPS,__llvm_stackmaps";
-            }
-            llvm::jitlink::Section* section = g.findSectionByName(stackMapSectionName);
+            llvm::jitlink::Section* section = g.findSectionByName(m_stackMapSection);
             if (!section)
             {
                 return llvm::Error::success();
@@ -84,17 +120,30 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
             return llvm::Error::success();
         });
 
+    config.PostAllocationPasses.emplace_back(
+        [&](llvm::jitlink::LinkGraph& g)
+        {
+            llvm::jitlink::Section* section = g.findSectionByName(m_javaSection);
+            if (!section)
+            {
+                return llvm::Error::success();
+            }
+
+            // Collect the addresses of all Java functions.
+            for (llvm::jitlink::Symbol* iter : section->symbols())
+            {
+                m_javaFrameSet.insert(iter->getAddress().getValue());
+            }
+
+            return llvm::Error::success();
+        });
+
     // After post fix up all relocations have been replaced with the absolute addresses, which is the perfect time
     // to extract the stackmap and get all the instruction pointers.
     config.PostFixupPasses.emplace_back(
-        [&](llvm::jitlink::LinkGraph& g)
+        [&, resourceKey](llvm::jitlink::LinkGraph& g)
         {
-            llvm::StringRef stackMapSectionName = ".llvm_stackmaps";
-            if (g.getTargetTriple().isOSBinFormatMachO())
-            {
-                stackMapSectionName = "__LLVM_STACKMAPS,__llvm_stackmaps";
-            }
-            llvm::jitlink::Section* section = g.findSectionByName(stackMapSectionName);
+            llvm::jitlink::Section* section = g.findSectionByName(m_stackMapSection);
             if (!section)
             {
                 return llvm::Error::success();
@@ -104,38 +153,50 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
             auto* start = range.getStart().toPtr<std::uint8_t*>();
             std::size_t size = range.getSize();
 
-            llvm::StackMapParser<llvm::support::endianness::native> parser({start, size});
+            StackMapParser parser({start, size});
 
             llvm::SmallVector<StackMapEntry> entries;
-            auto currFunc = parser.functions_begin();
+            JavaMethodMetadata::JITData* jitData = nullptr;
             std::size_t recordCount = 0;
+            auto currFunc = parser.functions_begin();
+            std::uint64_t functionAddress = currFunc->getFunctionAddress();
+            bool isJavaFrame = m_javaFrameSet.contains(functionAddress);
             for (auto&& record : parser.records())
             {
-                std::uintptr_t addr = currFunc->getFunctionAddress() + record.getInstructionOffset();
+                auto atExit = llvm::make_scope_exit(
+                    [&]
+                    {
+                        if (++recordCount == currFunc->getRecordCount())
+                        {
+                            currFunc++;
+                            jitData = nullptr;
+                            recordCount = 0;
+                            functionAddress = currFunc->getFunctionAddress();
+                            isJavaFrame = m_javaFrameSet.contains(functionAddress);
+                        }
+                    });
 
-                if (++recordCount == currFunc->getRecordCount())
+                // Java frames need to additionally have their metadata prefix data populated. After linking is done,
+                // the memory is made read-only making any initialization afterward impossible.
+                if (isJavaFrame)
                 {
-                    currFunc++;
-                    recordCount = 0;
+                    JavaMethodMetadata& metadata = reinterpret_cast<JavaMethodMetadata*>(functionAddress)[-1];
+                    switch (metadata.getKind())
+                    {
+                        case JavaMethodMetadata::Kind::JIT:
+                            if (!jitData)
+                            {
+                                jitData = &metadata.emplaceJITData();
+                                m_needsCleanup[resourceKey].push_back(jitData);
+                            }
+                            parseJITEntry(*jitData, record, parser, functionAddress);
+                            break;
+                        case JavaMethodMetadata::Kind::Native: break;
+                    }
                 }
 
                 entries.clear();
                 std::uint32_t deoptCount = record.getLocation(2).getSmallConstant();
-                if (deoptCount != 0)
-                {
-                    std::uint16_t bytecodeOffset = record.getLocation(3).getSmallConstant();
-                    std::uint16_t numLocals = record.getLocation(4).getSmallConstant();
-                    JIT::DeoptEntry entry{bytecodeOffset};
-                    entry.locals.reserve(numLocals);
-                    for (std::uint32_t i = 5; i < 5 + numLocals; i++)
-                    {
-                        auto loc = record.getLocation(i);
-                        entry.locals.push_back(toFrameValue<std::uint64_t>(loc, parser));
-                    }
-
-                    m_deoptEntryParsed(addr, std::move(entry));
-                }
-
                 for (std::uint16_t i = 3 + deoptCount; i < record.getNumLocations(); i += 2)
                 {
                     std::optional<WriteableFrameValue<ObjectInterface*>> basePtr =
@@ -150,6 +211,7 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                            && "writeable derived pointer without writeable base pointer should not be possible");
                     entries.push_back({*basePtr, *derivedPtr});
                 }
+                std::uint64_t addr = functionAddress + record.getInstructionOffset();
                 m_gc.addStackMapEntries(addr, entries);
             }
 

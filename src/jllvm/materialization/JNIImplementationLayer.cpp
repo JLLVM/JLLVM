@@ -118,7 +118,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
     applyABIAttributes(function, methodType, method->isStatic());
     function->clearGC();
-    addJavaMethodMetadata(function, {method->getClassObject(), method});
+    addJavaMethodMetadata(function, method, JavaMethodMetadata::Kind::Native);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 

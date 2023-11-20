@@ -29,7 +29,10 @@ namespace jllvm
 class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
 {
     GarbageCollector& m_gc;
-    std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> m_deoptEntryParsed;
+    llvm::DenseSet<std::uintptr_t>& m_javaFrameSet;
+    llvm::StringRef m_stackMapSection;
+    llvm::StringRef m_javaSection;
+    llvm::DenseMap<llvm::orc::ResourceKey, std::vector<JavaMethodMetadata::JITData*>> m_needsCleanup;
 
     using StackMapParser = llvm::StackMapParser<llvm::support::endianness::native>;
 
@@ -41,11 +44,24 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
     template <class T>
     std::optional<WriteableFrameValue<T>> toWriteableFrameValue(const StackMapParser::LocationAccessor& loc);
 
+    void parseJITEntry(JavaMethodMetadata::JITData& metadata, StackMapParser::RecordAccessor& record,
+                       StackMapParser& parser, std::uint64_t functionAddress);
+
 public:
-    explicit StackMapRegistrationPlugin(GarbageCollector& gc,
-                                        std::function<void(std::uintptr_t, JIT::DeoptEntry&&)> deoptEntryParsed)
-        : m_gc(gc), m_deoptEntryParsed(std::move(deoptEntryParsed))
+    explicit StackMapRegistrationPlugin(GarbageCollector& gc, llvm::DenseSet<std::uintptr_t>& javaFrameSet)
+        : m_gc(gc), m_javaFrameSet(javaFrameSet)
     {
+        m_javaSection = "java";
+        if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+        {
+            m_javaSection = "__TEXT,java";
+        }
+
+        m_stackMapSection = ".llvm_stackmaps";
+        if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
+        {
+            m_stackMapSection = "__LLVM_STACKMAPS,__llvm_stackmaps";
+        }
     }
 
     llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility&) override;

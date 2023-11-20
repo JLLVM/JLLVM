@@ -17,7 +17,6 @@ add_library(JLLVMCompiler
         CodeGeneratorUtils.cpp
         ClassObjectStubCodeGenerator.cpp
         ClassObjectStubMangling.cpp
-        Compiler.cpp
-        Compiler.hpp)
-target_link_libraries(JLLVMCompiler PUBLIC JLLVMObject LLVMCore PRIVATE LLVMTargetParser)
+        Compiler.cpp)
+target_link_libraries(JLLVMCompiler PUBLIC JLLVMObject JLLVMUnwinder LLVMCore PRIVATE LLVMTargetParser)
 
