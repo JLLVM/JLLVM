@@ -94,6 +94,9 @@ public:
     /// Returns true if this 'FieldType' is a reference type.
     constexpr bool isReference() const;
 
+    /// Returns true if this 'FieldType' is either a 'long' or 'double' type.
+    constexpr bool isWide() const;
+
     /// Returns true if the given string is a valid 'FieldType' descriptor.
     constexpr static bool verify(std::string_view text)
     {
@@ -177,7 +180,7 @@ public:
         return getValue() == Char || getValue() == Boolean;
     }
 
-    constexpr bool operator==(const BaseType&) const = default;
+    bool operator==(const BaseType&) const = default;
 };
 
 /// <ObjectType> ::= 'L' <ClassName> ';'
@@ -195,7 +198,7 @@ public:
         return {m_name, m_size};
     }
 
-    constexpr bool operator==(const ObjectType&) const = default;
+    bool operator==(const ObjectType&) const = default;
 };
 
 /// <ArrayType> ::= '[' <FieldType>
@@ -477,6 +480,12 @@ constexpr FieldType::FieldType(std::string_view text) : m_arrayCount(text.find_f
 constexpr bool FieldType::isReference() const
 {
     return holds_alternative<ObjectType>(*this) || holds_alternative<ArrayType>(*this);
+}
+
+constexpr bool FieldType::isWide() const
+{
+    std::optional<BaseType> baseType = get_if<BaseType>(this);
+    return baseType == BaseType::Long || baseType == BaseType::Double;
 }
 
 } // namespace jllvm

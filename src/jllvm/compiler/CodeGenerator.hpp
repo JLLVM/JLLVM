@@ -31,18 +31,19 @@ class CodeGenerator
     struct BasicBlockData
     {
         llvm::BasicBlock* block;
-        OperandStack::State state;
+        OperandStack::State operandState;
+        LocalVariables::State variableState;
     };
 
     llvm::Function* m_function;
-    const ClassFile& m_classFile;
+    const Method& m_method;
     const ClassObject& m_classObject;
+    const ClassFile& m_classFile;
     StringInterner& m_stringInterner;
-    MethodType m_functionMethodType;
     llvm::IRBuilder<> m_builder;
     llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
-    std::vector<llvm::AllocaInst*> m_locals;
+    LocalVariables m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
     ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
     llvm::SmallSetVector<std::uint16_t, 8> m_workList;
@@ -124,17 +125,17 @@ class CodeGenerator
     llvm::Value* getClassObject(std::uint16_t offset, FieldType fieldDescriptor);
 
 public:
-    CodeGenerator(llvm::Function* function, const ClassObject& classObject, StringInterner& stringInterner,
-                  MethodType methodType, std::uint16_t maxStack, std::uint16_t maxLocals)
+    CodeGenerator(llvm::Function* function, const Method& method, StringInterner& stringInterner,
+                  std::uint16_t maxStack, std::uint16_t maxLocals)
         : m_function{function},
-          m_classFile{*classObject.getClassFile()},
-          m_classObject(classObject),
+          m_method(method),
+          m_classObject(*method.getClassObject()),
+          m_classFile{*m_classObject.getClassFile()},
           m_stringInterner{stringInterner},
-          m_functionMethodType{methodType},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
           m_debugBuilder{*function->getParent()},
           m_operandStack{m_builder, maxStack},
-          m_locals{maxLocals}
+          m_locals{m_builder, maxLocals}
     {
     }
 
@@ -148,8 +149,8 @@ public:
     CodeGenerator& operator=(CodeGenerator&&) = delete;
 
     using PrologueGenFn =
-        llvm::function_ref<void(llvm::IRBuilder<>& builder, llvm::ArrayRef<llvm::AllocaInst*> locals,
-                                OperandStack& operandStack, const ByteCodeTypeChecker::TypeInfo& typeInfo)>;
+        llvm::function_ref<void(llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
+                                const ByteCodeTypeChecker::TypeInfo& typeInfo)>;
 
     /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
     /// and have at most 'maxLocals' local variables. 'generatePrologue' is used to initialize the local variables and
@@ -158,18 +159,16 @@ public:
     void generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset = 0);
 };
 
-/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'classObject' is the class
+/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'method' is the method
 /// object of the class file containing 'code', 'stringInterner' the interner used to create string object instances
-/// from literals and 'methodType' the JVM Type of the method being compiled.
+/// from literal.
 /// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
 /// the newly created code. 'offset' is the bytecode offset at which compilation should start and must refer to a JVM
 /// instruction.
-inline void compileMethodBody(llvm::Function* function, const ClassObject& classObject, StringInterner& stringInterner,
-                              MethodType methodType, const Code& code, CodeGenerator::PrologueGenFn generatePrologue,
-                              std::uint16_t offset = 0)
+inline void compileMethodBody(llvm::Function* function, const Method& method, StringInterner& stringInterner,
+                              const Code& code, CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
 {
-    CodeGenerator codeGenerator{function,   classObject,        stringInterner,
-                                methodType, code.getMaxStack(), code.getMaxLocals()};
+    CodeGenerator codeGenerator{function, method, stringInterner, code.getMaxStack(), code.getMaxLocals()};
 
     codeGenerator.generateBody(code, generatePrologue, offset);
 }
