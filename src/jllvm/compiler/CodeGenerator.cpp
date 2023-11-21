@@ -401,9 +401,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* index = m_operandStack.pop_back();
             llvm::Value* array = m_operandStack.pop_back();
 
-            generateNullPointerCheck(array);
+            generateNullPointerCheck(getOffset(operation), array);
 
-            generateArrayIndexCheck(array, index);
+            generateArrayIndexCheck(getOffset(operation), array, index);
 
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(2), index});
@@ -430,9 +430,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* index = m_operandStack.pop_back();
             llvm::Value* array = m_operandStack.pop_back();
 
-            generateNullPointerCheck(array);
+            generateNullPointerCheck(getOffset(operation), array);
 
-            generateArrayIndexCheck(array, index);
+            generateArrayIndexCheck(getOffset(operation), array, index);
 
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(2), index});
@@ -467,7 +467,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 getClassObject(getOffset(operation),
                                ArrayType(ObjectType(index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text)));
 
-            generateNegativeArraySizeCheck(count);
+            generateNegativeArraySizeCheck(getOffset(operation), count);
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -513,7 +513,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* array = m_operandStack.pop_back();
 
-            generateNullPointerCheck(array);
+            generateNullPointerCheck(getOffset(operation), array);
 
             // The element type of the array type here is actually irrelevant.
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(referenceType(m_builder.getContext())), array,
@@ -537,9 +537,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* exception = m_operandStack.pop_back();
 
-            generateNullPointerCheck(exception);
+            generateNullPointerCheck(getOffset(operation), exception);
 
-            m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+            m_builder.CreateBr(generateHandlerChain(getOffset(operation), exception, m_builder.GetInsertBlock()));
             fallsThrough = false;
         },
         [&](BIPush biPush)
@@ -589,12 +589,14 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
                     m_builder.SetInsertPoint(throwBlock);
 
-                    llvm::Value* exception = m_builder.CreateCall(
+                    llvm::CallBase* exception = m_builder.CreateCall(
                         m_function->getParent()->getOrInsertFunction("jllvm_build_class_cast_exception",
                                                                      llvm::FunctionType::get(ty, {ty, ty}, false)),
                         {object, classObject});
+                    addExceptionHandlingDeopts(getOffset(operation), exception);
 
-                    m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+                    m_builder.CreateBr(
+                        generateHandlerChain(getOffset(operation), exception, m_builder.GetInsertBlock()));
 
                     m_builder.SetInsertPoint(continueBlock);
                 });
@@ -884,7 +886,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* objectRef = m_operandStack.pop_back();
 
-            generateNullPointerCheck(objectRef);
+            generateNullPointerCheck(getOffset(operation), objectRef);
 
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef fieldName =
@@ -1019,7 +1021,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 iter = m_operandStack.pop_back();
             }
 
-            generateNullPointerCheck(args[0]);
+            generateNullPointerCheck(getOffset(operation), args[0]);
 
             llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             llvm::StringRef methodName =
@@ -1204,7 +1206,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             // Pop object as is required by the instruction.
             // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
             //  (un)locking it.
-            generateNullPointerCheck(m_operandStack.pop_back());
+            generateNullPointerCheck(getOffset(operation), m_operandStack.pop_back());
         },
         [&](MultiANewArray multiANewArray)
         {
@@ -1240,7 +1242,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                               });
             }
 
-            llvm::for_each(loopCounts, [&](llvm::Value* count) { generateNegativeArraySizeCheck(count); });
+            llvm::for_each(loopCounts,
+                           [&](llvm::Value* count) { generateNegativeArraySizeCheck(getOffset(operation), count); });
 
             llvm::BasicBlock* done = llvm::BasicBlock::Create(m_builder.getContext(), "done", m_function);
 
@@ -1320,7 +1323,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             llvm::Value* classObject = getClassObject(getOffset(operation), ArrayType(descriptor));
 
-            generateNegativeArraySizeCheck(count);
+            generateNegativeArraySizeCheck(getOffset(operation), count);
 
             // Size required is the size of the array prior to the elements (equal to the offset to the
             // elements) plus element count * element size.
@@ -1364,7 +1367,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* value = m_operandStack.pop_back();
             llvm::Value* objectRef = m_operandStack.pop_back();
 
-            generateNullPointerCheck(objectRef);
+            generateNullPointerCheck(getOffset(operation), objectRef);
 
             llvm::Value* fieldOffset = getInstanceFieldOffset(getOffset(operation), className, fieldName, fieldType);
 
@@ -1513,8 +1516,8 @@ void CodeGenerator::addBytecodeOffsetOnlyDeopts(std::uint16_t byteCodeOffset, ll
     callInst = newCall;
 }
 
-void CodeGenerator::generateBuiltinExceptionThrow(llvm::Value* condition, llvm::StringRef builderName,
-                                                  llvm::ArrayRef<llvm::Value*> builderArgs)
+void CodeGenerator::generateBuiltinExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* condition,
+                                                  llvm::StringRef builderName, llvm::ArrayRef<llvm::Value*> builderArgs)
 {
     llvm::PointerType* exceptionType = referenceType(m_builder.getContext());
 
@@ -1527,25 +1530,26 @@ void CodeGenerator::generateBuiltinExceptionThrow(llvm::Value* condition, llvm::
 
     llvm::transform(builderArgs, argTypes.begin(), [](llvm::Value* arg) { return arg->getType(); });
 
-    llvm::Value* exception =
+    llvm::CallBase* exception =
         m_builder.CreateCall(m_function->getParent()->getOrInsertFunction(
                                  builderName, llvm::FunctionType::get(exceptionType, argTypes, false)),
                              builderArgs);
+    addExceptionHandlingDeopts(byteCodeOffset, exception);
 
-    m_builder.CreateBr(generateHandlerChain(exception, m_builder.GetInsertBlock()));
+    m_builder.CreateBr(generateHandlerChain(byteCodeOffset, exception, m_builder.GetInsertBlock()));
 
     m_builder.SetInsertPoint(continueBlock);
 }
 
-void CodeGenerator::generateNullPointerCheck(llvm::Value* object)
+void CodeGenerator::generateNullPointerCheck(std::uint16_t byteCodeOffset, llvm::Value* object)
 {
     llvm::Value* null = llvm::ConstantPointerNull::get(referenceType(m_builder.getContext()));
     llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
 
-    generateBuiltinExceptionThrow(isNull, "jllvm_build_null_pointer_exception", {});
+    generateBuiltinExceptionThrow(byteCodeOffset, isNull, "jllvm_build_null_pointer_exception", {});
 }
 
-void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* index)
+void CodeGenerator::generateArrayIndexCheck(std::uint16_t byteCodeOffset, llvm::Value* array, llvm::Value* index)
 {
     // The element type of the array type here is actually irrelevant.
     llvm::PointerType* type = referenceType(m_builder.getContext());
@@ -1557,17 +1561,19 @@ void CodeGenerator::generateArrayIndexCheck(llvm::Value* array, llvm::Value* ind
     llvm::Value* isBigger = m_builder.CreateICmpSGE(index, size);
     llvm::Value* outOfBounds = m_builder.CreateOr(isNegative, isBigger);
 
-    generateBuiltinExceptionThrow(outOfBounds, "jllvm_build_array_index_out_of_bounds_exception", {index, size});
+    generateBuiltinExceptionThrow(byteCodeOffset, outOfBounds, "jllvm_build_array_index_out_of_bounds_exception",
+                                  {index, size});
 }
 
-void CodeGenerator::generateNegativeArraySizeCheck(llvm::Value* size)
+void CodeGenerator::generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset, llvm::Value* size)
 {
     llvm::Value* isNegative = m_builder.CreateICmpSLT(size, m_builder.getInt32(0));
 
-    generateBuiltinExceptionThrow(isNegative, "jllvm_build_negative_array_size_exception", {size});
+    generateBuiltinExceptionThrow(byteCodeOffset, isNegative, "jllvm_build_negative_array_size_exception", {size});
 }
 
-llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, llvm::BasicBlock* newPred)
+llvm::BasicBlock* CodeGenerator::generateHandlerChain(std::uint16_t byteCodeOffset, llvm::Value* exception,
+                                                      llvm::BasicBlock* newPred)
 {
     llvm::IRBuilder<>::InsertPointGuard guard{m_builder};
 
@@ -1632,7 +1638,8 @@ llvm::BasicBlock* CodeGenerator::generateHandlerChain(llvm::Value* exception, ll
     }
 
     // Otherwise, propagate exception to parent frame:
-    m_builder.CreateCall(throwFunction(m_function->getParent()), phi);
+    llvm::CallBase* call = m_builder.CreateCall(throwFunction(m_function->getParent()), phi);
+    addBytecodeOffsetOnlyDeopts(byteCodeOffset, call);
     m_builder.CreateUnreachable();
 
     return ehHandler;
