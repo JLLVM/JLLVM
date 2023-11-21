@@ -1454,6 +1454,12 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
 void CodeGenerator::addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst)
 {
+    if (m_activeHandlers.empty())
+    {
+        addBytecodeOffsetOnlyDeopts(byteCodeOffset, callInst);
+        return;
+    }
+
     llvm::IRBuilder<>::InsertPointGuard guard{m_builder};
     m_builder.SetInsertPoint(callInst);
 
@@ -1483,6 +1489,22 @@ void CodeGenerator::addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llv
                         }
                         return value;
                     });
+
+    llvm::CallBase* newCall = llvm::CallBase::addOperandBundle(
+        callInst, llvm::LLVMContext::OB_deopt, llvm::OperandBundleDef("deopt", std::move(deoptOperands)), callInst);
+    callInst->replaceAllUsesWith(newCall);
+    callInst->eraseFromParent();
+    callInst = newCall;
+}
+
+void CodeGenerator::addBytecodeOffsetOnlyDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst)
+{
+    llvm::IRBuilder<>::InsertPointGuard guard{m_builder};
+    m_builder.SetInsertPoint(callInst);
+
+    std::vector<llvm::Value*> deoptOperands;
+    deoptOperands.push_back(m_builder.getInt16(byteCodeOffset));
+    deoptOperands.push_back(m_builder.getInt16(0));
 
     llvm::CallBase* newCall = llvm::CallBase::addOperandBundle(
         callInst, llvm::LLVMContext::OB_deopt, llvm::OperandBundleDef("deopt", std::move(deoptOperands)), callInst);
