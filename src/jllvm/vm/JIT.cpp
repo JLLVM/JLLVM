@@ -325,7 +325,7 @@ llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame
     const DeoptEntry& entry = iter->second;
 
     return llvm::to_vector(
-        llvm::map_range(entry.locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.read(frame); }));
+        llvm::map_range(entry.locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.readScalar(frame); }));
 }
 
 void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,

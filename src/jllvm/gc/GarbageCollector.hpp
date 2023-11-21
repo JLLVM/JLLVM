@@ -18,6 +18,7 @@
 
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/object/Object.hpp>
+#include <jllvm/unwind/Unwinder.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -29,26 +30,12 @@ namespace jllvm
 {
 struct StackMapEntry
 {
-    enum Type : std::uint8_t
-    {
-        Register = 1,
-        Direct = 2,
-        Indirect = 3,
-    } type;
-    std::uint8_t count;
-    int registerNumber;
-    std::uint32_t offset;
-
-    bool operator==(const StackMapEntry& rhs) const
-    {
-        return type == rhs.type && count == rhs.count && registerNumber == rhs.registerNumber && offset == rhs.offset;
-    }
-
-    bool operator<(const StackMapEntry& rhs) const
-    {
-        return std::tie(type, count, registerNumber, offset)
-               < std::tie(rhs.type, rhs.count, rhs.registerNumber, rhs.offset);
-    }
+    /// Base pointer which points directly at an object.
+    WriteableFrameValue<ObjectInterface*> basePointer;
+    /// Derived pointer which may be at an offset to the base pointer and therefore possibly point into the middle of
+    /// the object. After relocation, it should have the same offset from the relocated base pointer as it did prior to
+    /// relocation.
+    WriteableFrameValue<std::byte*> derivedPointer;
 };
 
 class GarbageCollector;

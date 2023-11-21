@@ -46,42 +46,50 @@ jllvm::GarbageCollector::GarbageCollector(std::size_t heapSize)
 
 namespace
 {
-class ObjectRepr : public jllvm::ObjectInterface
+
+using PointerIntPair = llvm::PointerIntPair<jllvm::ClassObject*, 1, bool>;
+
+/// Returns a 'PointerIntPair' from the class object field of 'objectInterface', containing the mark bit for the GC.
+PointerIntPair classAsPointerIntPair(jllvm::ObjectInterface* objectInterface)
 {
-    llvm::PointerIntPair<jllvm::ClassObject*, 1, bool> m_classObject;
+    return PointerIntPair::getFromOpaqueValue(
+        reinterpret_cast<void*>(const_cast<jllvm::ClassObject*>(objectInterface->getClass())));
+}
 
-public:
-    jllvm::ClassObject* getClass() const
-    {
-        return m_classObject.getPointer();
-    }
-
-    bool hasBeenSeen() const
-    {
-        return m_classObject.getInt();
-    }
-
-    void markSeen()
-    {
-        m_classObject.setInt(true);
-    }
-
-    void clearMark()
-    {
-        m_classObject.setInt(false);
-    }
-
-    std::size_t getSize() const;
-};
-
-static_assert(std::is_standard_layout_v<ObjectRepr>);
-
-std::size_t ObjectRepr::getSize() const
+/// Returns the class object of 'objectInterface'. This should be used during and after the mark phase as accessing
+/// the class object normally might not be possible due to mark bit being set in the field.
+jllvm::ClassObject* getClass(jllvm::ObjectInterface* objectInterface)
 {
-    std::size_t instanceSize = getClass()->getInstanceSize();
-    if (const jllvm::ClassObject* component = getClass()->getComponentType())
+    return classAsPointerIntPair(objectInterface).getPointer();
+}
+
+/// Returns true if the object has been marked as seen previously.
+bool hasBeenSeen(jllvm::ObjectInterface* objectInterface)
+{
+    return classAsPointerIntPair(objectInterface).getInt();
+}
+
+void markSeen(jllvm::ObjectInterface* objectInterface)
+{
+    auto pair = classAsPointerIntPair(objectInterface);
+    pair.setInt(true);
+    objectInterface->getObjectHeader().classObject = reinterpret_cast<const jllvm::ClassObject*>(pair.getOpaqueValue());
+}
+
+void clearMark(jllvm::ObjectInterface* objectInterface)
+{
+    auto pair = classAsPointerIntPair(objectInterface);
+    pair.setInt(false);
+    objectInterface->getObjectHeader().classObject = reinterpret_cast<const jllvm::ClassObject*>(pair.getOpaqueValue());
+}
+
+/// Returns the size of 'objectInterface' in number of bytes.
+std::size_t getSize(jllvm::ObjectInterface* objectInterface)
+{
+    std::size_t instanceSize = getClass(objectInterface)->getInstanceSize();
+    if (const jllvm::ClassObject* component = getClass(objectInterface)->getComponentType())
     {
-        std::size_t length = reinterpret_cast<const jllvm::Array<>&>(*this).size();
+        std::size_t length = static_cast<const jllvm::Array<>&>(*objectInterface).size();
         if (component->isPrimitive())
         {
             instanceSize += component->getInstanceSize() * length;
@@ -94,55 +102,33 @@ std::size_t ObjectRepr::getSize() const
     return instanceSize;
 }
 
-bool shouldBeAddedToWorkList(ObjectRepr* repr, ObjectRepr* from, ObjectRepr* to)
+bool shouldBeAddedToWorkList(jllvm::ObjectInterface* repr, jllvm::ObjectInterface* from, jllvm::ObjectInterface* to)
 {
     if (!(repr >= from && repr < to))
     {
         return false;
     }
-    return !repr->hasBeenSeen();
+    return !hasBeenSeen(repr);
 }
 
 void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::StackMapEntry>>& map,
-                       std::vector<ObjectRepr*>& results, ObjectRepr* from, ObjectRepr* to)
+                       std::vector<jllvm::ObjectInterface*>& results, jllvm::ObjectInterface* from,
+                       jllvm::ObjectInterface* to)
 {
+    llvm::SmallVector<jllvm::ObjectInterface*> buffer;
     jllvm::unwindStack(
         [&](const jllvm::UnwindFrame& context)
         {
-            for (const auto& iter : map.lookup(context.getProgramCounter()))
+            for (const jllvm::StackMapEntry& iter : map.lookup(context.getProgramCounter()))
             {
-                switch (iter.type)
+                // Only the base pointers point to actual objects and are used to mark the object.
+                iter.basePointer.readVector(buffer, context);
+                for (jllvm::ObjectInterface* object : buffer)
                 {
-                    case jllvm::StackMapEntry::Register:
+                    if (shouldBeAddedToWorkList(object, from, to))
                     {
-                        auto rp = context.getIntegerRegister(iter.registerNumber);
-                        auto* object = reinterpret_cast<ObjectRepr*>(rp);
-                        if (shouldBeAddedToWorkList(object, from, to))
-                        {
-                            results.push_back(object);
-                            object->markSeen();
-                        }
-                        break;
-                    }
-                    case jllvm::StackMapEntry::Direct:
-                    {
-                        llvm_unreachable("We don't do stack allocations");
-                    }
-                    case jllvm::StackMapEntry::Indirect:
-                    {
-                        std::uintptr_t rp = context.getIntegerRegister(iter.registerNumber);
-                        auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
-                        for (std::size_t i = 0; i < iter.count; i++)
-                        {
-                            ObjectRepr* object = ptr[i];
-                            if (!shouldBeAddedToWorkList(object, from, to))
-                            {
-                                continue;
-                            }
-                            object->markSeen();
-                            results.push_back(object);
-                        }
-                        break;
+                        results.push_back(object);
+                        markSeen(object);
                     }
                 }
             }
@@ -150,68 +136,45 @@ void collectStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
 }
 
 void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::StackMapEntry>>& map,
-                       const llvm::DenseMap<ObjectRepr*, ObjectRepr*>& mapping)
+                       const llvm::DenseMap<jllvm::ObjectInterface*, jllvm::ObjectInterface*>& mapping)
 {
+    llvm::SmallVector<jllvm::ObjectInterface*> basePointers;
+    llvm::SmallVector<std::byte*> derivedPointers;
     jllvm::unwindStack(
         [&](jllvm::UnwindFrame& context)
         {
-            for (const auto& iter : map.lookup(context.getProgramCounter()))
+            for (const jllvm::StackMapEntry& iter : map.lookup(context.getProgramCounter()))
             {
-                switch (iter.type)
+                iter.basePointer.readVector(basePointers, context);
+                iter.derivedPointer.readVector(derivedPointers, context);
+                for (auto&& [basePointer, derivedPointer] : llvm::zip_equal(basePointers, derivedPointers))
                 {
-                    case jllvm::StackMapEntry::Register:
+                    if (jllvm::ObjectInterface* replacement = mapping.lookup(basePointer))
                     {
-                        auto rp = context.getIntegerRegister(iter.registerNumber);
-                        if (!rp)
-                        {
-                            break;
-                        }
-                        auto* object = reinterpret_cast<ObjectRepr*>(rp);
-                        if (auto* replacement = mapping.lookup(object))
-                        {
-                            context.setIntegerRegister(iter.registerNumber,
-                                                       reinterpret_cast<std::uintptr_t>(replacement));
-                        }
-                        break;
-                    }
-                    case jllvm::StackMapEntry::Direct:
-                    {
-                        llvm_unreachable("We don't do stack allocations");
-                    }
-                    case jllvm::StackMapEntry::Indirect:
-                    {
-                        std::uintptr_t rp = context.getIntegerRegister(iter.registerNumber);
-                        auto** ptr = reinterpret_cast<ObjectRepr**>(rp + iter.offset);
-                        for (std::size_t i = 0; i < iter.count; i++)
-                        {
-                            ObjectRepr* object = ptr[i];
-                            if (!object)
-                            {
-                                continue;
-                            }
-                            if (ObjectRepr* replacement = mapping.lookup(object))
-                            {
-                                ptr[i] = replacement;
-                            }
-                        }
-                        break;
+                        // Calculate the original offset of the derived pointer from the base pointer first.
+                        std::size_t offset = derivedPointer - reinterpret_cast<std::byte*>(basePointer);
+                        // Then reapply it to the replacement.
+                        derivedPointer = reinterpret_cast<std::byte*>(replacement) + offset;
                     }
                 }
+                // Only the derived pointer locations need to be written back to.
+                // The base pointers only exist to be able to calculate the offset of the derived.
+                iter.derivedPointer.writeVector(derivedPointers, context);
             }
         });
 }
 
 template <class F>
-void introspectObject(ObjectRepr* object, F&& f)
+void introspectObject(jllvm::ObjectInterface* object, F&& f)
 {
-    jllvm::ClassObject* classObject = object->getClass();
+    jllvm::ClassObject* classObject = getClass(object);
     if (const jllvm::ClassObject* componentType = classObject->getComponentType())
     {
         // Array of references.
         if (!componentType->isPrimitive())
         {
-            auto* array = reinterpret_cast<jllvm::Array<ObjectRepr*>*>(object);
-            for (ObjectRepr** iter = array->begin(); iter != array->end(); iter++)
+            auto* array = static_cast<jllvm::Array<jllvm::ObjectInterface*>*>(object);
+            for (jllvm::ObjectInterface** iter = array->begin(); iter != array->end(); iter++)
             {
                 f(iter);
             }
@@ -221,24 +184,24 @@ void introspectObject(ObjectRepr* object, F&& f)
 
     for (std::uint32_t iter : classObject->getGCObjectMask())
     {
-        f(reinterpret_cast<ObjectRepr**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
+        f(reinterpret_cast<jllvm::ObjectInterface**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
     }
 }
 
-void mark(std::vector<ObjectRepr*>& workList, ObjectRepr* from, ObjectRepr* to)
+void mark(std::vector<jllvm::ObjectInterface*>& workList, jllvm::ObjectInterface* from, jllvm::ObjectInterface* to)
 {
     while (!workList.empty())
     {
-        ObjectRepr* object = workList.back();
+        jllvm::ObjectInterface* object = workList.back();
         workList.pop_back();
 
         introspectObject(object,
-                         [&](ObjectRepr** field)
+                         [&](jllvm::ObjectInterface** field)
                          {
-                             ObjectRepr* reached = *field;
+                             jllvm::ObjectInterface* reached = *field;
                              if (shouldBeAddedToWorkList(reached, from, to))
                              {
-                                 reached->markSeen();
+                                 markSeen(reached);
                                  workList.push_back(reached);
                              }
                          });
@@ -254,18 +217,18 @@ jllvm::GCRootRef<jllvm::Object> jllvm::GarbageCollector::allocateStatic()
 
 void jllvm::GarbageCollector::garbageCollect()
 {
-    auto* from = reinterpret_cast<ObjectRepr*>(m_fromSpace);
-    auto* to = reinterpret_cast<ObjectRepr*>(m_bumpPtr);
+    auto* from = reinterpret_cast<jllvm::ObjectInterface*>(m_fromSpace);
+    auto* to = reinterpret_cast<jllvm::ObjectInterface*>(m_bumpPtr);
 
-    std::vector<ObjectRepr*> roots;
+    std::vector<jllvm::ObjectInterface*> roots;
     collectStackRoots(m_entries, roots, from, to);
 
     auto addToWorkListLambda = [&roots, from, to](void* ptr)
     {
-        auto* object = reinterpret_cast<ObjectRepr*>(ptr);
+        auto* object = reinterpret_cast<jllvm::ObjectInterface*>(ptr);
         if (shouldBeAddedToWorkList(object, from, to))
         {
-            object->markSeen();
+            markSeen(object);
             roots.push_back(object);
         }
     };
@@ -279,8 +242,8 @@ void jllvm::GarbageCollector::garbageCollect()
 
     auto nextObject = [](char* curr)
     {
-        auto* object = reinterpret_cast<ObjectRepr*>(curr);
-        curr += object->getSize();
+        auto* object = reinterpret_cast<jllvm::ObjectInterface*>(curr);
+        curr += getSize(object);
         curr += llvm::offsetToAlignedAddr(curr, llvm::Align(alignof(ObjectHeader)));
         return curr;
     };
@@ -293,24 +256,24 @@ void jllvm::GarbageCollector::garbageCollect()
     auto* oldBumpPtr = m_bumpPtr;
     m_bumpPtr = m_toSpace;
     std::memset(m_bumpPtr, 0, m_heapSize);
-    llvm::DenseMap<ObjectRepr*, ObjectRepr*> mapping;
+    llvm::DenseMap<jllvm::ObjectInterface*, jllvm::ObjectInterface*> mapping;
     for (char* iter = m_fromSpace; iter != oldBumpPtr; iter = nextObject(iter))
     {
-        auto* object = reinterpret_cast<ObjectRepr*>(iter);
-        auto objectSize = object->getSize();
-        if (!object->hasBeenSeen())
+        auto* object = reinterpret_cast<jllvm::ObjectInterface*>(iter);
+        auto objectSize = getSize(object);
+        if (!hasBeenSeen(object))
         {
             collectedObjects++;
             continue;
         }
 
         relocatedObjects++;
-        object->clearMark();
+        clearMark(object);
         auto* newStorage = m_bumpPtr;
         m_bumpPtr += objectSize;
         m_bumpPtr += llvm::offsetToAlignedAddr(m_bumpPtr, llvm::Align(alignof(ObjectHeader)));
         std::memcpy(newStorage, object, objectSize);
-        mapping[object] = reinterpret_cast<ObjectRepr*>(newStorage);
+        mapping[object] = reinterpret_cast<jllvm::ObjectInterface*>(newStorage);
     }
 
     LLVM_DEBUG({
@@ -330,7 +293,7 @@ void jllvm::GarbageCollector::garbageCollect()
 
     for (void** root : m_staticRoots)
     {
-        if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
+        if (jllvm::ObjectInterface* replacement = mapping.lookup(reinterpret_cast<jllvm::ObjectInterface*>(*root)))
         {
             *root = replacement;
         }
@@ -340,7 +303,7 @@ void jllvm::GarbageCollector::garbageCollect()
     {
         for (void** root : list)
         {
-            if (ObjectRepr* replacement = mapping.lookup(reinterpret_cast<ObjectRepr*>(*root)))
+            if (jllvm::ObjectInterface* replacement = mapping.lookup(reinterpret_cast<jllvm::ObjectInterface*>(*root)))
             {
                 *root = replacement;
             }
@@ -349,12 +312,12 @@ void jllvm::GarbageCollector::garbageCollect()
 
     for (char* iter = m_fromSpace; iter != m_bumpPtr; iter = nextObject(iter))
     {
-        auto* object = reinterpret_cast<ObjectRepr*>(iter);
+        auto* object = reinterpret_cast<jllvm::ObjectInterface*>(iter);
 
         introspectObject(object,
-                         [&](ObjectRepr** field)
+                         [&](jllvm::ObjectInterface** field)
                          {
-                             if (ObjectRepr* replacement = mapping.lookup(*field))
+                             if (jllvm::ObjectInterface* replacement = mapping.lookup(*field))
                              {
                                  *field = replacement;
                              }

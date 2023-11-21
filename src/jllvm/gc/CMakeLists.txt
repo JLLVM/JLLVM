@@ -12,4 +12,4 @@
 # see <http://www.gnu.org/licenses/>.
 
 add_library(JLLVMGC GarbageCollector.cpp RootFreeList.cpp)
-target_link_libraries(JLLVMGC PUBLIC JLLVMObject PRIVATE JLLVMUnwinder)
+target_link_libraries(JLLVMGC PUBLIC JLLVMObject JLLVMUnwinder)
