@@ -132,37 +132,37 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
         std::move(bootOptions.classPath),
-          [this](ClassObject& classObject)
-          {
-              m_jit.add(&classObject);
-              if (classObject.isInterface() || classObject.isAbstract())
-              {
-                  return;
-              }
+        [this](ClassObject& classObject)
+        {
+            m_jit.add(&classObject);
+            if (classObject.isInterface() || classObject.isAbstract())
+            {
+                return;
+            }
 
-              for (const ClassObject* curr : classObject.getSuperClasses())
-              {
-                  for (const Method& iter : curr->getMethods())
-                  {
-                      auto slot = iter.getTableSlot();
-                      if (!slot)
-                      {
-                          continue;
-                      }
-                      classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
-                  }
-              }
+            for (const ClassObject* curr : classObject.getSuperClasses())
+            {
+                for (const Method& iter : curr->getMethods())
+                {
+                    auto slot = iter.getTableSlot();
+                    if (!slot)
+                    {
+                        continue;
+                    }
+                    classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
+                }
+            }
 
-              llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
-              for (const ClassObject* interface : classObject.getAllInterfaces())
-              {
-                  idToInterface[interface->getInterfaceId()] = interface;
-              }
+            llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
+            for (const ClassObject* interface : classObject.getAllInterfaces())
+            {
+                idToInterface[interface->getInterfaceId()] = interface;
+            }
 
-              for (ITable* iTable : classObject.getITables())
-              {
-                  const ClassObject* interface = idToInterface[iTable->getId()];
-                  for (const Method& iter : interface->getMethods())
+            for (ITable* iTable : classObject.getITables())
+            {
+                const ClassObject* interface = idToInterface[iTable->getId()];
+                for (const Method& iter : interface->getMethods())
                 {
                     auto slot = iter.getTableSlot();
                     if (!slot)
@@ -303,9 +303,13 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
         llvm::report_fatal_error(("Failed to find main method due to " + toString(lookup.takeError())).c_str());
     }
 
+    auto* javaArgs = m_gc.allocate<Array<String*>>(&m_classLoader.forName("[Ljava/lang/String;"), args.size());
+
+    llvm::transform(args, javaArgs->begin(), [&](llvm::StringRef arg) { return m_stringInterner.intern(arg); });
+
     try
     {
-        reinterpret_cast<void (*)(void*)>(lookup->getAddress())(nullptr);
+        reinterpret_cast<void (*)(void*)>(lookup->getAddress())(javaArgs);
         return 0;
     }
     catch (const Throwable& activeException)
