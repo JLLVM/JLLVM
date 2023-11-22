@@ -20,6 +20,7 @@
 
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/object/ClassObject.hpp>
+#include <jllvm/unwind/Unwinder.hpp>
 
 namespace jllvm
 {
@@ -63,16 +64,140 @@ llvm::FunctionType* osrMethodSignature(MethodType methodType, llvm::LLVMContext&
 llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm::Value* value);
 
 /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
-struct JavaMethodMetadata
+class JavaMethodMetadata
 {
-    /// Class object of the enclosing class of the method.
-    const ClassObject* classObject;
-    /// Method meta-object of the compiled method.
-    const Method* method;
+    // CAUTION: While the members below are private from a C++ API user perspective, their precise layouts and values
+    // are relied upon by LLVM-generated code and therefore not private from an implementation perspective.
+
+    const Method* m_method{};
+
+public:
+    /// Metadata contained within any JITted Java frame.
+    class JITData
+    {
+        struct PerPCData
+        {
+            std::uint16_t byteCodeOffset{};
+            std::vector<FrameValue<std::uint64_t>> locals;
+        };
+
+        /// Pointer to a dynamically allocated instance. This is not just a 'llvm::DenseMap' as that is 1) not a
+        /// standard layout type and 2) requires being able to write to the object despite 'JavaMethodMetadata' being
+        /// in read-only memory after linking.
+        llvm::DenseMap<std::uintptr_t, PerPCData>* m_perPcData = nullptr;
+
+    public:
+        JITData()
+        {
+            m_perPcData = new std::decay_t<decltype(*m_perPcData)>;
+        }
+
+        ~JITData()
+        {
+            delete m_perPcData;
+        }
+
+        /// Inserts new metadata for the given program counter.
+        void insert(std::uintptr_t programCounter, PerPCData&& pcData)
+        {
+            m_perPcData->insert({programCounter, std::move(pcData)});
+        }
+
+        /// Returns the given metadata for the given program counter.
+        /// It is undefined behaviour, if no metadata is associated with the given program counter.
+        /// Metadata is guaranteed to exist for every call-site capable of throwing an exception within a JITted method.
+        const PerPCData& operator[](std::uintptr_t programCounter) const
+        {
+            auto iter = m_perPcData->find(programCounter);
+            assert(iter != m_perPcData->end() && "JIT frame must have metadata associated with every call-site");
+            return iter->second;
+        }
+
+        JITData(const JITData&) = delete;
+        JITData& operator=(const JITData&) = delete;
+        JITData(JITData&&) = delete;
+        JITData& operator=(JITData&&) = delete;
+    };
+
+    /// Possible kinds of Java frames.
+    enum class Kind : std::uint8_t
+    {
+        /// JITted method.
+        JIT = 0,
+        /// JNI method.
+        Native = 2,
+    };
+
+private:
+    union
+    {
+        // Default active union member.
+        char dummy{};
+        JITData m_jitData;
+    };
+    Kind m_kind{};
+
+public:
+    /// 'JavaMethodMetadata' is only ever created by LLVM-IR.
+    JavaMethodMetadata() = delete;
+
+    /// Returns the number of bytes required to store the union including any padding prior or after the union.
+    constexpr static std::size_t unionSize()
+    {
+        return offsetof(JavaMethodMetadata, m_kind) - (offsetof(JavaMethodMetadata, m_method) + sizeof(const Method*));
+    }
+
+    /// Returns the class object of the enclosing class of the method.
+    const ClassObject* getClassObject() const
+    {
+        return getMethod()->getClassObject();
+    }
+
+    /// Returns the method meta-object of the method.
+    const Method* getMethod() const
+    {
+        return m_method;
+    }
+
+    /// Returns true if this is metadata for a JITted method.
+    bool isJIT() const
+    {
+        return m_kind == Kind::JIT;
+    }
+
+    /// Returns true if this is metadata for a native method.
+    bool isNative() const
+    {
+        return m_kind == Kind::Native;
+    }
+
+    /// Returns the kind of this metadata.
+    Kind getKind() const
+    {
+        return m_kind;
+    }
+
+    /// Initializes and returns the JIT metadata field.
+    /// It is undefined behaviour to call this method if the metadata is not for a JITted method.
+    JITData& emplaceJITData()
+    {
+        assert(isJIT());
+        return *new (&m_jitData) JITData;
+    }
+
+    /// Returns the JIT metadata field.
+    /// It is undefined behaviour to call this method if the metadata is not for a JITted method.
+    const JITData& getJITData() const
+    {
+        assert(isJIT());
+        return m_jitData;
+    }
 };
 
-/// Adds the given Java method metadata to the function.
-void addJavaMethodMetadata(llvm::Function* function, const JavaMethodMetadata& metadata);
+static_assert(std::is_standard_layout_v<JavaMethodMetadata>);
+
+/// Adds Java method metadata to the function.
+void addJavaMethodMetadata(llvm::Function* function, const Method* method, JavaMethodMetadata::Kind kind);
 
 /// Applies all ABI relevant attributes to the function which must have a signature matching the output of
 /// 'descriptorToType' when called with the given 'methodType' and 'isStatic'.

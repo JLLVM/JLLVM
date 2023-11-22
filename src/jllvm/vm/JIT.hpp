@@ -71,18 +71,7 @@ class JIT
     ByteCodeCompileLayer m_byteCodeCompileLayer;
     JNIImplementationLayer m_jniLayer;
 
-    llvm::DenseSet<void*> m_javaFrames;
-
-public:
-    struct DeoptEntry
-    {
-        std::uint16_t bytecodeOffset;
-
-        std::vector<FrameValue<std::uint64_t>> locals;
-    };
-
-private:
-    llvm::DenseMap<std::uintptr_t, DeoptEntry> m_deoptEntries;
+    llvm::DenseSet<std::uintptr_t> m_javaFrames;
 
     llvm::SmallVector<std::uint64_t> readLocals(const UnwindFrame& frame) const;
 
@@ -165,33 +154,15 @@ public:
         return m_interner;
     }
 
-    /// Returns the set of all function pointers that are compiled Java methods.
-    const llvm::DenseSet<void*>& getJavaFrames() const
+    /// Returns the metadata associated with any Java method.
+    /// Returns a null pointer if the function pointer is not a Java method.
+    const JavaMethodMetadata* getJavaMethodMetadata(std::uintptr_t functionPointer) const
     {
-        return m_javaFrames;
-    }
-
-    /// Returns the metadata associated with any compiled Java method.
-    /// Returns an empty optional if the function pointer is not a Java method.
-    std::optional<JavaMethodMetadata> getJavaMethodMetadata(std::uintptr_t functionPointer)
-    {
-        if (!m_javaFrames.contains(reinterpret_cast<void*>(functionPointer)))
+        if (!m_javaFrames.contains(functionPointer))
         {
-            return std::nullopt;
+            return nullptr;
         }
-        return reinterpret_cast<const JavaMethodMetadata*>(functionPointer)[-1];
-    }
-
-    /// Returns the Java Bytecode offset corresponding to 'programCounter' or an empty optional if the program counter
-    /// does not correspond to a Java method.
-    std::optional<std::uint16_t> getJavaBytecodeOffset(std::uintptr_t programCounter)
-    {
-        auto result = m_deoptEntries.find(programCounter);
-        if (result == m_deoptEntries.end())
-        {
-            return std::nullopt;
-        }
-        return result->second.bytecodeOffset;
+        return &reinterpret_cast<const JavaMethodMetadata*>(functionPointer)[-1];
     }
 
     /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same

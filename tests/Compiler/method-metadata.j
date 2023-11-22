@@ -16,7 +16,8 @@
 .end method
 
 ; CHECK-LABEL: define void @"Test.test:()V"
-; CHECK-SAME: prefix { ptr addrspace(1), ptr } { ptr addrspace(1) @"LTest;", ptr @"&Test.test:()V" }
+; CHECK-SAME: prefix
+; CHECK-SAME: ptr @"&Test.test:()V"
 .method public static test()V
     .limit stack 1
     return

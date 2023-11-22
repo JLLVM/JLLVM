@@ -380,28 +380,24 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
     unwindStack(
         [&](const UnwindFrame& frame)
         {
-            std::optional<JavaMethodMetadata> metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
-            if (!metadata)
+            const JavaMethodMetadata* metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
+            if (!metadata || !metadata->isJIT())
             {
                 return UnwindAction::ContinueUnwinding;
             }
 
-            std::optional<uint16_t> byteCodeOffset = m_jit.getJavaBytecodeOffset(frame.getProgramCounter());
-            if (!byteCodeOffset)
-            {
-                return UnwindAction::ContinueUnwinding;
-            }
+            std::uint16_t byteCodeOffset = metadata->getJITData()[frame.getProgramCounter()].byteCodeOffset;
 
-            Code* code = metadata->method->getMethodInfo().getAttributes().find<Code>();
+            Code* code = metadata->getMethod()->getMethodInfo().getAttributes().find<Code>();
             assert(code && "cannot be in a Java frame of a method without code");
 
-            const ClassFile& classFile = *metadata->classObject->getClassFile();
+            const ClassFile& classFile = *metadata->getClassObject()->getClassFile();
             // Exception handler to use is the very first one in the [start, end) range where the type of the exception
             // is an instance of the catch type.
             std::optional<std::uint16_t> handlerPc;
             for (const Code::ExceptionTable& exceptionTable : code->getExceptionTable())
             {
-                if (exceptionTable.startPc > *byteCodeOffset || *byteCodeOffset >= exceptionTable.endPc)
+                if (exceptionTable.startPc > byteCodeOffset || byteCodeOffset >= exceptionTable.endPc)
                 {
                     continue;
                 }

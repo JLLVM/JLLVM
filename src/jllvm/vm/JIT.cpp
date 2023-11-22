@@ -43,51 +43,6 @@
 
 namespace
 {
-class JavaFrameRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
-{
-    llvm::DenseSet<void*>& m_javaFrameSet;
-
-public:
-    explicit JavaFrameRegistrationPlugin(llvm::DenseSet<void*>& javaFrameSet) : m_javaFrameSet(javaFrameSet) {}
-
-    llvm::Error notifyFailed(llvm::orc::MaterializationResponsibility&) override
-    {
-        return llvm::Error::success();
-    }
-
-    llvm::Error notifyRemovingResources(llvm::orc::JITDylib&, llvm::orc::ResourceKey) override
-    {
-        return llvm::Error::success();
-    }
-
-    void notifyTransferringResources(llvm::orc::JITDylib&, llvm::orc::ResourceKey, llvm::orc::ResourceKey) override {}
-
-    void modifyPassConfig(llvm::orc::MaterializationResponsibility&, llvm::jitlink::LinkGraph&,
-                          llvm::jitlink::PassConfiguration& config) override
-    {
-        config.PostAllocationPasses.emplace_back(
-            [&](llvm::jitlink::LinkGraph& g)
-            {
-                std::string sectionName = "java";
-                if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
-                {
-                    sectionName = "__TEXT," + sectionName;
-                }
-
-                llvm::jitlink::Section* section = g.findSectionByName(sectionName);
-                if (!section)
-                {
-                    return llvm::Error::success();
-                }
-                for (llvm::jitlink::Symbol* iter : section->symbols())
-                {
-                    m_javaFrameSet.insert(iter->getAddress().toPtr<void*>());
-                }
-
-                return llvm::Error::success();
-            });
-    }
-};
 
 /// Custom 'EHFrameRegistrar' which registers the 'eh_frame' sections in our unwinder. This is very similar to
 /// 'llvm::jitlink::InProcessEHFrameRegistrar' except that the latter hardcodes the use of either 'libgcc' or
@@ -163,10 +118,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
         *m_session, std::make_unique<llvm::jitlink::InProcessEHFrameRegistrar>()));
 
-    m_objectLayer.addPlugin(
-        std::make_unique<StackMapRegistrationPlugin>(gc, [&](std::uintptr_t address, DeoptEntry&& entry)
-                                                     { m_deoptEntries.try_emplace(address, std::move(entry)); }));
-    m_objectLayer.addPlugin(std::make_unique<JavaFrameRegistrationPlugin>(m_javaFrames));
+    m_objectLayer.addPlugin(std::make_unique<StackMapRegistrationPlugin>(gc, m_javaFrames));
 
 #if LLVM_ADDRESS_SANITIZER_BUILD
     m_javaJITImplDetails.addGenerator(llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
@@ -319,13 +271,11 @@ void jllvm::JIT::optimize(llvm::Module& module)
 
 llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame) const
 {
-    auto iter = m_deoptEntries.find(frame.getProgramCounter());
-    assert(iter != m_deoptEntries.end() && "Frame must be a Java frame and has to have deopt info");
-
-    const DeoptEntry& entry = iter->second;
+    llvm::ArrayRef<FrameValue<std::uint64_t>> locals =
+        getJavaMethodMetadata(frame.getFunctionPointer())->getJITData()[frame.getProgramCounter()].locals;
 
     return llvm::to_vector(
-        llvm::map_range(entry.locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.readScalar(frame); }));
+        llvm::map_range(locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.readScalar(frame); }));
 }
 
 void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
@@ -341,7 +291,7 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
     llvm::copy(locals, localsPtr);
 
     // Lookup the OSR version if it has already been compiled. If not, compile and add it now.
-    const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->method;
+    const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->getMethod();
     llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
     llvm::Expected<llvm::JITEvaluatedSymbol> osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
     if (!osrMethod)

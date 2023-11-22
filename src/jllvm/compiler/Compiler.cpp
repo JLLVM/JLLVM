@@ -25,7 +25,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
     auto* function = llvm::Function::Create(
         descriptorToType(method.getType(), methodInfo.isStatic(), module.getContext()),
         llvm::GlobalValue::ExternalLinkage, mangleDirectMethodCall(methodInfo, *classFile), module);
-    addJavaMethodMetadata(function, {classObject, &method});
+    addJavaMethodMetadata(function, &method, JavaMethodMetadata::Kind::JIT);
     applyABIAttributes(function);
 
     auto* code = methodInfo.getAttributes().find<Code>();
@@ -67,7 +67,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     auto* function =
         llvm::Function::Create(osrMethodSignature(method.getType(), module.getContext()),
                                llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(&method, offset), module);
-    addJavaMethodMetadata(function, {classObject, &method});
+    addJavaMethodMetadata(function, &method, JavaMethodMetadata::Kind::JIT);
     applyABIAttributes(function);
 
     auto* code = methodInfo.getAttributes().find<Code>();
@@ -110,9 +110,10 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
 
             // The OSR frame is responsible for deleting its input arrays as the frame that originally allocated the
             // pointer is replaced.
-            builder.CreateCall(function->getParent()->getOrInsertFunction("jllvm_osr_frame_delete", builder.getVoidTy(),
-                                                                          builder.getPtrTy()),
-                               operandStackInput);
+            llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
+                "jllvm_osr_frame_delete", builder.getVoidTy(), builder.getPtrTy());
+            llvm::cast<llvm::Function>(callee.getCallee())->addFnAttr("gc-leaf-function");
+            builder.CreateCall(callee, operandStackInput);
         },
         offset);
 

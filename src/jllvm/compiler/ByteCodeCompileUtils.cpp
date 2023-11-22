@@ -143,7 +143,9 @@ llvm::Value* jllvm::extendToStackType(llvm::IRBuilder<>& builder, FieldType type
         [&](const auto&) { return value; });
 }
 
-void jllvm::addJavaMethodMetadata(llvm::Function* function, const JavaMethodMetadata& metadata)
+namespace
+{
+void placeInJavaSection(llvm::Function* function)
 {
     std::string sectionName = "java";
     if (llvm::Triple(LLVM_HOST_TRIPLE).isOSBinFormatMachO())
@@ -151,13 +153,33 @@ void jllvm::addJavaMethodMetadata(llvm::Function* function, const JavaMethodMeta
         sectionName = "__TEXT," + sectionName;
         sectionName += ",regular,pure_instructions";
     }
-
-    auto* ptrType = llvm::PointerType::get(function->getContext(), 0);
-    function->setPrefixData(llvm::ConstantStruct::get(
-        llvm::StructType::get(function->getContext(), {referenceType(function->getContext()), ptrType}),
-        {classObjectGlobal(*function->getParent(), metadata.classObject->getDescriptor()),
-         methodGlobal(*function->getParent(), metadata.method)}));
     function->setSection(sectionName);
+}
+
+void addPrefixData(llvm::Function* function, llvm::ArrayRef<llvm::Constant*> structFields)
+{
+    llvm::SmallVector<llvm::Type*> body =
+        llvm::to_vector(llvm::map_range(structFields, std::mem_fn(&llvm::Value::getType)));
+
+    auto* structType = llvm::StructType::get(function->getContext(), body);
+    function->setPrefixData(llvm::ConstantStruct::get(structType, structFields));
+}
+
+} // namespace
+
+void jllvm::addJavaMethodMetadata(llvm::Function* function, const Method* method, JavaMethodMetadata::Kind kind)
+{
+    llvm::SmallVector<llvm::Constant*> structBody;
+    structBody.push_back(methodGlobal(*function->getParent(), method));
+    llvm::IntegerType* byteType = llvm::Type::getInt8Ty(function->getContext());
+    // unions in LLVM IR do not exist. Rather they're just byte array allocations with the proper size and padding
+    // after and before and then reinterpreted to the active type.
+    structBody.push_back(
+        llvm::ConstantAggregateZero::get(llvm::ArrayType::get(byteType, JavaMethodMetadata::unionSize())));
+    structBody.push_back(llvm::ConstantInt::get(byteType, static_cast<std::uint8_t>(kind)));
+
+    placeInJavaSection(function);
+    addPrefixData(function, structBody);
 }
 
 namespace
