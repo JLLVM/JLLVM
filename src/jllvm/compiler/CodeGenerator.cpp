@@ -538,8 +538,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* exception = m_operandStack.pop_back();
 
             generateNullPointerCheck(getOffset(operation), exception);
-
-            m_builder.CreateBr(generateHandlerChain(getOffset(operation), exception, m_builder.GetInsertBlock()));
+            generateExceptionThrow(getOffset(operation), exception);
             fallsThrough = false;
         },
         [&](BIPush biPush)
@@ -595,8 +594,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                         {object, classObject});
                     addExceptionHandlingDeopts(getOffset(operation), exception);
 
-                    m_builder.CreateBr(
-                        generateHandlerChain(getOffset(operation), exception, m_builder.GetInsertBlock()));
+                    generateExceptionThrow(getOffset(operation), exception);
 
                     m_builder.SetInsertPoint(continueBlock);
                 });
@@ -1536,7 +1534,7 @@ void CodeGenerator::generateBuiltinExceptionThrow(std::uint16_t byteCodeOffset, 
                              builderArgs);
     addExceptionHandlingDeopts(byteCodeOffset, exception);
 
-    m_builder.CreateBr(generateHandlerChain(byteCodeOffset, exception, m_builder.GetInsertBlock()));
+    generateExceptionThrow(byteCodeOffset, exception);
 
     m_builder.SetInsertPoint(continueBlock);
 }
@@ -1572,77 +1570,11 @@ void CodeGenerator::generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset,
     generateBuiltinExceptionThrow(byteCodeOffset, isNegative, "jllvm_build_negative_array_size_exception", {size});
 }
 
-llvm::BasicBlock* CodeGenerator::generateHandlerChain(std::uint16_t byteCodeOffset, llvm::Value* exception,
-                                                      llvm::BasicBlock* newPred)
+void CodeGenerator::generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception)
 {
-    llvm::IRBuilder<>::InsertPointGuard guard{m_builder};
-
-    auto result = m_alreadyGeneratedHandlers.find(m_activeHandlers);
-    if (result != m_alreadyGeneratedHandlers.end())
-    {
-        llvm::BasicBlock* block = result->second;
-        // Adding new predecessors exception object to phi node.
-        llvm::cast<llvm::PHINode>(&block->front())->addIncoming(exception, newPred);
-        return block;
-    }
-
-    auto* ehHandler = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-    m_alreadyGeneratedHandlers.emplace(m_activeHandlers, ehHandler);
-    m_builder.SetInsertPoint(ehHandler);
-
-    llvm::PHINode* phi = m_builder.CreatePHI(exception->getType(), 0);
-    phi->addIncoming(exception, newPred);
-
-    for (auto [handlerPC, catchType] : m_activeHandlers)
-    {
-        llvm::BasicBlock* handlerBB = getBasicBlock(handlerPC);
-
-        llvm::PointerType* ty = referenceType(m_builder.getContext());
-
-        if (!catchType)
-        {
-            // Catch all used to implement 'finally'.
-            // Set exception object as only object on the stack and clear the active exception.
-            m_operandStack.setBottomOfStackValue(phi);
-            m_builder.CreateBr(handlerBB);
-            return ehHandler;
-        }
-
-        llvm::SmallString<64> buffer;
-        llvm::Value* className = m_builder.CreateGlobalStringPtr(
-            ("L" + catchType.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text + ";").toStringRef(buffer));
-        // Since an exception class must be loaded for any instance of the class to be created, we can be
-        // certain that the exception is not of the type if the class has not yet been loaded. And most
-        // importantly, don't need to eagerly load it.
-        llvm::Value* classObject = m_builder.CreateCall(forNameLoadedFunction(m_function->getParent()), className);
-        llvm::Value* notLoaded = m_builder.CreateICmpEQ(classObject, llvm::ConstantPointerNull::get(ty));
-
-        auto* nextHandler = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-        auto* instanceOfCheck = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-        m_builder.CreateCondBr(notLoaded, nextHandler, instanceOfCheck);
-
-        m_builder.SetInsertPoint(instanceOfCheck);
-
-        llvm::Value* call = m_builder.CreateCall(instanceOfFunction(m_function->getParent()), {phi, classObject});
-        call = m_builder.CreateTrunc(call, m_builder.getInt1Ty());
-
-        auto* jumpToHandler = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
-        m_builder.CreateCondBr(call, jumpToHandler, nextHandler);
-
-        m_builder.SetInsertPoint(jumpToHandler);
-        // Set exception object as only object on the stack and clear the active exception.
-        m_operandStack.setBottomOfStackValue(phi);
-        m_builder.CreateBr(handlerBB);
-
-        m_builder.SetInsertPoint(nextHandler);
-    }
-
-    // Otherwise, propagate exception to parent frame:
-    llvm::CallBase* call = m_builder.CreateCall(throwFunction(m_function->getParent()), phi);
-    addBytecodeOffsetOnlyDeopts(byteCodeOffset, call);
+    llvm::CallBase* call = m_builder.CreateCall(throwFunction(m_function->getParent()), exception);
+    addExceptionHandlingDeopts(byteCodeOffset, call);
     m_builder.CreateUnreachable();
-
-    return ehHandler;
 }
 
 llvm::Value* CodeGenerator::loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index)

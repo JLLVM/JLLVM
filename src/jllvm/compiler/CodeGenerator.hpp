@@ -52,8 +52,6 @@ class CodeGenerator
 
     // std::list because we want the iterator stability when deleting handlers (requires random access).
     std::list<HandlerInfo> m_activeHandlers;
-    // std::map because it is the easiest to use with std::list key.
-    std::map<std::list<HandlerInfo>, llvm::BasicBlock*> m_alreadyGeneratedHandlers;
 
     /// Returns the basic block corresponding to the given bytecode offset and schedules the basic block to be compiled.
     /// The offset must point to the start of a basic block.
@@ -94,8 +92,7 @@ class CodeGenerator
 
     void generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset, llvm::Value* size);
 
-    llvm::BasicBlock* generateHandlerChain(std::uint16_t byteCodeOffset, llvm::Value* exception,
-                                           llvm::BasicBlock* newPred);
+    void generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception);
 
     llvm::Value* loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index);
 
