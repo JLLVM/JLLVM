@@ -19,6 +19,8 @@ std::optional<std::uint16_t> jllvm::JavaFrame::getByteCodeOffset() const
     {
         case JavaMethodMetadata::Kind::JIT:
             return m_javaMethodMetadata->getJITData()[m_unwindFrame->getProgramCounter()].byteCodeOffset;
+        case JavaMethodMetadata::Kind::Interpreter:
+            return *m_javaMethodMetadata->getInterpreterData().byteCodeOffset.readScalar(*m_unwindFrame);
         case JavaMethodMetadata::Kind::Native: return std::nullopt;
     }
     llvm_unreachable("invalid kind");
@@ -35,6 +37,31 @@ llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocals() const
                 m_javaMethodMetadata->getJITData()[m_unwindFrame->getProgramCounter()].locals;
             return llvm::to_vector(llvm::map_range(locals, [&](FrameValue<std::uint64_t> frameValue)
                                                    { return frameValue.readScalar(*m_unwindFrame); }));
+        }
+        case JavaMethodMetadata::Kind::Interpreter:
+        {
+            std::uint16_t numLocals =
+                m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
+            std::uint64_t* locals =
+                m_javaMethodMetadata->getInterpreterData().localVariables.readScalar(*m_unwindFrame);
+            return llvm::SmallVector<std::uint64_t>(locals, locals + numLocals);
+        }
+    }
+    llvm_unreachable("invalid kind");
+}
+
+llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readOperandStack() const
+{
+    switch (m_javaMethodMetadata->getKind())
+    {
+        case JavaMethodMetadata::Kind::JIT:
+        case JavaMethodMetadata::Kind::Native: return {};
+        case JavaMethodMetadata::Kind::Interpreter:
+        {
+            std::uint16_t numStack = *m_javaMethodMetadata->getInterpreterData().topOfStack.readScalar(*m_unwindFrame);
+            std::uint64_t* operands =
+                m_javaMethodMetadata->getInterpreterData().operandStack.readScalar(*m_unwindFrame);
+            return llvm::SmallVector<std::uint64_t>(operands, operands + numStack);
         }
     }
     llvm_unreachable("invalid kind");

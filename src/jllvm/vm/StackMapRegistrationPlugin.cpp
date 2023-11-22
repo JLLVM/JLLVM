@@ -68,6 +68,23 @@ std::optional<jllvm::WriteableFrameValue<T>>
     }
 }
 
+void jllvm::StackMapRegistrationPlugin::parseInterpreterEntry(JavaMethodMetadata::InterpreterData& interpreterData,
+                                                              StackMapParser::RecordAccessor& record,
+                                                              StackMapParser& parser)
+{
+    assert(record.getLocation(2).getSmallConstant() == 6 && "interpreter frames must have 6 deopt values");
+
+    constexpr std::size_t deoptValuesStart = 3;
+
+    interpreterData.byteCodeOffset = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart), parser);
+    interpreterData.topOfStack = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart + 1), parser);
+    interpreterData.operandStack = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 2), parser);
+    interpreterData.operandGCMask = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 3), parser);
+    interpreterData.localVariables = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 4), parser);
+    interpreterData.localVariablesGCMask =
+        toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 5), parser);
+}
+
 void jllvm::StackMapRegistrationPlugin::parseJITEntry(JavaMethodMetadata::JITData& jitData,
                                                       StackMapParser::RecordAccessor& record, StackMapParser& parser,
                                                       std::uint64_t functionAddress)
@@ -157,6 +174,7 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
 
             llvm::SmallVector<StackMapEntry> entries;
             JavaMethodMetadata::JITData* jitData = nullptr;
+            JavaMethodMetadata::InterpreterData* interpreterData = nullptr;
             std::size_t recordCount = 0;
             auto currFunc = parser.functions_begin();
             std::uint64_t functionAddress = currFunc->getFunctionAddress();
@@ -170,6 +188,7 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                         {
                             currFunc++;
                             jitData = nullptr;
+                            interpreterData = nullptr;
                             recordCount = 0;
                             functionAddress = currFunc->getFunctionAddress();
                             isJavaFrame = m_javaFrameSet.contains(functionAddress);
@@ -190,6 +209,13 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                                 m_needsCleanup[resourceKey].push_back(jitData);
                             }
                             parseJITEntry(*jitData, record, parser, functionAddress);
+                            break;
+                        case JavaMethodMetadata::Kind::Interpreter:
+                            if (!interpreterData)
+                            {
+                                interpreterData = &metadata.emplaceInterpreterData();
+                            }
+                            parseInterpreterEntry(*interpreterData, record, parser);
                             break;
                         case JavaMethodMetadata::Kind::Native: break;
                     }

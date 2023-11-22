@@ -29,3 +29,5 @@ def Xno_system_init : F<"Xno-system-init", "Do not do System initialization (ini
 def Xsystem_init : F<"Xsystem-init", "Do System initialization (initPhase1 to 3) (Default)">, Group<grp_internal>;
 
 def Xenable_test_utils : F<"Xenable-test-utils", "Enables native test functions">, Group<grp_internal>;
+def Xint : F<"Xint", "Execute code only with Interpreter">, Group<grp_internal>;
+def Xjit : F<"Xjit", "Execute code only with JIT">, Group<grp_internal>;

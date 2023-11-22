@@ -47,6 +47,9 @@ class StackMapRegistrationPlugin : public llvm::orc::ObjectLinkingLayer::Plugin
     void parseJITEntry(JavaMethodMetadata::JITData& jitData, StackMapParser::RecordAccessor& record,
                        StackMapParser& parser, std::uint64_t functionAddress);
 
+    void parseInterpreterEntry(JavaMethodMetadata::InterpreterData& interpreterData,
+                               StackMapParser::RecordAccessor& record, StackMapParser& parser);
+
 public:
     explicit StackMapRegistrationPlugin(GarbageCollector& gc, llvm::DenseSet<std::uintptr_t>& javaFrameSet)
         : m_gc(gc), m_javaFrameSet(javaFrameSet)

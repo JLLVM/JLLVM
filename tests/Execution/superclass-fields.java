@@ -1,5 +1,6 @@
 // RUN: javac %s -d %t
-// RUN: jllvm %t/Other.class | FileCheck %s
+// RUN: jllvm -Xjit %t/Other.class | FileCheck %s
+// RUN: jllvm -Xint %t/Other.class | FileCheck %s
 
 class Test
 {
