@@ -98,9 +98,7 @@ L25:
 ; EXC-NEXT: store ptr addrspace(1) %[[LOAD_LOCAL1]], ptr %[[OP0]]
 ; EXC-NEXT: %[[LOAD_OP0:.*]] = load ptr addrspace(1), ptr %[[OP0]]
 
-; EXC: %[[PHI:.*]] = phi ptr addrspace(1)
-; EXC-SAME: %[[LOAD_OP0]]
-; EXC-NEXT: call void @jllvm_throw(ptr addrspace(1) %[[PHI]])
+; EXC: call void @jllvm_throw(ptr addrspace(1) %[[LOAD_OP0]])
     aload_1
     athrow
 L31:
