@@ -269,19 +269,9 @@ void jllvm::JIT::optimize(llvm::Module& module)
     mpm.run(module, mam);
 }
 
-llvm::SmallVector<std::uint64_t> jllvm::JIT::readLocals(const UnwindFrame& frame) const
+void jllvm::JIT::doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset, Throwable* exception)
 {
-    llvm::ArrayRef<FrameValue<std::uint64_t>> locals =
-        getJavaMethodMetadata(frame.getFunctionPointer())->getJITData()[frame.getProgramCounter()].locals;
-
-    return llvm::to_vector(
-        llvm::map_range(locals, [&](FrameValue<std::uint64_t> frameValue) { return frameValue.readScalar(frame); }));
-}
-
-void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::uint16_t byteCodeOffset,
-                                               Throwable* exception)
-{
-    llvm::SmallVector<std::uint64_t> locals = readLocals(frame);
+    llvm::SmallVector<std::uint64_t> locals = frame.readLocals();
 
     // Dynamically allocating memory here as this frame will be replaced at the end of this method and all local
     // variables destroyed. The OSR method will delete the array on entry once no longer needed.
@@ -291,7 +281,7 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
     llvm::copy(locals, localsPtr);
 
     // Lookup the OSR version if it has already been compiled. If not, compile and add it now.
-    const Method& method = *getJavaMethodMetadata(frame.getFunctionPointer())->getMethod();
+    const Method& method = *frame.getMethod();
     llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
     llvm::Expected<llvm::JITEvaluatedSymbol> osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
     if (!osrMethod)
@@ -311,7 +301,7 @@ void jllvm::JIT::doExceptionOnStackReplacement(const UnwindFrame& frame, std::ui
         osrMethod = m_session->lookup({&m_javaJITSymbols}, mangledName);
     }
 
-    frame.resumeExecutionAtFunction(
+    frame.getUnwindFrame().resumeExecutionAtFunction(
         reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(llvm::cantFail(std::move(osrMethod)).getAddress()),
         operandPtr, localsPtr);
 }
