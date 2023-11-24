@@ -17,29 +17,45 @@
 
 #include "VirtualMachine.hpp"
 
-std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint16_t& offset,
-                                                InterpreterContext& /*context*/)
+namespace
 {
+/// Tag returned when interpreting an instruction to jump to a new bytecode offset.
+struct SetPC
+{
+    std::uint16_t newPC;
+};
+
+/// Tag returned when interpreting an instruction to continue to the next instruction in the bytecode.
+struct NextPC
+{
+};
+
+/// Tag returned when interpreting an instruction to stop interpretation and return a result.
+struct ReturnValue
+{
+    std::uint64_t value;
+
+    template <jllvm::InterpreterValue T>
+    ReturnValue(T value) : value(llvm::bit_cast<jllvm::NextSizedUInt<T>>(value))
+    {
+    }
+};
+} // namespace
+
+void jllvm::Interpreter::escapeToJIT()
+{
+    m_virtualMachine.unwindJavaStack(
+        [&](JavaFrame frame) { m_virtualMachine.getJIT().doI2JOnStackReplacement(frame, *frame.getByteCodeOffset()); });
+    llvm_unreachable("not possible");
+}
+
+std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint16_t& offset,
+                                                InterpreterContext& context)
+{
+    const ClassFile& classFile = *method.getClassObject()->getClassFile();
     Code* code = method.getMethodInfo().getAttributes().find<Code>();
     llvm::ArrayRef<char> codeArray = code->getCode();
     auto curr = ByteCodeIterator(codeArray.data(), offset);
-
-    /// Tag returned when interpreting an instruction to jump to a new bytecode offset.
-    struct SetPC
-    {
-        std::uint16_t newPC;
-    };
-
-    /// Tag returned when interpreting an instruction to continue to the next instruction in the bytecode.
-    struct NextPC
-    {
-    };
-
-    /// Tag returned when interpreting an instruction to stop interpretation and return a result.
-    struct ReturnValue
-    {
-        std::uint64_t value;
-    };
 
     using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
 
@@ -47,17 +63,119 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     {
         // Update the current offset to the new instruction.
         offset = curr.getOffset();
-        InstructionResult result =
-            match(*curr,
-                  [&](...) -> InstructionResult
-                  {
-                      // While the interpreter is not fully implemented, we escaped to JIT code that implements the
-                      // given bytecode instruction.
-                      // TODO: Remove this once interpreter implements all bytecodes.
-                      m_virtualMachine.unwindJavaStack(
-                          [&](JavaFrame frame) { m_virtualMachine.getJIT().doI2JOnStackReplacement(frame, offset); });
-                      llvm_unreachable("not possible");
-                  });
+        InstructionResult result = match(
+            *curr,
+            [&](IAdd)
+            {
+                auto lhs = context.pop<std::uint32_t>();
+                auto rhs = context.pop<std::uint32_t>();
+                context.push(lhs + rhs);
+                return NextPC{};
+            },
+            [&](IConst0)
+            {
+                context.push<std::int32_t>(0);
+                return NextPC{};
+            },
+            [&](IConst1)
+            {
+                context.push<std::int32_t>(1);
+                return NextPC{};
+            },
+            [&](IConst2)
+            {
+                context.push<std::int32_t>(2);
+                return NextPC{};
+            },
+            [&](IConst3)
+            {
+                context.push<std::int32_t>(3);
+                return NextPC{};
+            },
+            [&](IConst4)
+            {
+                context.push<std::int32_t>(4);
+                return NextPC{};
+            },
+            [&](IConst5)
+            {
+                context.push<std::int32_t>(5);
+                return NextPC{};
+            },
+            [&](IConstM1)
+            {
+                context.push<std::int32_t>(-1);
+                return NextPC{};
+            },
+            [&](ILoad0)
+            {
+                context.push(context.getLocal<std::int32_t>(0));
+                return NextPC{};
+            },
+            [&](ILoad1)
+            {
+                context.push(context.getLocal<std::int32_t>(1));
+                return NextPC{};
+            },
+            [&](ILoad2)
+            {
+                context.push(context.getLocal<std::int32_t>(2));
+                return NextPC{};
+            },
+            [&](ILoad3)
+            {
+                context.push(context.getLocal<std::int32_t>(3));
+                return NextPC{};
+            },
+            [&](ILoad iLoad)
+            {
+                context.push(context.getLocal<std::int32_t>(iLoad.index));
+                return NextPC{};
+            },
+            [&](IReturn) { return ReturnValue(context.pop<std::uint32_t>()); },
+            [&](IStore0)
+            {
+                context.setLocal(0, context.pop<std::int32_t>());
+                return NextPC{};
+            },
+            [&](IStore1)
+            {
+                context.setLocal(1, context.pop<std::int32_t>());
+                return NextPC{};
+            },
+            [&](IStore2)
+            {
+                context.setLocal(2, context.pop<std::int32_t>());
+                return NextPC{};
+            },
+            [&](IStore3)
+            {
+                context.setLocal(3, context.pop<std::int32_t>());
+                return NextPC{};
+            },
+            [&](IStore iStore)
+            {
+                context.setLocal(iStore.index, context.pop<std::int32_t>());
+                return NextPC{};
+            },
+            [&](LDC ldc)
+            {
+                PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
+                          InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
+                    pool{ldc.index};
+
+                match(
+                    pool.resolve(classFile), [&](const IntegerInfo* integerInfo) { context.push(integerInfo->value); },
+                    [&](const auto*) { escapeToJIT(); });
+                return NextPC{};
+            },
+            [&](ByteCodeBase) -> InstructionResult
+            {
+                // While the interpreter is not fully implemented, we escaped to JIT code that implements the
+                // given bytecode instruction.
+                // TODO: Remove this once interpreter implements all bytecodes.
+                escapeToJIT();
+            });
 
         if (auto* returnValue = get_if<ReturnValue>(&result))
         {

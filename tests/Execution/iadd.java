@@ -11,11 +11,17 @@ class Test
         int x = 3;
         int y = 2;
         int z = 1;
+
+        // TODO: workaround until the interpreter supports 'invokestatic' to perform addition in the interpreter.
+        int r1 = x + y;
+        int r2 = x + 1;
+        int r3 = 2147483647 + z;
+
         // CHECK: 5
-        print(x+y);
+        print(r1);
         // CHECK: 4
-        print(x+1);
+        print(r2);
         // CHECK: -2147483648
-        print(Integer.MAX_VALUE+z);
+        print(r3);
     }
 }
