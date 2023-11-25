@@ -264,6 +264,15 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
 
     registerJavaClasses(*this);
 
+    m_gc.addRootObjectsProvider(
+        [&](GarbageCollector::RootProvider::AddRootObjectFn addRootObjectFn)
+        {
+            for (ClassObject* classObject : m_classLoader.getLoadedClassObjects())
+            {
+                addRootObjectFn(classObject);
+            }
+        });
+
     initialize(m_classLoader.loadBootstrapClasses());
 
     m_stringInterner.loadStringClass();

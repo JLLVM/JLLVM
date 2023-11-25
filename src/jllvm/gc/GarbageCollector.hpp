@@ -175,6 +175,46 @@ class GarbageCollector
     // separate.
     std::vector<RootFreeList> m_localRoots;
 
+public:
+    /// Interface called by the GC allowing adding roots and objects allocated in heaps outside of the GC's heap to the
+    /// marking and relocation process. This is required for correctness as the GC needs to be aware about the
+    /// reachability of all objects. If an object 'O' is not part of the GC's heap, but refers to objects on the GC's
+    /// heap it would not be counted as reachable unless 'O' is added to the mark phase through a 'RootProvider'.
+    class RootProvider
+    {
+    public:
+        RootProvider() = default;
+
+        virtual ~RootProvider() = default;
+        RootProvider(const RootProvider&) = delete;
+        RootProvider& operator=(const RootProvider&) = delete;
+        RootProvider(RootProvider&&) = delete;
+        RootProvider& operator=(RootProvider&&) = delete;
+
+        using AddRootObjectFn = llvm::function_ref<void(ObjectInterface*)>;
+        using RelocateObjectFn = llvm::function_ref<void(ObjectInterface**)>;
+
+        /// Called to add additional roots to the mark phase by calling 'relocateObjectFn'.
+        /// Objects pointed to by roots are marked as reachable by the GC and are updated by the GC as it relocates
+        /// objects. Note that the method may be called multiple times during one garbage collection and must provide
+        /// the same set of roots each time.
+        ///
+        /// Default implementation calls 'addRootObjects' and should be called explicitly in any subclasses if
+        /// 'addRootObjects' is overwritten as well.
+        virtual void addRootsForRelocation(RelocateObjectFn relocateObjectFn);
+
+        /// Called to add an external object from outside the GC's heap to the marking phase. This is required if such
+        /// an object may point to objects on the GC's heap. Failing to do so will lead to GC heap objects being deleted
+        /// despite still in use or relocated without updating any references in the external object.
+        virtual void addRootObjects(AddRootObjectFn /*addRootObjectFn*/)
+        {
+            llvm_unreachable("expected either 'addRootsForRelocation' or 'addRootObjects' to be overwritten");
+        }
+    };
+
+private:
+    std::vector<std::unique_ptr<RootProvider>> m_rootProviders;
+
     template <class T>
     struct IsArray : std::false_type
     {
@@ -254,6 +294,48 @@ public:
     {
         assert(m_localRoots.size() > 1 && "Can't pop frame not explicitly pushed");
         m_localRoots.pop_back();
+    }
+
+    /// Adds a new 'RootProvider' to the GC.
+    void addRootProvider(std::unique_ptr<RootProvider>&& rootProvider)
+    {
+        m_rootProviders.push_back(std::move(rootProvider));
+    }
+
+    /// Adds a new 'RootProvider' implementing 'addRootObjects' with the given callable.
+    template <std::invocable<RootProvider::AddRootObjectFn> F>
+    void addRootObjectsProvider(F&& f)
+    {
+        struct Provider final : std::decay_t<F>, RootProvider
+        {
+            using Base = std::decay_t<F>;
+
+            Provider(F&& f) : Base(std::forward<F>(f)) {}
+
+            void addRootObjects(RootProvider::AddRootObjectFn addRootObjectFn) override
+            {
+                (*this)(addRootObjectFn);
+            }
+        };
+        addRootProvider(std::make_unique<Provider>(std::forward<F>(f)));
+    }
+
+    /// Adds a new 'RootProvider' implementing 'addRootsForRelocation' with the given callable.
+    template <std::invocable<RootProvider::RelocateObjectFn> F>
+    void addRootsForRelocationProvider(F&& f)
+    {
+        struct Provider final : std::decay_t<F>, RootProvider
+        {
+            using Base = std::decay_t<F>;
+
+            Provider(F&& f) : Base(std::forward<F>(f)) {}
+
+            void addRootsForRelocation(RootProvider::RelocateObjectFn relocateObjectFn) override
+            {
+                (*this)(relocateObjectFn);
+            }
+        };
+        addRootProvider(std::make_unique<Provider>(std::forward<F>(f)));
     }
 
     /// Adds new stack map entries to the garbage collector, allowing the garbage collector to read out any alive
