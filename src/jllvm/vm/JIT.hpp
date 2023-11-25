@@ -44,10 +44,14 @@
 namespace jllvm
 {
 
+/// Where code should be executed by default.
 enum class ExecutionMode
 {
+    /// Executes code in the JIT whenever possible.
     JIT,
+    /// Executes code in the interpreter whenever possible.
     Interpreter,
+    /// Dynamically adjusts where code is being executed.
     Mixed
 };
 
@@ -61,7 +65,7 @@ class JIT
     llvm::orc::JITDylib& m_externalStubs;
     /// Dylib containing only the actual JIT compiled Java methods.
     llvm::orc::JITDylib& m_javaJITSymbols;
-    llvm::orc::JITDylib& m_compiled2InterpreterSymbols;
+    llvm::orc::JITDylib& m_jit2InterpreterSymbols;
     /// Dylib containing all additional symbols required by 'm_javaJITSymbols' to link correctly, but are not part of
     /// the public interface of the JIT.
     llvm::orc::JITDylib& m_implDetails;

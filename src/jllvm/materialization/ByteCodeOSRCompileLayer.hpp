@@ -21,7 +21,7 @@
 
 namespace jllvm
 {
-/// Base class layer for any layer consuming a JVM method at a given bytecode offset for OSR.
+/// Layer for compiling OSR versions of methods at a given bytecode to LLVM IR.
 class ByteCodeOSRCompileLayer : public ByteCodeOSRLayer
 {
     StringInterner& m_stringInterner;

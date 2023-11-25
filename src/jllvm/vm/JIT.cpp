@@ -82,7 +82,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     : m_session(std::move(session)),
       m_externalStubs(llvm::cantFail(m_session->createJITDylib("<stubs>"))),
       m_javaJITSymbols(llvm::cantFail(m_session->createJITDylib("<javaJIT>"))),
-      m_compiled2InterpreterSymbols(llvm::cantFail(m_session->createJITDylib("<c2i>"))),
+      m_jit2InterpreterSymbols(llvm::cantFail(m_session->createJITDylib("<c2i>"))),
       m_implDetails(llvm::cantFail(m_session->createJITDylib("<implementation>"))),
       m_epciu(std::move(epciu)),
       m_targetMachine(llvm::cantFail(builder.createTargetMachine())),
@@ -114,7 +114,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     // rather resolve direct method calls to the stubs in 'm_externalStubs'. All other required symbols are in the
     // dylib for implementation details.
     m_javaJITSymbols.setLinkOrder(searchOrder, /*LinkAgainstThisJITDylibFirst=*/false);
-    m_compiled2InterpreterSymbols.setLinkOrder(searchOrder, /*LinkAgainstThisJITDylibFirst=*/false);
+    m_jit2InterpreterSymbols.setLinkOrder(searchOrder, /*LinkAgainstThisJITDylibFirst=*/false);
 
     // The functions created by the stub class object stub definitions generator are also considered an
     // implementation detail and may only link against the stubs.
@@ -215,8 +215,8 @@ void jllvm::JIT::add(const ClassObject* classObject)
         else
         {
             llvm::cantFail(m_byteCodeCompileLayer.add(m_javaJITSymbols, &method));
-            llvm::cantFail(m_compiled2InterpreterLayer.add(m_compiled2InterpreterSymbols, &method));
-            initialLookup = m_executionMode != ExecutionMode::JIT ? &m_compiled2InterpreterSymbols : &m_javaJITSymbols;
+            llvm::cantFail(m_compiled2InterpreterLayer.add(m_jit2InterpreterSymbols, &method));
+            initialLookup = m_executionMode != ExecutionMode::JIT ? &m_jit2InterpreterSymbols : &m_javaJITSymbols;
         }
 
         // Create a stub entry for this method. Right now, we by default create a trampoline which upon being called
