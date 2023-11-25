@@ -175,6 +175,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         },
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_stringInterner(m_classLoader),
+      m_jit(JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get(), bootOptions.executionMode)),
+      m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
       m_gc(/*random value for now*/ 1 << 20),
       // Seed from the C++ implementations entropy source.
       m_pseudoGen(std::random_device{}()),
@@ -183,7 +185,6 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
       m_javaHome(bootOptions.javaHome)
 {
     m_jit.addImplementationSymbols(
-        std::pair{"fmodf", &fmodf},
         std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return m_gc.allocate(size); }},
         std::pair{"jllvm_for_name_loaded",
                   [&](const char* name) { return m_classLoader.forNameLoaded(FieldType(name)); }},
@@ -250,7 +251,16 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       return root;
                   }},
         std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
-        std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }});
+        std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }},
+        std::pair{"jllvm_interpreter",
+                  [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
+                      std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,
+                      std::uint64_t* localVariablesGCMask)
+                  {
+                      InterpreterContext context(*topOfStack, operandStack, operandGCMask, localVariables,
+                                                 localVariablesGCMask);
+                      return m_interpreter.executeMethod(*method, *byteCodeOffset, context);
+                  }});
 
     registerJavaClasses(*this);
 

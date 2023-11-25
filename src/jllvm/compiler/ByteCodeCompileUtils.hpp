@@ -72,6 +72,17 @@ class JavaMethodMetadata
     const Method* m_method{};
 
 public:
+    /// Metadata contained within any Interpreter Java frame.
+    struct InterpreterData
+    {
+        FrameValue<std::uint16_t*> byteCodeOffset;
+        FrameValue<std::uint16_t*> topOfStack;
+        FrameValue<std::uint64_t*> operandStack;
+        FrameValue<std::uint64_t*> operandGCMask;
+        FrameValue<std::uint64_t*> localVariables;
+        FrameValue<std::uint64_t*> localVariablesGCMask;
+    };
+
     /// Metadata contained within any JITted Java frame.
     class JITData
     {
@@ -124,6 +135,8 @@ public:
     {
         /// JITted method.
         JIT = 0,
+        /// Interpreter method.
+        Interpreter = 1,
         /// JNI method.
         Native = 2,
     };
@@ -134,6 +147,7 @@ private:
         // Default active union member.
         char dummy{};
         JITData m_jitData;
+        InterpreterData m_interpreterData;
     };
     Kind m_kind{};
 
@@ -165,6 +179,12 @@ public:
         return m_kind == Kind::JIT;
     }
 
+    /// Returns true if this is metadata for an interpreted method.
+    bool isInterpreter() const
+    {
+        return m_kind == Kind::Interpreter;
+    }
+
     /// Returns true if this is metadata for a native method.
     bool isNative() const
     {
@@ -175,6 +195,22 @@ public:
     Kind getKind() const
     {
         return m_kind;
+    }
+
+    /// Initializes and returns the Interpreter metadata field.
+    /// It is undefined behaviour to call this method if the metadata is not for an interpreted method.
+    InterpreterData& emplaceInterpreterData()
+    {
+        assert(isInterpreter());
+        return *new (&m_interpreterData) InterpreterData;
+    }
+
+    /// Returns the Interpreter metadata field.
+    /// It is undefined behaviour to call this method if the metadata is not for an interpreted method.
+    const InterpreterData& getInterpreterData() const
+    {
+        assert(isInterpreter());
+        return m_interpreterData;
     }
 
     /// Initializes and returns the JIT metadata field.

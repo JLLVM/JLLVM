@@ -1,6 +1,7 @@
 // RUN: rm -rf %t && split-file %s %t
 // RUN: cd %t && javac %t/Other.java -d %t
-// RUN: jllvm %t/Main.class | FileCheck %s
+// RUN: jllvm -Xjit %t/Main.class | FileCheck %s
+// RUN: jllvm -Xint %t/Main.class | FileCheck %s
 
 //--- Test.java
 

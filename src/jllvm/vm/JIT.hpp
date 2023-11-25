@@ -29,6 +29,8 @@
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
+#include <jllvm/materialization/ByteCodeOSRCompileLayer.hpp>
+#include <jllvm/materialization/JIT2InterpreterLayer.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
@@ -41,6 +43,18 @@
 
 namespace jllvm
 {
+
+/// Where code should be executed by default.
+enum class ExecutionMode
+{
+    /// Executes code in the JIT whenever possible.
+    JIT,
+    /// Executes code in the interpreter whenever possible.
+    Interpreter,
+    /// Dynamically adjusts where code is being executed.
+    Mixed
+};
+
 class JIT
 {
     std::unique_ptr<llvm::orc::ExecutionSession> m_session;
@@ -51,9 +65,10 @@ class JIT
     llvm::orc::JITDylib& m_externalStubs;
     /// Dylib containing only the actual JIT compiled Java methods.
     llvm::orc::JITDylib& m_javaJITSymbols;
+    llvm::orc::JITDylib& m_jit2InterpreterSymbols;
     /// Dylib containing all additional symbols required by 'm_javaJITSymbols' to link correctly, but are not part of
     /// the public interface of the JIT.
-    llvm::orc::JITDylib& m_javaJITImplDetails;
+    llvm::orc::JITDylib& m_implDetails;
     std::unique_ptr<llvm::orc::EPCIndirectionUtils> m_epciu;
     std::unique_ptr<llvm::TargetMachine> m_targetMachine;
     llvm::orc::LazyCallThroughManager& m_lazyCallThroughManager;
@@ -65,13 +80,16 @@ class JIT
     StringInterner& m_stringInterner;
 
     llvm::DataLayout m_dataLayout;
+    ExecutionMode m_executionMode;
 
     llvm::orc::MangleAndInterner m_interner;
     llvm::orc::ObjectLinkingLayer m_objectLayer;
     llvm::orc::IRCompileLayer m_compilerLayer;
     llvm::orc::IRTransformLayer m_optimizeLayer;
     ByteCodeCompileLayer m_byteCodeCompileLayer;
+    ByteCodeOSRCompileLayer m_byteCodeOSRCompileLayer;
     JNIImplementationLayer m_jniLayer;
+    JIT2InterpreterLayer m_compiled2InterpreterLayer;
 
     llvm::DenseSet<std::uintptr_t> m_javaFrames;
 
@@ -79,11 +97,11 @@ class JIT
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions);
+        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, ExecutionMode executionMode);
 
 public:
     static jllvm::JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                             void* jniFunctions);
+                             void* jniFunctions, ExecutionMode executionMode);
 
     ~JIT();
 
@@ -123,7 +141,7 @@ public:
     void addImplementationSymbol(std::string symbol, const F& f)
         requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
     {
-        llvm::cantFail(m_javaJITImplDetails.define(
+        llvm::cantFail(m_implDetails.define(
             createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner)));
     }
 
@@ -131,7 +149,7 @@ public:
     template <class Ret, class... Args>
     void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
     {
-        llvm::cantFail(m_javaJITImplDetails.define(llvm::orc::absoluteSymbols(
+        llvm::cantFail(m_implDetails.define(llvm::orc::absoluteSymbols(
             {{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(f, llvm::JITSymbolFlags::Exported
                                                                                | llvm::JITSymbolFlags::Callable)}})));
     }
@@ -140,7 +158,7 @@ public:
     template <class T>
     void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
     {
-        llvm::cantFail(m_javaJITImplDetails.define(
+        llvm::cantFail(m_implDetails.define(
             llvm::orc::absoluteSymbols({{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
@@ -171,6 +189,10 @@ public:
     /// 'frame' must be the execution of a Java method.
     [[noreturn]] void doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset,
                                                     Throwable* exception);
+
+    /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
+    /// method at the JVM bytecode corresponding to 'byteCodeOffset'.
+    [[noreturn]] void doI2JOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset);
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
     /// returning a pointer to the function if successful or an error otherwise.

@@ -34,6 +34,24 @@ public:
     {
     }
 
+    /// Returns true if this java frame is being executed in the JIT.
+    bool isJIT() const
+    {
+        return m_javaMethodMetadata->isJIT();
+    }
+
+    /// Returns true if this java frame is being executed in the interpreter.
+    bool isInterpreter() const
+    {
+        return m_javaMethodMetadata->isInterpreter();
+    }
+
+    /// Returns true if this java frame is a native method.
+    bool isNative() const
+    {
+        return m_javaMethodMetadata->isNative();
+    }
+
     /// Returns the bytecode offset of the frame currently being executed.
     /// Returns an empty optional if the method being executed is native and therefore does not have a bytecode offset.
     std::optional<std::uint16_t> getByteCodeOffset() const;
@@ -56,11 +74,16 @@ public:
         return *m_unwindFrame;
     }
 
-    /// Reads out the values of all the local variables at the given bytecode offset.
+    /// Reads out the values of all the local variables at the current bytecode offset.
     /// This method will always return an empty array in following scenarios:
     /// * If the method being executed is native and therefore does not have local variables
     /// * If no exception handler exists for a bytecode offset within a JITted method.
     llvm::SmallVector<std::uint64_t> readLocals() const;
+
+    /// Reads out the values of the operand stack at the current bytecode offset.
+    /// This method will always return an empty array in following scenarios:
+    /// * If the method being executed is not being executed by the interpreter.
+    llvm::SmallVector<std::uint64_t> readOperandStack() const;
 };
 
 } // namespace jllvm

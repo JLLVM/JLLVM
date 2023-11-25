@@ -74,7 +74,8 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 #endif
     llvm::cl::ParseCommandLineOptions(llvmArgs.size(), llvmArgs.data());
 
-    auto inputFiles = commandLine.getArgs().getAllArgValues(OPT_INPUT);
+    llvm::opt::InputArgList& argList = commandLine.getArgs();
+    auto inputFiles = argList.getAllArgValues(OPT_INPUT);
     if (inputFiles.empty())
     {
         llvm::report_fatal_error("Expected one input file");
@@ -95,22 +96,36 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     llvm::sys::fs::make_absolute(inputFile);
     classPath.emplace_back(llvm::sys::path::parent_path(inputFile));
 
-    for (llvm::StringRef paths : commandLine.getArgs().getAllArgValues(OPT_classpath))
+    for (llvm::StringRef paths : argList.getAllArgValues(OPT_classpath))
     {
         llvm::SmallVector<llvm::StringRef> splits;
         paths.split(splits, ';', -1, /*KeepEmpty=*/false);
         llvm::append_range(classPath, splits);
     }
 
+    ExecutionMode executionMode = ExecutionMode::Mixed;
+    if (llvm::opt::Arg* arg = argList.getLastArg(OPT_Xint, OPT_Xjit))
+    {
+        if (arg->getOption().matches(OPT_Xjit))
+        {
+            executionMode = ExecutionMode::JIT;
+        }
+        else
+        {
+            executionMode = ExecutionMode::Interpreter;
+        }
+    }
+
     BootOptions bootOptions{
         .javaHome = javaHome,
         .classPath = std::move(classPath),
-        .systemInitialization = commandLine.getArgs().hasFlag(OPT_Xsystem_init, OPT_Xno_system_init, true),
+        .systemInitialization = argList.hasFlag(OPT_Xsystem_init, OPT_Xno_system_init, true),
+        .executionMode = executionMode,
     };
 
     jllvm::VirtualMachine vm(std::move(bootOptions));
 
-    if (commandLine.getArgs().hasArg(OPT_Xenable_test_utils))
+    if (argList.hasArg(OPT_Xenable_test_utils))
     {
         JIT& jit = vm.getJIT();
         jit.addJNISymbol("Java_Test_print__B", TrivialPrinter<std::int8_t>{});

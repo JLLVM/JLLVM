@@ -1,5 +1,6 @@
 ; RUN: jasmin %s -d %t
-; RUN: jllvm %t/Test.class
+; RUN: jllvm -Xjit %t/Test.class
+; RUN: jllvm -Xint %t/Test.class
 
 .class public Test
 .super java/lang/Object

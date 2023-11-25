@@ -1,5 +1,6 @@
 // RUN: javac %s -d %t
-// RUN: jllvm %t/Test.class | FileCheck --match-full-lines %s
+// RUN: jllvm -Xjit %t/Test.class | FileCheck --match-full-lines %s
+// RUN: jllvm -Xint %t/Test.class | FileCheck --match-full-lines %s
 
 class Test
 {

@@ -16,5 +16,8 @@ add_library(JLLVMMaterialization
         ByteCodeLayer.cpp
         ByteCodeMaterializationUnit.cpp
         JNIImplementationLayer.cpp
-        ClassObjectStubDefinitionsGenerator.cpp)
+        ClassObjectStubDefinitionsGenerator.cpp
+        JIT2InterpreterLayer.cpp
+        ByteCodeOSRLayer.cpp
+        ByteCodeOSRCompileLayer.cpp)
 target_link_libraries(JLLVMMaterialization PUBLIC JLLVMCompiler JLLVMObject LLVMCore LLVMOrcJIT PRIVATE LLVMTargetParser)

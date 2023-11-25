@@ -1,5 +1,6 @@
 // RUN: javac --add-exports java.base/jdk.internal.misc=ALL-UNNAMED %s -d %t
-// RUN: jllvm %t/Test.class | FileCheck %s
+// RUN: jllvm -Xjit %t/Test.class | FileCheck %s
+// RUN: jllvm -Xint %t/Test.class | FileCheck %s
 
 import jdk.internal.misc.Unsafe;
 

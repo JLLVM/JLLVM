@@ -25,6 +25,7 @@
 #include <random>
 
 #include "InteropHelpers.hpp"
+#include "Interpreter.hpp"
 #include "JIT.hpp"
 #include "JavaFrame.hpp"
 
@@ -37,6 +38,7 @@ struct BootOptions
     llvm::StringRef javaHome;
     std::vector<std::string> classPath;
     bool systemInitialization = true;
+    ExecutionMode executionMode = ExecutionMode::Mixed;
 };
 
 struct ModelState;
@@ -51,7 +53,8 @@ class VirtualMachine
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
     StringInterner m_stringInterner;
-    JIT m_jit = JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get());
+    JIT m_jit;
+    Interpreter m_interpreter;
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
     GCRootRef<Object> m_mainThread = m_gc.allocateStatic();

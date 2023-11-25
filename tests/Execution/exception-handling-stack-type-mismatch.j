@@ -1,6 +1,7 @@
 ; RUN: rm -rf %t && split-file %s %t
 ; RUN: cd %t && jasmin %t/Test.j -d %t && jasmin %t/A.j
-; RUN: jllvm %t/Test.class
+; RUN: jllvm -Xjit %t/Test.class
+; RUN: jllvm -Xint %t/Test.class
 
 ;--- A.j
 
