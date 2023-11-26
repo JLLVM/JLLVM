@@ -54,6 +54,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 {
     const ClassFile& classFile = *method.getClassObject()->getClassFile();
     Code* code = method.getMethodInfo().getAttributes().find<Code>();
+    assert(code && "method being interpreted must have code");
     llvm::ArrayRef<char> codeArray = code->getCode();
     auto curr = ByteCodeIterator(codeArray.data(), offset);
 
