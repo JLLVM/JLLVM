@@ -22,7 +22,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 {
     Code* code = method.getMethodInfo().getAttributes().find<Code>();
     llvm::ArrayRef<char> codeArray = code->getCode();
-    auto curr = ByteCodeIterator(codeArray.drop_front(offset).data(), offset);
+    auto curr = ByteCodeIterator(codeArray.data(), offset);
 
     /// Tag returned when interpreting an instruction to jump to a new bytecode offset.
     struct SetPC
@@ -66,6 +66,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
         match(
             result, [](ReturnValue) {}, [&](NextPC) { ++curr; },
-            [&](SetPC setPc) { curr = ByteCodeIterator(codeArray.drop_front(setPc.newPC).data(), setPc.newPC); });
+            [&](SetPC setPc) { curr = ByteCodeIterator(codeArray.data(), setPc.newPC); });
     }
 }

@@ -202,7 +202,8 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                 m_typeStack.back() = m_doubleType;
             },
             [&](OneOfBase<DConst0, DConst1, DLoad, DLoad0, DLoad1, DLoad2, DLoad3>)
-            { m_typeStack.emplace_back(m_doubleType); }, [&](Dup) { m_typeStack.push_back(m_typeStack.back()); },
+            { m_typeStack.emplace_back(m_doubleType); },
+            [&](Dup) { m_typeStack.push_back(m_typeStack.back()); },
             [&](DupX1)
             {
                 auto iter = m_typeStack.rbegin();
@@ -329,7 +330,8 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                 match(
                     operation,
                     [&](OneOf<IfACmpEq, IfACmpNe, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>)
-                    { m_typeStack.pop_back(); }, [](...) {});
+                    { m_typeStack.pop_back(); },
+                    [](...) {});
 
                 pushNext(cmpOp.offset + cmpOp.target, m_typeStack);
                 pushNext(cmpOp.offset + sizeof(OpCodes) + sizeof(std::int16_t), m_typeStack);
@@ -515,7 +517,7 @@ const ByteCodeTypeChecker::TypeInfo& ByteCodeTypeChecker::checkAndGetTypeInfo(st
         std::uint16_t startOffset = m_offsetStack.back();
         m_offsetStack.pop_back();
 
-        checkBasicBlock(m_code.getCode().drop_front(startOffset), startOffset);
+        checkBasicBlock(m_code.getCode(), startOffset);
     }
 
     return m_byteCodeTypeInfo;

@@ -307,8 +307,7 @@ void CodeGenerator::generateCodeBody(const Code& code, std::uint16_t startOffset
         }
 
         llvm::ArrayRef<char> bytes = code.getCode();
-        for (auto curr = ByteCodeIterator(bytes.drop_front(start).begin(), start), end = ByteCodeIterator(bytes.end());
-             curr != end;)
+        for (auto curr = ByteCodeIterator(bytes.begin(), start), end = ByteCodeIterator(bytes.end()); curr != end;)
         {
             ByteCodeOp operation = *curr;
             std::size_t offset = getOffset(operation);

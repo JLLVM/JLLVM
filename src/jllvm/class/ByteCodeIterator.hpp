@@ -104,7 +104,7 @@ class ByteCodeIterator : public llvm::iterator_facade_base<ByteCodeIterator, std
 public:
     ByteCodeIterator() = default;
 
-    explicit ByteCodeIterator(const char* current, std::size_t offset = 0) : m_current{current}, m_offset{offset} {}
+    explicit ByteCodeIterator(const char* data, std::size_t offset = 0) : m_current{data + offset}, m_offset{offset} {}
 
     bool operator==(ByteCodeIterator rhs) const
     {
@@ -131,11 +131,11 @@ public:
     }
 };
 
-/// Returns an iterator range returning a 'ByteCodeOp' for every JVM instruction.
-/// Assumes that the beginning of 'current' is the bytecode offset 'offset' and contains valid bytecode.
-inline auto byteCodeRange(llvm::ArrayRef<char> current, std::uint16_t offset = 0)
+/// Returns an iterator range returning a 'ByteCodeOp' for every JVM instruction starting from 'offset' inside 'data'.
+/// Assumes that 'data' contains valid bytecode.
+inline auto byteCodeRange(llvm::ArrayRef<char> data, std::uint16_t offset = 0)
 {
-    return llvm::make_range(ByteCodeIterator(current.begin(), offset), ByteCodeIterator(current.end()));
+    return llvm::make_range(ByteCodeIterator(data.begin(), offset), ByteCodeIterator(data.end()));
 }
 
 inline std::size_t getOffset(const ByteCodeOp& op)
