@@ -192,7 +192,7 @@ public:
         RootProvider& operator=(RootProvider&&) = delete;
 
         using AddRootObjectFn = llvm::function_ref<void(ObjectInterface*)>;
-        using RelocateObjectFn = llvm::function_ref<void(ObjectInterface**)>;
+        using RelocateObjectFn = llvm::function_ref<void(ObjectInterface*&)>;
 
         /// Called to add additional roots to the mark phase by calling 'relocateObjectFn'.
         /// Objects pointed to by roots are marked as reachable by the GC and are updated by the GC as it relocates

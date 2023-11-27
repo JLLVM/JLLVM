@@ -164,7 +164,7 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
         });
 }
 
-template <class F>
+template <std::invocable<jllvm::ObjectInterface*&> F>
 void introspectObject(jllvm::ObjectInterface* object, F&& f)
 {
     jllvm::ClassObject* classObject = getClass(object);
@@ -174,17 +174,14 @@ void introspectObject(jllvm::ObjectInterface* object, F&& f)
         if (!componentType->isPrimitive())
         {
             auto* array = static_cast<jllvm::Array<jllvm::ObjectInterface*>*>(object);
-            for (jllvm::ObjectInterface** iter = array->begin(); iter != array->end(); iter++)
-            {
-                f(iter);
-            }
+            llvm::for_each(*array, std::forward<F>(f));
         }
         return;
     }
 
     for (std::uint32_t iter : classObject->getGCObjectMask())
     {
-        f(reinterpret_cast<jllvm::ObjectInterface**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
+        f(*reinterpret_cast<jllvm::ObjectInterface**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
     }
 }
 
@@ -196,13 +193,12 @@ void mark(std::vector<jllvm::ObjectInterface*>& workList, jllvm::ObjectInterface
         workList.pop_back();
 
         introspectObject(object,
-                         [&](jllvm::ObjectInterface** field)
+                         [&](jllvm::ObjectInterface* field)
                          {
-                             jllvm::ObjectInterface* reached = *field;
-                             if (shouldBeAddedToWorkList(reached, from, to))
+                             if (shouldBeAddedToWorkList(field, from, to))
                              {
-                                 markSeen(reached);
-                                 workList.push_back(reached);
+                                 markSeen(field);
+                                 workList.push_back(field);
                              }
                          });
     }
@@ -232,15 +228,15 @@ void jllvm::GarbageCollector::garbageCollect()
         }
     };
 
-    llvm::for_each(llvm::make_pointee_range(m_staticRoots), addToWorkListLambda);
+    llvm::for_each(m_staticRoots, addToWorkListLambda);
     for (RootFreeList& list : m_localRoots)
     {
-        llvm::for_each(llvm::make_pointee_range(list), addToWorkListLambda);
+        llvm::for_each(list, addToWorkListLambda);
     }
 
     for (RootProvider& provider : llvm::make_pointee_range(m_rootProviders))
     {
-        provider.addRootsForRelocation([&](ObjectInterface** interface) { addToWorkListLambda(*interface); });
+        provider.addRootsForRelocation([&](ObjectInterface*& interface) { addToWorkListLambda(interface); });
     }
 
     mark(roots, from, to);
@@ -296,11 +292,11 @@ void jllvm::GarbageCollector::garbageCollect()
 
     replaceStackRoots(m_entries, mapping);
 
-    auto relocate = [&](ObjectInterface** root)
+    auto relocate = [&](ObjectInterface*& root)
     {
-        if (jllvm::ObjectInterface* replacement = mapping.lookup(*root))
+        if (jllvm::ObjectInterface* replacement = mapping.lookup(root))
         {
-            *root = replacement;
+            root = replacement;
         }
     };
 
@@ -312,14 +308,14 @@ void jllvm::GarbageCollector::garbageCollect()
 
     for (RootProvider& provider : llvm::make_pointee_range(m_rootProviders))
     {
-        provider.addRootsForRelocation([&](ObjectInterface** interface) { relocate(interface); });
+        provider.addRootsForRelocation([&](ObjectInterface*& interface) { relocate(interface); });
     }
 
     for (char* iter = m_fromSpace; iter != m_bumpPtr; iter = nextObject(iter))
     {
         auto* object = reinterpret_cast<jllvm::ObjectInterface*>(iter);
 
-        introspectObject(object, [&](jllvm::ObjectInterface** field) { relocate(field); });
+        introspectObject(object, [&](jllvm::ObjectInterface*& field) { relocate(field); });
     }
 }
 
@@ -369,6 +365,6 @@ void jllvm::GarbageCollector::RootProvider::addRootsForRelocation(RelocateObject
         {
             // Root objects are known to not be on the GC's heap but may contain references to GC objects.
             // Introspect the object to get its fields and consider them roots for relocation.
-            introspectObject(object, [=](ObjectInterface** field) { relocateObjectFn(field); });
+            introspectObject(object, [=](ObjectInterface*& field) { relocateObjectFn(field); });
         });
 }

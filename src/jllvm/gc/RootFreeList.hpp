@@ -154,8 +154,7 @@ class RootFreeList
     ObjectInterface** m_freeListNext = nullptr;
     ObjectInterface** m_freeListEnd = nullptr;
 
-    class SlotsIterator : public llvm::iterator_facade_base<SlotsIterator, std::forward_iterator_tag, ObjectInterface**,
-                                                            std::ptrdiff_t, ObjectInterface***, ObjectInterface**>
+    class SlotsIterator : public llvm::iterator_facade_base<SlotsIterator, std::forward_iterator_tag, ObjectInterface*>
     {
         std::size_t m_slabSize = 0;
         const std::unique_ptr<ObjectInterface*[]>* m_currentSlab = nullptr;
@@ -182,7 +181,7 @@ class RootFreeList
 
         reference operator*() const
         {
-            return reinterpret_cast<reference>((*m_currentSlab).get() + m_current);
+            return *(m_currentSlab->get() + m_current);
         }
 
         SlotsIterator& operator++()
@@ -199,12 +198,12 @@ class RootFreeList
 
     struct FilterPredicate
     {
-        bool operator()(ObjectInterface** pointer) const noexcept
+        bool operator()(ObjectInterface* pointer) const noexcept
         {
             // Check whether the root is an alive root or a free slot.
             // In the latter case it is marked with a set LSB which is never the case for used roots since Object's are
             // pointer aligned.
-            return !(reinterpret_cast<std::uintptr_t>(*pointer) & 1);
+            return !(reinterpret_cast<std::uintptr_t>(pointer) & 0b1);
         }
     };
 
