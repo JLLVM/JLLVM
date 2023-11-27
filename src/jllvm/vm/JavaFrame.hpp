@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include <llvm/Support/Casting.h>
+
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
 
@@ -24,6 +26,7 @@ namespace jllvm
 /// or bytecode offset.
 class JavaFrame
 {
+protected:
     const JavaMethodMetadata* m_javaMethodMetadata;
     UnwindFrame* m_unwindFrame;
 
@@ -74,6 +77,12 @@ public:
         return *m_unwindFrame;
     }
 
+    /// Returns the lower level java method metadata of the Java frame.
+    const JavaMethodMetadata& getJavaMethodMetadata() const
+    {
+        return *m_javaMethodMetadata;
+    }
+
     /// Reads out the values of all the local variables at the current bytecode offset.
     /// This method will always return an empty array in following scenarios:
     /// * If the method being executed is native and therefore does not have local variables
@@ -83,7 +92,63 @@ public:
     /// Reads out the values of the operand stack at the current bytecode offset.
     /// This method will always return an empty array in following scenarios:
     /// * If the method being executed is not being executed by the interpreter.
-    llvm::SmallVector<std::uint64_t> readOperandStack() const;
+    llvm::ArrayRef<std::uint64_t> readOperandStack() const;
+};
+
+/// Specialization of 'JavaFrame' for interpreter frames. This contains all methods specific to interpreter frames.
+/// LLVMs casting infrastructure can be used to cast between 'InterpreterFrame' and 'JavaFrame'.
+/// E.g.
+/// if (llvm::isa<InterpreterFrame>(javaFrame)) { ... }
+/// std::optional<InterpreterFrame> interpreterFrame = llvm::dyn_cast<InterpreterFrame>(javaFrame);
+/// InterpreterFrame interpreterFrame = llvm::cast<InterpreterFrame>(javaFrame);
+class InterpreterFrame : public JavaFrame
+{
+    using JavaFrame::JavaFrame;
+
+    template <typename To, typename From, typename Enable>
+    friend struct llvm::CastInfo;
+
+public:
+    /// Returns a mutable view of the locals of the interpreter.
+    llvm::MutableArrayRef<std::uint64_t> getLocals() const;
+
+    /// Returns the bitset denoting where Java references are contained within the interpreter locals.
+    llvm::ArrayRef<std::uint64_t> getLocalsGCMask() const;
+
+    /// Returns a mutable view of the operand stack of the interpreter.
+    llvm::MutableArrayRef<std::uint64_t> getOperandStack() const;
+
+    /// Returns the bitset denoting where Java references are contained within the interpreter operand stack.
+    llvm::ArrayRef<std::uint64_t> getOperandStackGCMask() const;
 };
 
 } // namespace jllvm
+
+/// Hooks casting 'JavaFrame' to 'InterpreterFrame' into LLVMs casting infrastructure.
+template <>
+struct llvm::CastInfo<jllvm::InterpreterFrame, jllvm::JavaFrame>
+    : llvm::DefaultDoCastIfPossible<std::optional<jllvm::InterpreterFrame>, jllvm::JavaFrame,
+                                    llvm::CastInfo<jllvm::InterpreterFrame, jllvm::JavaFrame>>
+{
+    static bool isPossible(jllvm::JavaFrame frame)
+    {
+        return frame.isInterpreter();
+    }
+
+    static jllvm::InterpreterFrame doCast(jllvm::JavaFrame frame)
+    {
+        return jllvm::InterpreterFrame(frame.getJavaMethodMetadata(), frame.getUnwindFrame());
+    }
+
+    static std::optional<jllvm::InterpreterFrame> castFailed()
+    {
+        return std::nullopt;
+    }
+};
+
+/// Specialization for when 'JavaFrame' is const to dispatch to the non-const specialization.
+template <>
+struct llvm::CastInfo<jllvm::InterpreterFrame, const jllvm::JavaFrame>
+    : llvm::CastInfo<jllvm::InterpreterFrame, jllvm::JavaFrame>
+{
+};

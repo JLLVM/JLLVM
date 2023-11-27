@@ -98,10 +98,17 @@ public:
 #endif
     }
 
+    String* initClassName()
+    {
+        std::string string = javaThis->getClassName().str();
+        std::replace(string.begin(), string.end(), '/', '.');
+        return virtualMachine.getStringInterner().intern(string);
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
         std::make_tuple(&ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
-                        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive);
+                        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive, &ClassModel::initClassName);
 };
 
 class FloatModel : public ModelBase<>

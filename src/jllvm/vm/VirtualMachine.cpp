@@ -272,6 +272,40 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                 addRootObjectFn(classObject);
             }
         });
+    m_gc.addRootsForRelocationProvider(
+        [this](GarbageCollector::RootProvider::RelocateObjectFn relocateObjectFn)
+        {
+            unwindJavaStack(
+                [=](JavaFrame javaFrame)
+                {
+                    std::optional interpreterFrame = llvm::dyn_cast<InterpreterFrame>(javaFrame);
+                    if (!interpreterFrame)
+                    {
+                        return;
+                    }
+
+                    auto addRoots = [=](llvm::MutableArrayRef<std::uint64_t> array, llvm::ArrayRef<std::uint64_t> mask)
+                    {
+                        for (auto&& [index, iter] : llvm::enumerate(array))
+                        {
+                            if (!(mask[index / 64] & 1 << (index % 64)))
+                            {
+                                continue;
+                            }
+
+                            // Create a local variable of type 'ObjectInterface*' to be able to pass a refernece to it.
+                            // 'reinterpret_cast<ObjectInterface**>(&iter)' would break C++ strict aliasing rules.
+                            auto* object = llvm::bit_cast<ObjectInterface*>(static_cast<std::uintptr_t>(iter));
+                            relocateObjectFn(object);
+                            // Write back the update in case '*object' was relocated.
+                            iter = llvm::bit_cast<std::uintptr_t>(object);
+                        }
+                    };
+
+                    addRoots(interpreterFrame->getLocals(), interpreterFrame->getLocalsGCMask());
+                    addRoots(interpreterFrame->getOperandStack(), interpreterFrame->getOperandStackGCMask());
+                });
+        });
 
     initialize(m_classLoader.loadBootstrapClasses());
 

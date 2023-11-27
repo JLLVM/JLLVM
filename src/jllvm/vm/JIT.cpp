@@ -319,7 +319,7 @@ void jllvm::JIT::doI2JOnStackReplacement(JavaFrame frame, std::uint16_t byteCode
     assert(frame.isInterpreter() && "frame must currently be within the interpreter");
 
     llvm::SmallVector<std::uint64_t> locals = frame.readLocals();
-    llvm::SmallVector<std::uint64_t> operandStack = frame.readOperandStack();
+    llvm::ArrayRef<std::uint64_t> operandStack = frame.readOperandStack();
 
     // Dynamically allocating memory here as this frame will be replaced at the end of this method and all local
     // variables destroyed. The OSR method will delete the array on entry once no longer needed.
