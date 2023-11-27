@@ -284,11 +284,11 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                         return;
                     }
 
-                    auto addRoots = [=](llvm::MutableArrayRef<std::uint64_t> array, llvm::ArrayRef<std::uint64_t> mask)
+                    auto addRoots = [=](llvm::MutableArrayRef<std::uint64_t> array, BitArrayRef<> mask)
                     {
-                        for (auto&& [index, iter] : llvm::enumerate(array))
+                        for (auto&& [iter, isReference] : llvm::zip_equal(array, mask))
                         {
-                            if (!(mask[index / 64] & 1 << (index % 64)))
+                            if (!isReference)
                             {
                                 continue;
                             }
