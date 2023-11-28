@@ -112,6 +112,12 @@ std::string mangleClassObjectGlobal(FieldType descriptor);
 /// <method-global> ::= '&' <direct-call>
 std::string mangleMethodGlobal(const Method* method);
 
+/// Mangling for a global interned string.
+///
+/// Syntax:
+/// <string-global> ::= "'" <string-contents>
+std::string mangleStringGlobal(llvm::StringRef contents);
+
 /// A call produced via 'mangleFieldAccess'.
 struct DemangledFieldAccess
 {
@@ -158,9 +164,15 @@ struct DemangledClassObjectGlobal
     FieldType classObject;
 };
 
+/// A global produced via 'mangleStringGlobal'.
+struct DemangledStringGlobal
+{
+    llvm::StringRef contents;
+};
+
 using DemangledVariant =
     swl::variant<std::monostate, DemangledFieldAccess, DemangledMethodResolutionCall, DemangledStaticCall,
-                 DemangledLoadClassObject, DemangledSpecialCall, DemangledClassObjectGlobal>;
+                 DemangledLoadClassObject, DemangledSpecialCall, DemangledClassObjectGlobal, DemangledStringGlobal>;
 
 /// Attempts to demangle a symbol produced by any of the 'mangle*' functions above with the exception of
 /// 'mangleDirectMethodCall'.

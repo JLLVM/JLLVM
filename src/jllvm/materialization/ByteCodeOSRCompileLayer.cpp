@@ -24,7 +24,7 @@ void jllvm::ByteCodeOSRCompileLayer::emit(std::unique_ptr<llvm::orc::Materializa
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    compileOSRMethod(*module, offset, *method, m_stringInterner);
+    compileOSRMethod(*module, offset, *method);
 
     m_baseLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
 }

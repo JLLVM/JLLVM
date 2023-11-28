@@ -101,8 +101,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                           tsm.withModuleDo([&](llvm::Module& module) { optimize(module); });
                           return std::move(tsm);
                       }),
-      m_byteCodeCompileLayer(stringInterner, m_optimizeLayer, m_interner, m_dataLayout),
-      m_byteCodeOSRCompileLayer(stringInterner, m_optimizeLayer, m_interner, m_dataLayout),
+      m_byteCodeCompileLayer(m_optimizeLayer, m_interner, m_dataLayout),
+      m_byteCodeOSRCompileLayer(m_optimizeLayer, m_interner, m_dataLayout),
       m_compiled2InterpreterLayer(m_interner, m_optimizeLayer, m_dataLayout),
       m_jniLayer(*m_session, m_interner, m_optimizeLayer, m_dataLayout, jniFunctions)
 {
@@ -119,7 +119,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     // The functions created by the stub class object stub definitions generator are also considered an
     // implementation detail and may only link against the stubs.
     m_implDetails.addGenerator(std::make_unique<ClassObjectStubDefinitionsGenerator>(
-        *m_externalStubsManager, m_optimizeLayer, m_dataLayout, searchOrder, classLoader));
+        *m_externalStubsManager, m_optimizeLayer, m_dataLayout, searchOrder, classLoader, stringInterner));
 
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
@@ -135,7 +135,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     llvm::cantFail(m_implDetails.define(llvm::orc::absoluteSymbols({
         {m_interner("memset"), llvm::JITEvaluatedSymbol::fromPointer(memset)},
         {m_interner("memcpy"), llvm::JITEvaluatedSymbol::fromPointer(memcpy)},
-            {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)},
+        {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)},
 #ifdef __APPLE__
         {m_interner("__bzero"), llvm::JITEvaluatedSymbol::fromPointer(::__bzero)},
 #endif

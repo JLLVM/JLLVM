@@ -84,6 +84,11 @@ llvm::GlobalVariable* jllvm::methodGlobal(llvm::Module& module, const Method* me
     return getOrInsertImportingGlobal(module, mangleMethodGlobal(method), /*addressSpace=*/0);
 }
 
+llvm::GlobalVariable* jllvm::stringGlobal(llvm::Module& module, llvm::StringRef contents)
+{
+    return getOrInsertImportingGlobal(module, mangleStringGlobal(contents), /*addressSpace=*/1);
+}
+
 llvm::Type* jllvm::descriptorToType(FieldType type, llvm::LLVMContext& context)
 {
     return jllvm::match(

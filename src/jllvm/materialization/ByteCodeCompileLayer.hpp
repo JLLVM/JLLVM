@@ -15,8 +15,6 @@
 
 #include <llvm/ExecutionEngine/Orc/Layer.h>
 
-#include <jllvm/object/StringInterner.hpp>
-
 #include "ByteCodeLayer.hpp"
 
 namespace jllvm
@@ -24,14 +22,13 @@ namespace jllvm
 /// Layer for compiling a JVM method to LLVM IR and handing it to an IR Layer for further compilation.
 class ByteCodeCompileLayer : public ByteCodeLayer
 {
-    StringInterner& m_stringInterner;
     llvm::orc::IRLayer& m_baseLayer;
     llvm::DataLayout m_dataLayout;
 
 public:
-    ByteCodeCompileLayer(StringInterner& stringInterner, llvm::orc::IRLayer& baseLayer,
-                         llvm::orc::MangleAndInterner& mangler, const llvm::DataLayout& dataLayout)
-        : ByteCodeLayer(mangler), m_stringInterner(stringInterner), m_baseLayer(baseLayer), m_dataLayout(dataLayout)
+    ByteCodeCompileLayer(llvm::orc::IRLayer& baseLayer, llvm::orc::MangleAndInterner& mangler,
+                         const llvm::DataLayout& dataLayout)
+        : ByteCodeLayer{mangler}, m_baseLayer{baseLayer}, m_dataLayout{dataLayout}
     {
     }
 

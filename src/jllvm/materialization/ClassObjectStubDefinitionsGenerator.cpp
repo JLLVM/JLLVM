@@ -97,11 +97,16 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
             continue;
         }
 
-        // Globals are resolved immediately. Its not possible to use a compile stub or the like.
+        // Globals are resolved immediately. It is not possible to use a compile stub or the like.
         if (auto* classObjectGlobal = get_if<DemangledClassObjectGlobal>(&demangleVariant))
         {
             generated[symbol] =
                 llvm::JITEvaluatedSymbol::fromPointer(&m_classLoader.forName(classObjectGlobal->classObject));
+            continue;
+        }
+        if (auto* stringGlobal = get_if<DemangledStringGlobal>(&demangleVariant))
+        {
+            generated[symbol] = llvm::JITEvaluatedSymbol::fromPointer(m_stringInterner.intern(stringGlobal->contents));
             continue;
         }
 

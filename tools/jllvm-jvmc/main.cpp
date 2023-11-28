@@ -127,8 +127,6 @@ int main(int argc, char** argv)
         [&]() -> void** { return new (allocator.Allocate<void*>()) void* {}; });
 
     loader.loadBootstrapClasses();
-    jllvm::StringInterner stringInterner(loader);
-    stringInterner.loadStringClass();
 
     auto buffer = llvm::MemoryBuffer::getFile(inputFile);
     if (!buffer)
@@ -159,11 +157,11 @@ int main(int argc, char** argv)
             llvm::errs() << "invalid integer '" << ref << "' as argument to '--osr'\n";
             return -1;
         }
-        compileOSRMethod(module, offset, *method, stringInterner);
+        compileOSRMethod(module, offset, *method);
     }
     else
     {
-        compileMethod(module, *method, stringInterner);
+        compileMethod(module, *method);
     }
     if (llvm::verifyModule(module, &llvm::dbgs()))
     {
