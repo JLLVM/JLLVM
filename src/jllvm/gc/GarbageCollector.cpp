@@ -164,7 +164,7 @@ void replaceStackRoots(const llvm::DenseMap<std::uintptr_t, std::vector<jllvm::S
         });
 }
 
-template <class F>
+template <std::invocable<jllvm::ObjectInterface*&> F>
 void introspectObject(jllvm::ObjectInterface* object, F&& f)
 {
     jllvm::ClassObject* classObject = getClass(object);
@@ -174,17 +174,14 @@ void introspectObject(jllvm::ObjectInterface* object, F&& f)
         if (!componentType->isPrimitive())
         {
             auto* array = static_cast<jllvm::Array<jllvm::ObjectInterface*>*>(object);
-            for (jllvm::ObjectInterface** iter = array->begin(); iter != array->end(); iter++)
-            {
-                f(iter);
-            }
+            llvm::for_each(*array, std::forward<F>(f));
         }
         return;
     }
 
     for (std::uint32_t iter : classObject->getGCObjectMask())
     {
-        f(reinterpret_cast<jllvm::ObjectInterface**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
+        f(*reinterpret_cast<jllvm::ObjectInterface**>(reinterpret_cast<char*>(object) + iter * sizeof(jllvm::Object*)));
     }
 }
 
@@ -196,13 +193,12 @@ void mark(std::vector<jllvm::ObjectInterface*>& workList, jllvm::ObjectInterface
         workList.pop_back();
 
         introspectObject(object,
-                         [&](jllvm::ObjectInterface** field)
+                         [&](jllvm::ObjectInterface* field)
                          {
-                             jllvm::ObjectInterface* reached = *field;
-                             if (shouldBeAddedToWorkList(reached, from, to))
+                             if (shouldBeAddedToWorkList(field, from, to))
                              {
-                                 markSeen(reached);
-                                 workList.push_back(reached);
+                                 markSeen(field);
+                                 workList.push_back(field);
                              }
                          });
     }
@@ -223,19 +219,24 @@ void jllvm::GarbageCollector::garbageCollect()
     std::vector<jllvm::ObjectInterface*> roots;
     collectStackRoots(m_entries, roots, from, to);
 
-    auto addToWorkListLambda = [&roots, from, to](void* ptr)
+    auto addToWorkListLambda = [&roots, from, to](ObjectInterface* object)
     {
-        auto* object = reinterpret_cast<jllvm::ObjectInterface*>(ptr);
         if (shouldBeAddedToWorkList(object, from, to))
         {
             markSeen(object);
             roots.push_back(object);
         }
     };
-    llvm::for_each(llvm::make_pointee_range(m_staticRoots), addToWorkListLambda);
+
+    llvm::for_each(m_staticRoots, addToWorkListLambda);
     for (RootFreeList& list : m_localRoots)
     {
-        llvm::for_each(llvm::make_pointee_range(list), addToWorkListLambda);
+        llvm::for_each(list, addToWorkListLambda);
+    }
+
+    for (RootProvider& provider : llvm::make_pointee_range(m_rootProviders))
+    {
+        provider.addRootsForRelocation([&](ObjectInterface*& interface) { addToWorkListLambda(interface); });
     }
 
     mark(roots, from, to);
@@ -291,37 +292,30 @@ void jllvm::GarbageCollector::garbageCollect()
 
     replaceStackRoots(m_entries, mapping);
 
-    for (void** root : m_staticRoots)
+    auto relocate = [&](ObjectInterface*& root)
     {
-        if (jllvm::ObjectInterface* replacement = mapping.lookup(reinterpret_cast<jllvm::ObjectInterface*>(*root)))
+        if (jllvm::ObjectInterface* replacement = mapping.lookup(root))
         {
-            *root = replacement;
+            root = replacement;
         }
-    }
+    };
 
+    llvm::for_each(m_staticRoots, relocate);
     for (RootFreeList& list : m_localRoots)
     {
-        for (void** root : list)
-        {
-            if (jllvm::ObjectInterface* replacement = mapping.lookup(reinterpret_cast<jllvm::ObjectInterface*>(*root)))
-            {
-                *root = replacement;
-            }
-        }
+        llvm::for_each(list, relocate);
+    }
+
+    for (RootProvider& provider : llvm::make_pointee_range(m_rootProviders))
+    {
+        provider.addRootsForRelocation([&](ObjectInterface*& interface) { relocate(interface); });
     }
 
     for (char* iter = m_fromSpace; iter != m_bumpPtr; iter = nextObject(iter))
     {
         auto* object = reinterpret_cast<jllvm::ObjectInterface*>(iter);
 
-        introspectObject(object,
-                         [&](jllvm::ObjectInterface** field)
-                         {
-                             if (jllvm::ObjectInterface* replacement = mapping.lookup(*field))
-                             {
-                                 *field = replacement;
-                             }
-                         });
+        introspectObject(object, [&](jllvm::ObjectInterface*& field) { relocate(field); });
     }
 }
 
@@ -362,4 +356,15 @@ void jllvm::GarbageCollector::addStackMapEntries(std::uintptr_t addr, llvm::Arra
     LLVM_DEBUG({ llvm::dbgs() << "Added stackmap entries for PC " << (void*)addr << '\n'; });
     auto& vec = m_entries[addr];
     vec.insert(vec.end(), entries.begin(), entries.end());
+}
+
+void jllvm::GarbageCollector::RootProvider::addRootsForRelocation(RelocateObjectFn relocateObjectFn)
+{
+    addRootObjects(
+        [=](ObjectInterface* object)
+        {
+            // Root objects are known to not be on the GC's heap but may contain references to GC objects.
+            // Introspect the object to get its fields and consider them roots for relocation.
+            introspectObject(object, [=](ObjectInterface*& field) { relocateObjectFn(field); });
+        });
 }

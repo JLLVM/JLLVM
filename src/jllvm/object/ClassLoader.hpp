@@ -91,6 +91,12 @@ public:
     /// classes.
     /// Returns the meta class object.
     ClassObject& loadBootstrapClasses();
+
+    /// Returns a range of 'ClassObject*' of all class objects loaded so far.
+    auto getLoadedClassObjects() const
+    {
+        return llvm::make_second_range(m_mapping);
+    }
 };
 
 } // namespace jllvm

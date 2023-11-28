@@ -25,12 +25,12 @@ jllvm::GCRootRef<jllvm::ObjectInterface> jllvm::RootFreeList::allocate()
         {
             if (++m_currentSlab == m_slabs.size())
             {
-                m_slabs.push_back(std::make_unique<void*[]>(m_slabSize));
+                m_slabs.push_back(std::make_unique<ObjectInterface*[]>(m_slabSize));
             }
             m_freeListEnd = m_freeListNext = m_slabs[m_currentSlab].get();
         }
 
-        void** result = m_freeListNext;
+        ObjectInterface** result = m_freeListNext;
         m_freeListNext = ++m_freeListEnd;
 
         *result = nullptr;
@@ -38,10 +38,10 @@ jllvm::GCRootRef<jllvm::ObjectInterface> jllvm::RootFreeList::allocate()
     }
 
     // Remove head form singly linked list.
-    void** result = m_freeListNext;
+    ObjectInterface** result = m_freeListNext;
     auto next = reinterpret_cast<std::uintptr_t>(*m_freeListNext);
     // Remove free slot marker in LSB bit.
-    m_freeListNext = reinterpret_cast<void**>(next & ~static_cast<std::uintptr_t>(1));
+    m_freeListNext = reinterpret_cast<ObjectInterface**>(next & ~static_cast<std::uintptr_t>(1));
 
     *result = nullptr;
     return GCRootRef<ObjectInterface>(result);
@@ -49,7 +49,7 @@ jllvm::GCRootRef<jllvm::ObjectInterface> jllvm::RootFreeList::allocate()
 
 void jllvm::RootFreeList::free(GCRootRef<ObjectInterface> root)
 {
-    void** raw = root.data();
+    ObjectInterface** raw = root.data();
     // LIFO optimized case.
     if (m_freeListNext == m_freeListEnd && raw + 1 == m_freeListNext)
     {
@@ -62,6 +62,6 @@ void jllvm::RootFreeList::free(GCRootRef<ObjectInterface> root)
         return;
     }
 
-    *raw = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(m_freeListNext) | 1);
+    *raw = reinterpret_cast<ObjectInterface*>(reinterpret_cast<std::uintptr_t>(m_freeListNext) | 1);
     m_freeListNext = raw;
 }

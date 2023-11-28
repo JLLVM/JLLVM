@@ -44,18 +44,18 @@ template <class T = ObjectInterface>
 class GCRootRef
 {
 protected:
-    void** m_object = nullptr;
+    ObjectInterface** m_object = nullptr;
 
     friend class RootFreeList;
 
     template <class U>
     friend class GCRootRef;
 
-    explicit GCRootRef(void** object) : m_object(object) {}
+    explicit GCRootRef(ObjectInterface** object) : m_object(object) {}
 
     T* get() const
     {
-        return reinterpret_cast<T*>(*m_object);
+        return static_cast<T*>(*m_object);
     }
 
 public:
@@ -135,7 +135,7 @@ public:
     }
 
     /// Returns the underlying root referred to by this 'GCRootRef'.
-    void** data() const
+    ObjectInterface** data() const
     {
         return m_object;
     }
@@ -149,22 +149,22 @@ public:
 class RootFreeList
 {
     std::size_t m_slabSize;
-    std::vector<std::unique_ptr<void*[]>> m_slabs;
+    std::vector<std::unique_ptr<ObjectInterface*[]>> m_slabs;
     std::size_t m_currentSlab = 0;
-    void** m_freeListNext = nullptr;
-    void** m_freeListEnd = nullptr;
+    ObjectInterface** m_freeListNext = nullptr;
+    ObjectInterface** m_freeListEnd = nullptr;
 
-    class SlotsIterator : public llvm::iterator_facade_base<SlotsIterator, std::forward_iterator_tag, void**,
-                                                            std::ptrdiff_t, void***, void**>
+    class SlotsIterator : public llvm::iterator_facade_base<SlotsIterator, std::forward_iterator_tag, ObjectInterface*>
     {
         std::size_t m_slabSize = 0;
-        const std::unique_ptr<void*[]>* m_currentSlab = nullptr;
+        const std::unique_ptr<ObjectInterface*[]>* m_currentSlab = nullptr;
         std::size_t m_current = 0;
 
     public:
         SlotsIterator() = default;
 
-        SlotsIterator(std::size_t slabSize, const std::unique_ptr<void*[]>* currentSlab, void** current)
+        SlotsIterator(std::size_t slabSize, const std::unique_ptr<ObjectInterface*[]>* currentSlab,
+                      ObjectInterface** current)
             : m_slabSize(slabSize), m_currentSlab(currentSlab), m_current(current - currentSlab->get())
         {
             if (m_current == m_slabSize)
@@ -181,7 +181,7 @@ class RootFreeList
 
         reference operator*() const
         {
-            return (*m_currentSlab).get() + m_current;
+            return *(m_currentSlab->get() + m_current);
         }
 
         SlotsIterator& operator++()
@@ -198,12 +198,12 @@ class RootFreeList
 
     struct FilterPredicate
     {
-        bool operator()(void** pointer) const noexcept
+        bool operator()(ObjectInterface* pointer) const noexcept
         {
             // Check whether the root is an alive root or a free slot.
             // In the latter case it is marked with a set LSB which is never the case for used roots since Object's are
             // pointer aligned.
-            return !(reinterpret_cast<std::uintptr_t>(*pointer) & 1);
+            return !(reinterpret_cast<std::uintptr_t>(pointer) & 0b1);
         }
     };
 
@@ -211,7 +211,7 @@ public:
     /// Creates a new root free list with the given amount of roots per slab.
     explicit RootFreeList(std::size_t slabSize) : m_slabSize(slabSize)
     {
-        m_slabs.push_back(std::make_unique<void*[]>(m_slabSize));
+        m_slabs.push_back(std::make_unique<ObjectInterface*[]>(m_slabSize));
         m_freeListNext = m_freeListEnd = m_slabs[m_currentSlab].get();
     }
 
