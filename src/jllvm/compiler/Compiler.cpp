@@ -16,7 +16,7 @@
 #include "ClassObjectStubMangling.hpp"
 #include "CodeGenerator.hpp"
 
-llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method, StringInterner& stringInterner)
+llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
 {
     const MethodInfo& methodInfo = method.getMethodInfo();
     const ClassObject* classObject = method.getClassObject();
@@ -31,7 +31,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
     auto* code = methodInfo.getAttributes().find<Code>();
     assert(code && "method to compile must have a code attribute");
     compileMethodBody(
-        function, method, stringInterner, *code,
+        function, method, *code,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack&, const ByteCodeTypeChecker::TypeInfo&)
         {
             // Arguments are put into the locals. According to the specification, i64s and doubles are
@@ -58,8 +58,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method,
     return function;
 }
 
-llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
-                                        StringInterner& stringInterner)
+llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method)
 {
     const MethodInfo& methodInfo = method.getMethodInfo();
     const ClassObject* classObject = method.getClassObject();
@@ -77,7 +76,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     llvm::Value* localsInput = function->getArg(1);
 
     compileMethodBody(
-        function, method, stringInterner, *code,
+        function, method, *code,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
             const ByteCodeTypeChecker::TypeInfo& typeInfo)
         {

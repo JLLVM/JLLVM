@@ -1154,11 +1154,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 {
                     llvm::StringRef text = stringInfo->stringValue.resolve(m_classFile)->text;
 
-                    String* string = m_stringInterner.intern(text);
-
-                    m_operandStack.push_back(
-                        m_builder.CreateIntToPtr(m_builder.getInt64(reinterpret_cast<std::uint64_t>(string)),
-                                                 referenceType(m_builder.getContext())));
+                    m_operandStack.push_back(stringGlobal(*m_function->getParent(), text));
                 },
                 [&](const ClassInfo*)
                 { m_operandStack.push_back(loadClassObjectFromPool(getOffset(operation), ldc.index)); },

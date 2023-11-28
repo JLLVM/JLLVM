@@ -17,16 +17,14 @@
 
 #include <jllvm/class/ClassFile.hpp>
 #include <jllvm/object/ClassObject.hpp>
-#include <jllvm/object/StringInterner.hpp>
 
 namespace jllvm
 {
 
 /// Compiles 'method' to a new LLVM function inside of 'module' and returns it.
-llvm::Function* compileMethod(llvm::Module& module, const Method& method, StringInterner& stringInterner);
+llvm::Function* compileMethod(llvm::Module& module, const Method& method);
 
 /// Compiles 'method' to a LLVM function suitable for OSR entry at the bytecode offset 'offset'. The function is placed
 /// into 'module' and returned.
-llvm::Function* compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
-                                 StringInterner& stringInterner);
+llvm::Function* compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method);
 } // namespace jllvm

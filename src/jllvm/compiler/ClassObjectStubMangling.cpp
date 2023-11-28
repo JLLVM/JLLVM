@@ -92,12 +92,25 @@ std::string jllvm::mangleMethodGlobal(const Method* method)
     return '&' + mangleDirectMethodCall(method);
 }
 
+constexpr llvm::StringLiteral globalStringPrefix = "'";
+
+std::string jllvm::mangleStringGlobal(llvm::StringRef contents)
+{
+    return globalStringPrefix.data() + contents.str();
+}
+
 jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName)
 {
     bool isStatic = false;
     bool isClassObjectLoad = false;
     bool isSpecialMethod = false;
     std::optional<MethodResolution> resolution;
+
+    if (symbolName.consume_front(globalStringPrefix))
+    {
+        return DemangledStringGlobal{symbolName};
+    }
+
     if (symbolName.consume_front(classObjectPrefix))
     {
         isClassObjectLoad = true;

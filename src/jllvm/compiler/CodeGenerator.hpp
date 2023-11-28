@@ -16,7 +16,6 @@
 #include <llvm/IR/DIBuilder.h>
 
 #include <jllvm/class/ByteCodeIterator.hpp>
-#include <jllvm/object/StringInterner.hpp>
 
 #include <map>
 
@@ -39,7 +38,6 @@ class CodeGenerator
     const Method& m_method;
     const ClassObject& m_classObject;
     const ClassFile& m_classFile;
-    StringInterner& m_stringInterner;
     llvm::IRBuilder<> m_builder;
     llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
@@ -128,13 +126,11 @@ class CodeGenerator
     llvm::Value* getClassObject(std::uint16_t offset, FieldType fieldDescriptor);
 
 public:
-    CodeGenerator(llvm::Function* function, const Method& method, StringInterner& stringInterner,
-                  std::uint16_t maxStack, std::uint16_t maxLocals)
+    CodeGenerator(llvm::Function* function, const Method& method, std::uint16_t maxStack, std::uint16_t maxLocals)
         : m_function{function},
-          m_method(method),
-          m_classObject(*method.getClassObject()),
+          m_method{method},
+          m_classObject{*method.getClassObject()},
           m_classFile{*m_classObject.getClassFile()},
-          m_stringInterner{stringInterner},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
           m_debugBuilder{*function->getParent()},
           m_operandStack{m_builder, maxStack},
@@ -163,15 +159,14 @@ public:
 };
 
 /// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'method' is the method
-/// object of the class file containing 'code', 'stringInterner' the interner used to create string object instances
-/// from literal.
+/// object of the class file containing 'code'.
 /// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
 /// the newly created code. 'offset' is the bytecode offset at which compilation should start and must refer to a JVM
 /// instruction.
-inline void compileMethodBody(llvm::Function* function, const Method& method, StringInterner& stringInterner,
-                              const Code& code, CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
+inline void compileMethodBody(llvm::Function* function, const Method& method, const Code& code,
+                              CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
 {
-    CodeGenerator codeGenerator{function, method, stringInterner, code.getMaxStack(), code.getMaxLocals()};
+    CodeGenerator codeGenerator{function, method, code.getMaxStack(), code.getMaxLocals()};
 
     codeGenerator.generateBody(code, generatePrologue, offset);
 }

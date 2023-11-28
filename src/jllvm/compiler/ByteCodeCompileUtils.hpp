@@ -46,6 +46,9 @@ llvm::GlobalVariable* classObjectGlobal(llvm::Module& module, FieldType classObj
 /// Returns the global variable importing the given method.
 llvm::GlobalVariable* methodGlobal(llvm::Module& module, const Method* method);
 
+/// Returns the global variable importing the given interned string.
+llvm::GlobalVariable* stringGlobal(llvm::Module& module, llvm::StringRef contents);
+
 /// Returns the corresponding LLVM type for a given Java field descriptor.
 llvm::Type* descriptorToType(FieldType type, llvm::LLVMContext& context);
 
