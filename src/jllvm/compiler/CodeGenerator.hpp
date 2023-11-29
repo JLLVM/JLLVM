@@ -92,6 +92,8 @@ class CodeGenerator
 
     void generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception);
 
+    FieldType getClassObjectDescriptorFromPool(PoolIndex<ClassInfo> index);
+
     llvm::Value* loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index);
 
     llvm::Value* generateAllocArray(std::uint16_t offset, ArrayType descriptor, llvm::Value* classObject,
@@ -99,17 +101,17 @@ class CodeGenerator
 
     /// Creates a non-virtual call to the static function 'methodName' of the type 'methodType' within
     /// 'className' using 'args'. This is used to implement `invokestatic`.
-    llvm::Value* doStaticCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+    llvm::Value* doStaticCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                               MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
 
     /// Creates a virtual call to the function 'methodName' of the type 'methodType' within 'className' using 'args'.
     /// 'resolution' determines how the actual method to be called is resolved using the previously mentioned strings.
-    llvm::Value* doInstanceCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+    llvm::Value* doInstanceCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                                 MethodType methodType, llvm::ArrayRef<llvm::Value*> args, MethodResolution resolution);
 
     /// Creates an 'invokespecial' call to the function 'methodName' of the type 'methodType' within 'className' using
     /// 'args'.
-    llvm::Value* doSpecialCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+    llvm::Value* doSpecialCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                                MethodType methodType, llvm::ArrayRef<llvm::Value*> args);
 
     /// Returns an LLVM integer constant which contains the offset of the 'fieldName' with the type 'fieldType'

@@ -125,7 +125,7 @@ jllvm::ClassObject::ClassObject(const jllvm::ClassObject* metaClass, std::int32_
 {
 }
 
-jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
+jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, ClassObject* objectClass,
                                                     const ClassObject* componentType, llvm::StringSaver& stringSaver)
 {
     std::uint32_t arrayFieldAreaSize = sizeof(std::uint32_t);
@@ -139,11 +139,16 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
         arrayFieldAreaSize = llvm::alignTo(arrayFieldAreaSize, sizeof(void*));
     }
 
-    auto* result = new (allocator.Allocate<ClassObject>())
-        ClassObject(metaClass, arrayFieldAreaSize,
-                    stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()));
+    std::uint32_t vTableSlots = objectClass->getTableSize();
+    auto* result =
+        new (allocator.Allocate(ClassObject::totalSizeToAlloc<VTableSlot>(vTableSlots), alignof(ClassObject)))
+            ClassObject(objectClass->getClass(), arrayFieldAreaSize,
+                        stringSaver.save(FieldType(ArrayType(componentType->getDescriptor())).textual()));
     result->m_componentTypeOrInterfaceId = componentType;
     result->m_initialized = InitializationStatus::Initialized;
+    result->m_tableSize = vTableSlots;
+    result->m_bases = arrayRefAlloc(allocator, std::initializer_list<ClassObject*>{objectClass});
+    std::fill(result->getVTable().begin(), result->getVTable().end(), nullptr);
     return result;
 }
 

@@ -13,7 +13,7 @@
 .method public static native print(Ljava/lang/String;)V
 .end method
 
-; CHECK-LABEL: define void @"Test.test:()V"
+; CHECK-LABEL: define void @"LTest;.test:()V"
 .method public static test()V
     .limit stack 1
     ; CHECK: store ptr addrspace(1) @"'Test String", ptr %[[TOP:[[:alnum:]]+]]
