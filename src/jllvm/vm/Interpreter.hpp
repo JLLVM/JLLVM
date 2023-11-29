@@ -35,7 +35,7 @@ concept InterpreterPrimitive =
 /// Java objects (references).
 template <class T>
 concept InterpreterValue =
-    InterpreterPrimitive<T> || (std::is_pointer_v<T> && std::derived_from<std::remove_pointer<T>, ObjectInterface>);
+    InterpreterPrimitive<T> || (std::is_pointer_v<T> && std::derived_from<std::remove_pointer_t<T>, ObjectInterface>);
 
 /// Context used in the execution of one Java frame. It incorporates and contains convenience methods for interacting
 /// with local variables and the operand stack.
@@ -128,6 +128,9 @@ class Interpreter
     VirtualMachine& m_virtualMachine;
     /// Enable OSR from the interpreter into the JIT if the method is hot enough.
     bool m_enableOSR;
+
+    /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
+    ClassObject* getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index);
 
     /// Replaces the current interpreter frame with a compiled frame. This should only be called from within
     /// 'executeMethod' when called from the 'jllvm_interpreter' implementation in 'VirtualMachine'.

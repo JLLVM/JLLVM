@@ -39,30 +39,48 @@ llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocals() const
                                                    { return frameValue.readScalar(*m_unwindFrame); }));
         }
         case JavaMethodMetadata::Kind::Interpreter:
-        {
-            std::uint16_t numLocals =
-                m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
-            std::uint64_t* locals =
-                m_javaMethodMetadata->getInterpreterData().localVariables.readScalar(*m_unwindFrame);
-            return llvm::SmallVector<std::uint64_t>(locals, locals + numLocals);
-        }
+            return llvm::to_vector(llvm::cast<InterpreterFrame>(*this).getLocals());
     }
     llvm_unreachable("invalid kind");
 }
 
-llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readOperandStack() const
+llvm::ArrayRef<std::uint64_t> jllvm::JavaFrame::readOperandStack() const
 {
     switch (m_javaMethodMetadata->getKind())
     {
         case JavaMethodMetadata::Kind::JIT:
         case JavaMethodMetadata::Kind::Native: return {};
-        case JavaMethodMetadata::Kind::Interpreter:
-        {
-            std::uint16_t numStack = *m_javaMethodMetadata->getInterpreterData().topOfStack.readScalar(*m_unwindFrame);
-            std::uint64_t* operands =
-                m_javaMethodMetadata->getInterpreterData().operandStack.readScalar(*m_unwindFrame);
-            return llvm::SmallVector<std::uint64_t>(operands, operands + numStack);
-        }
+        case JavaMethodMetadata::Kind::Interpreter: return llvm::cast<InterpreterFrame>(*this).getOperandStack();
     }
     llvm_unreachable("invalid kind");
+}
+
+llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocals() const
+{
+    std::uint16_t numLocals =
+        m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
+    std::uint64_t* locals = m_javaMethodMetadata->getInterpreterData().localVariables.readScalar(*m_unwindFrame);
+    return llvm::MutableArrayRef<std::uint64_t>(locals, locals + numLocals);
+}
+
+llvm::ArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocalsGCMask() const
+{
+    std::uint16_t numLocals =
+        m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
+    std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().localVariablesGCMask.readScalar(*m_unwindFrame);
+    return llvm::ArrayRef<std::uint64_t>(mask, mask + numLocals);
+}
+
+llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getOperandStack() const
+{
+    std::uint16_t numStack = *m_javaMethodMetadata->getInterpreterData().topOfStack.readScalar(*m_unwindFrame);
+    std::uint64_t* operands = m_javaMethodMetadata->getInterpreterData().operandStack.readScalar(*m_unwindFrame);
+    return llvm::MutableArrayRef<std::uint64_t>(operands, operands + numStack);
+}
+
+llvm::ArrayRef<std::uint64_t> jllvm::InterpreterFrame::getOperandStackGCMask() const
+{
+    std::uint16_t numStack = *m_javaMethodMetadata->getInterpreterData().topOfStack.readScalar(*m_unwindFrame);
+    std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().operandGCMask.readScalar(*m_unwindFrame);
+    return llvm::ArrayRef<std::uint64_t>(mask, mask + numStack);
 }

@@ -61,8 +61,6 @@ class VirtualMachine
     GCRootRef<Object> m_mainThreadGroup = m_gc.allocateStatic();
     std::string m_javaHome;
 
-    void initialize(ClassObject& classObject);
-
     // Instances of 'Model::State', subtypes of ModelState.
     std::vector<std::unique_ptr<ModelState>> m_modelState;
 
@@ -141,6 +139,9 @@ public:
         auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
         return invokeJava<Ret>(addr, args...);
     }
+
+    /// Performs class initialization for 'classObject'. This is a noop if 'classObject' is not uninitialized.
+    void initialize(ClassObject& classObject);
 
     /// Throws a Java exception which can be caught by exception handlers in Java. This also causes stack unwinding in
     /// C++ code, executing destructors as a C++ exception would.

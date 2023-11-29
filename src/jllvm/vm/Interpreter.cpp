@@ -42,6 +42,16 @@ struct ReturnValue
 };
 } // namespace
 
+jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index)
+{
+    llvm::StringRef className = index.resolve(classFile)->nameIndex.resolve(classFile)->text;
+    if (className.front() == '[')
+    {
+        return &m_virtualMachine.getClassLoader().forName(FieldType(className));
+    }
+    return &m_virtualMachine.getClassLoader().forName(ObjectType(className));
+}
+
 void jllvm::Interpreter::escapeToJIT()
 {
     m_virtualMachine.unwindJavaStack(
@@ -168,6 +178,13 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 match(
                     pool.resolve(classFile), [&](const IntegerInfo* integerInfo) { context.push(integerInfo->value); },
                     [&](const auto*) { escapeToJIT(); });
+                return NextPC{};
+            },
+            [&](New newInst)
+            {
+                ClassObject* classObject = getClassObject(classFile, newInst.index);
+                m_virtualMachine.initialize(*classObject);
+                context.push(m_virtualMachine.getGC().allocate(classObject));
                 return NextPC{};
             },
             [&](ByteCodeBase) -> InstructionResult
