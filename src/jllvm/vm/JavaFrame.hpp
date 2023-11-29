@@ -16,6 +16,7 @@
 #include <llvm/Support/Casting.h>
 
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
+#include <jllvm/support/BitArrayRef.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
 
 namespace jllvm
@@ -113,13 +114,13 @@ public:
     llvm::MutableArrayRef<std::uint64_t> getLocals() const;
 
     /// Returns the bitset denoting where Java references are contained within the interpreter locals.
-    llvm::ArrayRef<std::uint64_t> getLocalsGCMask() const;
+    BitArrayRef<> getLocalsGCMask() const;
 
     /// Returns a mutable view of the operand stack of the interpreter.
     llvm::MutableArrayRef<std::uint64_t> getOperandStack() const;
 
     /// Returns the bitset denoting where Java references are contained within the interpreter operand stack.
-    llvm::ArrayRef<std::uint64_t> getOperandStackGCMask() const;
+    BitArrayRef<> getOperandStackGCMask() const;
 };
 
 } // namespace jllvm

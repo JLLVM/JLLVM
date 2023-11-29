@@ -14,6 +14,7 @@
 #pragma once
 
 #include <jllvm/object/ClassObject.hpp>
+#include <jllvm/support/BitArrayRef.hpp>
 
 #include <cstdint>
 
@@ -57,15 +58,9 @@ class InterpreterContext
     /// Sets the corresponding bit in 'mask' at index to 'value'.
     static void setMaskBit(std::uint64_t* mask, std::size_t index, bool value)
     {
-        constexpr auto bitWidth = std::numeric_limits<std::decay_t<decltype(*mask)>>::digits;
-        if (value)
-        {
-            mask[index / bitWidth] |= 1ull << (index % bitWidth);
-        }
-        else
-        {
-            mask[index / bitWidth] &= ~(1ull << (index % bitWidth));
-        }
+        // While we cannot permanently keep around a 'MutableBitArrayRef' unless wastefully storing the size,
+        // we can reuse its dereferencing implementation with a proper upper bound.
+        MutableBitArrayRef(mask, index + 1)[index] = value;
     }
 
 public:

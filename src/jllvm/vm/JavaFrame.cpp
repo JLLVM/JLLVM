@@ -63,12 +63,12 @@ llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocals() const
     return llvm::MutableArrayRef<std::uint64_t>(locals, locals + numLocals);
 }
 
-llvm::ArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocalsGCMask() const
+jllvm::BitArrayRef<> jllvm::InterpreterFrame::getLocalsGCMask() const
 {
     std::uint16_t numLocals =
         m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
     std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().localVariablesGCMask.readScalar(*m_unwindFrame);
-    return llvm::ArrayRef<std::uint64_t>(mask, mask + numLocals);
+    return BitArrayRef<>(mask, numLocals);
 }
 
 llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getOperandStack() const
@@ -78,9 +78,9 @@ llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getOperandStack() 
     return llvm::MutableArrayRef<std::uint64_t>(operands, operands + numStack);
 }
 
-llvm::ArrayRef<std::uint64_t> jllvm::InterpreterFrame::getOperandStackGCMask() const
+jllvm::BitArrayRef<> jllvm::InterpreterFrame::getOperandStackGCMask() const
 {
     std::uint16_t numStack = *m_javaMethodMetadata->getInterpreterData().topOfStack.readScalar(*m_unwindFrame);
     std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().operandGCMask.readScalar(*m_unwindFrame);
-    return llvm::ArrayRef<std::uint64_t>(mask, mask + numStack);
+    return BitArrayRef<>(mask, numStack);
 }

@@ -9,7 +9,8 @@ add_executable(GCTests RootFreeListTests.cpp
 target_link_libraries(GCTests JLLVMGC Catch2::Catch2WithMain)
 catch_discover_tests(GCTests)
 
-add_executable(SupportTests NonOwningFrozenSetTests.cpp)
+add_executable(SupportTests NonOwningFrozenSetTests.cpp
+        BitArrayRefTests.cpp)
 target_link_libraries(SupportTests JLLVMSupport Catch2::Catch2WithMain)
 catch_discover_tests(SupportTests)
 
