@@ -255,7 +255,7 @@ const jllvm::Method* jllvm::ClassObject::methodResolution(llvm::StringRef method
 
     // Otherwise, if C has a superclass, step 2 of method resolution is
     // recursively invoked on the direct superclass of C.
-    if (const Method* iter = getMethod(methodName, methodType))
+    if (const Method* iter = getMethodSuper(methodName, methodType))
     {
         return iter;
     }
@@ -282,8 +282,7 @@ const jllvm::Method* jllvm::ClassObject::methodResolution(llvm::StringRef method
     for (const ClassObject* interface : getAllInterfaces())
     {
         if (const Method* method =
-                interface->getMethod(methodName, methodType,
-                                     [](const Method& method)
+                interface->getMethod(methodName, methodType, [](const Method& method)
                                      { return !method.isStatic() && method.getVisibility() != Visibility::Private; }))
         {
             return method;
@@ -308,10 +307,9 @@ const jllvm::Method* jllvm::ClassObject::interfaceMethodResolution(llvm::StringR
     // Otherwise, if the class Object declares a method with the name and descriptor specified by the
     // interface method reference, which has its ACC_PUBLIC flag set and does not have its ACC_STATIC flag
     // set, method lookup succeeds.
-
-    if (const Method* method = objectClass->getMethod(
-            methodName, methodType,
-            [](const Method& method) { return !method.isStatic() && method.getVisibility() == Visibility::Public; }))
+    if (const Method* method =
+            objectClass->getMethod(methodName, methodType, [](const Method& method)
+                                   { return !method.isStatic() && method.getVisibility() == Visibility::Public; }))
     {
         return method;
     }
@@ -323,6 +321,20 @@ const jllvm::Method* jllvm::ClassObject::interfaceMethodResolution(llvm::StringR
     {
         if (const Method* method =
                 interface->getMethod(methodName, methodType, std::not_fn(std::mem_fn(&Method::isAbstract))))
+        {
+            return method;
+        }
+    }
+
+    // Otherwise, if any superinterface of C declares a method with the name and descriptor specified by the method
+    // reference that has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set, one of these is arbitrarily chosen
+    // and method lookup succeeds.
+    for (const ClassObject* interface : getAllInterfaces())
+    {
+        const Method* method =
+            interface->getMethod(methodName, methodType, [](const Method& method)
+                                 { return !method.isStatic() && method.getVisibility() != Visibility::Private; });
+        if (method)
         {
             return method;
         }

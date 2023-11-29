@@ -564,10 +564,24 @@ public:
     /// The search is done within this class followed by searching through the super classes.
     /// Returns nullptr if no method was found.
     template <std::predicate<const Method&> P>
-    const Method* getMethod(llvm::StringRef name, MethodType type, P predicate) const;
+    const Method* getMethodSuper(llvm::StringRef name, MethodType type, P predicate) const;
 
     /// Returns the method with the given 'name' and 'type'.
     /// The search is done within this class followed by searching through the super classes.
+    /// Returns nullptr if no method was found.
+    const Method* getMethodSuper(llvm::StringRef name, MethodType type) const
+    {
+        return getMethodSuper(name, type, [](auto) { return true; });
+    }
+
+    /// Returns the method with the given 'name' and 'type' that matches the 'predicate'.
+    /// The search is done within this class only.
+    /// Returns nullptr if no method was found.
+    template <std::predicate<const Method&> P>
+    const Method* getMethod(llvm::StringRef name, MethodType type, P predicate) const;
+
+    /// Returns the method with the given 'name' and 'type'.
+    /// The search is done within this class only.
     /// Returns nullptr if no method was found.
     const Method* getMethod(llvm::StringRef name, MethodType type) const
     {
@@ -969,16 +983,26 @@ inline auto jllvm::ClassObject::maximallySpecificInterfaces() const
 }
 
 template <std::predicate<const jllvm::Method&> P>
-const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, MethodType type, P predicate) const
+const jllvm::Method* jllvm::ClassObject::getMethodSuper(llvm::StringRef name, MethodType type, P predicate) const
 {
     for (const ClassObject* curr : getSuperClasses())
     {
-        const NonOwningFrozenSet<Method>& methods = curr->getMethods();
-        const Method* iter = methods.find(std::pair{name, type});
-        if (iter != methods.end() && std::invoke(predicate, *iter))
+        if (const Method* result = curr->getMethod(name, type, predicate))
         {
-            return iter;
+            return result;
         }
+    }
+    return nullptr;
+}
+
+template <std::predicate<const jllvm::Method&> P>
+const jllvm::Method* jllvm::ClassObject::getMethod(llvm::StringRef name, MethodType type, P predicate) const
+{
+    const NonOwningFrozenSet<Method>& methods = getMethods();
+    const Method* iter = methods.find(std::pair{name, type});
+    if (iter != methods.end() && std::invoke(predicate, *iter))
+    {
+        return iter;
     }
     return nullptr;
 }
