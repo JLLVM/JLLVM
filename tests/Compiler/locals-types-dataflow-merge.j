@@ -21,7 +21,7 @@
 .method public static native random()I
 .end method
 
-; CHECK-LABEL: define void @"Test.test:()V"
+; CHECK-LABEL: define void @"LTest;.test:()V"
 .method public static test()V
     .limit stack 2
     .limit locals 2
@@ -41,7 +41,7 @@ end:
 
 handler:
     ; Dataflow algorithm should have determined that the second local has an inconsistent type.
-    ; CHECK: call void @"Static Call to Test.deopt:()V"
+    ; CHECK: call void @"Static Call to LTest;.deopt:()V"
     ; CHECK-SAME: "deopt"(i16 {{[0-9]+}}, i16 2, i32 {{.*}}, i8 poison, i64 0)
     invokestatic Test/deopt()V
     return

@@ -20,7 +20,7 @@
 .method public static native print(I)V
 .end method
 
-; CHECK-LABEL: define i32 @"Test.test:(I)I
+; CHECK-LABEL: define i32 @"LTest;.test:(I)I
 ; ENTRY-SAME: $0"
 ; LOOP-SAME: $16"
 ; EXC-SAME: $29"
@@ -51,11 +51,11 @@
 ; ENTRY: br label %[[ENTRY:[[:alnum:]]+]]
 
 ; ENTRY: [[ENTRY]]:
-; ENTRY: call void @"Static Call to Test.foo:()V"()
+; ENTRY: call void @"Static Call to LTest;.foo:()V"()
 
 ; LOOP: br label %[[LOOP_HEADER:[[:alnum:]]+]]
 
-; LOOP-NOT: call void @"Static Call to Test.foo:()V"
+; LOOP-NOT: call void @"Static Call to LTest;.foo:()V"
 
 ; EXC: br label %[[THROW_CODE:[[:alnum:]]+]]
 
@@ -71,7 +71,7 @@ L15:
 
 ; LOOP: [[LOOP_HEADER]]:
 ; LOOP-NEXT: %[[ARG:.*]] = load i32, ptr %[[OP0]]
-; LOOP: call void @"Static Call to Test.bar:(I)V"(
+; LOOP: call void @"Static Call to LTest;.bar:(I)V"(
 ; LOOP-SAME: i32{{.*}}%[[ARG]]
 ; LOOP-SAME: )
 

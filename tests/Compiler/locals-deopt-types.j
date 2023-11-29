@@ -15,7 +15,7 @@
 .method public static native print(I)V
 .end method
 
-; CHECK-LABEL: define void @"Test.test:()V"
+; CHECK-LABEL: define void @"LTest;.test:()V"
 .method public static test()V
     .limit stack 2
     .limit locals 7
@@ -33,7 +33,7 @@
     iconst_0
     ; CHECK: %[[BITCAST_F32:.*]] = bitcast float %{{.*}} to i32
     ; CHECK: %[[BITCAST_F64:.*]] = bitcast double %{{.*}} to i64
-    ; CHECK: call void @"Static Call to Test.print:(I)V"
+    ; CHECK: call void @"Static Call to LTest;.print:(I)V"
     ; CHECK-SAME: "deopt"(i16 {{[0-9]+}}, i16 7, i32 %{{.*}}, i64 %{{.*}}, i8 poison, i32 %[[BITCAST_F32]], ptr addrspace(1) %{{.*}}, i64 %[[BITCAST_F64]], i8 poison, i64 16)
 start:
     invokestatic Test/print(I)V

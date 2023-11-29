@@ -393,9 +393,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             auto* type = match(
                 operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
-                [&](AALoad) -> llvm::Type* { return referenceType(m_builder.getContext()); },
-                [&](BALoad) { return m_builder.getInt8Ty(); },
-                [&](OneOf<CALoad, SALoad>) { return m_builder.getInt16Ty(); },
+                [&](AALoad) -> llvm::Type* { return referenceType(m_builder.getContext()); }, [&](BALoad)
+                { return m_builder.getInt8Ty(); }, [&](OneOf<CALoad, SALoad>) { return m_builder.getInt16Ty(); },
                 [&](DALoad) { return m_builder.getDoubleTy(); }, [&](FALoad) { return m_builder.getFloatTy(); },
                 [&](IALoad) { return m_builder.getInt32Ty(); }, [&](LALoad) { return m_builder.getInt64Ty(); });
 
@@ -420,9 +419,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](OneOf<AAStore, BAStore, CAStore, DAStore, FAStore, IAStore, LAStore, SAStore>)
         {
             auto* type = match(
-                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); },
-                [&](AAStore) { return referenceType(m_builder.getContext()); },
-                [&](BAStore) { return m_builder.getInt8Ty(); },
+                operation, [](...) -> llvm::Type* { llvm_unreachable("Invalid array load operation"); }, [&](AAStore)
+                { return referenceType(m_builder.getContext()); }, [&](BAStore) { return m_builder.getInt8Ty(); },
                 [&](OneOf<CAStore, SAStore>) { return m_builder.getInt16Ty(); },
                 [&](DAStore) { return m_builder.getDoubleTy(); }, [&](FAStore) { return m_builder.getFloatTy(); },
                 [&](IAStore) { return m_builder.getInt32Ty(); }, [&](LAStore) { return m_builder.getInt64Ty(); });
@@ -438,8 +436,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* gep = m_builder.CreateGEP(arrayStructType(type), array,
                                                    {m_builder.getInt32(0), m_builder.getInt32(2), index});
             match(
-                operation, [](...) {},
-                [&, arrayType = type](OneOf<BAStore, CAStore, SAStore>)
+                operation, [](...) {}, [&, arrayType = type](OneOf<BAStore, CAStore, SAStore>)
                 { value = m_builder.CreateTrunc(value, arrayType); });
 
             m_builder.CreateStore(value, gep);
@@ -1022,7 +1019,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             generateNullPointerCheck(getOffset(operation), args[0]);
 
-            llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
+            FieldType classDescriptor = getClassObjectDescriptorFromPool(refInfo->classIndex);
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             MethodType methodType(
@@ -1034,11 +1031,11 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* call;
             if (holds_alternative<InvokeSpecial>(operation))
             {
-                call = doSpecialCall(getOffset(operation), className, methodName, methodType, args);
+                call = doSpecialCall(getOffset(operation), classDescriptor, methodName, methodType, args);
             }
             else
             {
-                call = doInstanceCall(getOffset(operation), className, methodName, methodType, args,
+                call = doInstanceCall(getOffset(operation), classDescriptor, methodName, methodType, args,
                                       match(
                                           operation, [](...) -> MethodResolution { llvm_unreachable("unexpected op"); },
                                           [](InvokeInterface) { return MethodResolution::Interface; },
@@ -1063,7 +1060,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 iter = m_operandStack.pop_back();
             }
 
-            llvm::StringRef className = refInfo->classIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
+            FieldType classDescriptor = getClassObjectDescriptorFromPool(refInfo->classIndex);
             llvm::StringRef methodName =
                 refInfo->nameAndTypeIndex.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
             MethodType methodType(
@@ -1072,7 +1069,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::FunctionType* functionType = descriptorToType(descriptor, true, m_builder.getContext());
             prepareArgumentsForCall(m_builder, args, functionType);
 
-            llvm::Value* call = doStaticCall(getOffset(operation), className, methodName, methodType, args);
+            llvm::Value* call = doStaticCall(getOffset(operation), classDescriptor, methodName, methodType, args);
 
             if (descriptor.returnType() != BaseType(BaseType::Void))
             {
@@ -1144,10 +1141,8 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 pool{ldc.index};
 
             match(
-                pool.resolve(m_classFile),
-                [&](const IntegerInfo* integerInfo)
-                { m_operandStack.push_back(m_builder.getInt32(integerInfo->value)); },
-                [&](const FloatInfo* floatInfo)
+                pool.resolve(m_classFile), [&](const IntegerInfo* integerInfo)
+                { m_operandStack.push_back(m_builder.getInt32(integerInfo->value)); }, [&](const FloatInfo* floatInfo)
                 { m_operandStack.push_back(llvm::ConstantFP::get(m_builder.getFloatTy(), floatInfo->value)); },
                 [&](const LongInfo* longInfo) { m_operandStack.push_back(m_builder.getInt64(longInfo->value)); },
                 [&](const DoubleInfo* doubleInfo)
@@ -1587,17 +1582,22 @@ void CodeGenerator::generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::V
     m_builder.CreateUnreachable();
 }
 
-llvm::Value* CodeGenerator::loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index)
+jllvm::FieldType CodeGenerator::getClassObjectDescriptorFromPool(PoolIndex<ClassInfo> index)
 {
     llvm::StringRef className = index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
     if (className.front() == '[')
     {
         // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
         // just the name of the class. Hence, these two cases.
-        return getClassObject(offset, FieldType(className));
+        return FieldType(className);
     }
 
-    return getClassObject(offset, ObjectType(className));
+    return ObjectType(className);
+}
+
+llvm::Value* CodeGenerator::loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index)
+{
+    return getClassObject(offset, getClassObjectDescriptorFromPool(index));
 }
 
 llvm::Value* CodeGenerator::generateAllocArray(std::uint16_t offset, ArrayType descriptor, llvm::Value* classObject,
@@ -1632,13 +1632,13 @@ llvm::Value* CodeGenerator::generateAllocArray(std::uint16_t offset, ArrayType d
     return array;
 }
 
-llvm::Value* CodeGenerator::doStaticCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+llvm::Value* CodeGenerator::doStaticCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                                          MethodType methodType, llvm::ArrayRef<llvm::Value*> args)
 {
     llvm::Module* module = m_builder.GetInsertBlock()->getModule();
     llvm::FunctionType* functionType = descriptorToType(methodType, /*isStatic=*/true, m_builder.getContext());
     llvm::FunctionCallee function =
-        module->getOrInsertFunction(mangleStaticCall(className, methodName, methodType), functionType);
+        module->getOrInsertFunction(mangleStaticCall(classDescriptor, methodName, methodType), functionType);
     applyABIAttributes(llvm::cast<llvm::Function>(function.getCallee()), methodType, /*isStatic=*/true);
     llvm::CallBase* call = m_builder.CreateCall(function, args);
     applyABIAttributes(call, methodType, /*isStatic=*/true);
@@ -1646,14 +1646,14 @@ llvm::Value* CodeGenerator::doStaticCall(std::uint16_t offset, llvm::StringRef c
     return call;
 }
 
-llvm::Value* CodeGenerator::doInstanceCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+llvm::Value* CodeGenerator::doInstanceCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                                            MethodType methodType, llvm::ArrayRef<llvm::Value*> args,
                                            MethodResolution resolution)
 {
     llvm::Module* module = m_builder.GetInsertBlock()->getModule();
     llvm::FunctionType* functionType = descriptorToType(methodType, /*isStatic=*/false, m_builder.getContext());
     llvm::FunctionCallee function = module->getOrInsertFunction(
-        mangleMethodResolutionCall(resolution, className, methodName, methodType), functionType);
+        mangleMethodResolutionCall(resolution, classDescriptor, methodName, methodType), functionType);
     applyABIAttributes(llvm::cast<llvm::Function>(function.getCallee()), methodType, /*isStatic=*/false);
     llvm::CallBase* call = m_builder.CreateCall(function, args);
     applyABIAttributes(call, methodType, /*isStatic=*/false);
@@ -1661,13 +1661,13 @@ llvm::Value* CodeGenerator::doInstanceCall(std::uint16_t offset, llvm::StringRef
     return call;
 }
 
-llvm::Value* CodeGenerator::doSpecialCall(std::uint16_t offset, llvm::StringRef className, llvm::StringRef methodName,
+llvm::Value* CodeGenerator::doSpecialCall(std::uint16_t offset, FieldType classDescriptor, llvm::StringRef methodName,
                                           MethodType methodType, llvm::ArrayRef<llvm::Value*> args)
 {
     llvm::Module* module = m_builder.GetInsertBlock()->getModule();
     llvm::FunctionType* functionType = descriptorToType(methodType, /*isStatic=*/false, m_builder.getContext());
     llvm::FunctionCallee function =
-        module->getOrInsertFunction(mangleSpecialMethodCall(className, methodName, methodType,
+        module->getOrInsertFunction(mangleSpecialMethodCall(classDescriptor, methodName, methodType,
                                                             m_classFile.hasSuperFlag() ? m_classObject.getDescriptor() :
                                                                                          std::optional<FieldType>{}),
                                     functionType);

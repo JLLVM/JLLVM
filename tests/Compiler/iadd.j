@@ -15,7 +15,7 @@
 .method public static native print(I)V
 .end method
 
-; CHECK-LABEL: define void @"Test.test:()V"
+; CHECK-LABEL: define void @"LTest;.test:()V"
 .method public static test()V
     ; CHECK: %[[OP0:.*]] = alloca
     ; CHECK: %[[OP1:.*]] = alloca

@@ -41,19 +41,19 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
         { generateClassObjectAccessStub(*module, demangledLoadClassObject.classObject); },
         [&](const DemangledStaticCall& staticCall)
         {
-            ClassObject& classObject = classLoader.forName(ObjectType(staticCall.className));
+            ClassObject& classObject = classLoader.forName(staticCall.classDescriptor);
             generateStaticCallStub(*module, classObject, staticCall.methodName, staticCall.descriptor, *objectClass);
         },
         [&](const DemangledMethodResolutionCall& methodResolutionCall)
         {
-            ClassObject& classObject = classLoader.forName(ObjectType(methodResolutionCall.className));
+            ClassObject& classObject = classLoader.forName(methodResolutionCall.classDescriptor);
             generateMethodResolutionCallStub(*module, methodResolutionCall.resolution, classObject,
                                              methodResolutionCall.methodName, methodResolutionCall.descriptor,
                                              *objectClass);
         },
         [&](const DemangledSpecialCall& specialCall)
         {
-            ClassObject& classObject = classLoader.forName(ObjectType(specialCall.className));
+            ClassObject& classObject = classLoader.forName(specialCall.classDescriptor);
             ClassObject* callerClass = nullptr;
             if (specialCall.callerClass)
             {
