@@ -82,13 +82,25 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
         {
             // Initialize the operand stack and the local variables from the two input arrays. Using the type info from
             // the type checker, it is possible to load the exact types required.
-            for (auto&& [index, type] : llvm::enumerate(typeInfo.operandStack))
             {
-                assert(type.is<llvm::Type*>()
-                       && "OSR into frame containing 'returnAddress' instances is not supported");
-                llvm::Value* gep = builder.CreateConstGEP1_32(operandStackInput->getType(), operandStackInput, index);
-                llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
-                operandStack.push_back(load);
+                std::size_t index = 0;
+                for (ByteCodeTypeChecker::JVMType type : typeInfo.operandStack)
+                {
+                    assert(type.is<llvm::Type*>()
+                           && "OSR into frame containing 'returnAddress' instances is not supported");
+                    llvm::Value* gep =
+                        builder.CreateConstGEP1_32(operandStackInput->getType(), operandStackInput, index++);
+                    auto* llvmType = type.get<llvm::Type*>();
+                    llvm::Value* load = builder.CreateLoad(llvmType, gep);
+                    operandStack.push_back(load);
+                    // Double and long take up two operand stack slots. Skip over the second. The first already
+                    // contained the value.
+                    if (llvmType->isDoubleTy() || llvmType->isIntegerTy(64))
+                    {
+                        index++;
+                        continue;
+                    }
+                }
             }
 
             for (auto&& [index, pair] : llvm::enumerate(llvm::zip(typeInfo.locals, locals)))

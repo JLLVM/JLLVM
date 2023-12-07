@@ -170,4 +170,69 @@ struct OneOf : detail::MechanismForBase<Args...>::Base
     }
 };
 
+/// Satisfied when 'T' is a load operation.
+template <class T>
+concept IsLoad = llvm::is_one_of<T, ILoad, ALoad, FLoad, DLoad, LLoad>::value;
+
+/// Satisfied when 'T' is a load0 operation.
+template <class T>
+concept IsLoad0 = llvm::is_one_of<T, ILoad0, ALoad0, FLoad0, DLoad0, LLoad0>::value;
+
+/// Satisfied when 'T' is a load1 operation.
+template <class T>
+concept IsLoad1 = llvm::is_one_of<T, ILoad1, ALoad1, FLoad1, DLoad1, LLoad1>::value;
+
+/// Satisfied when 'T' is a load2 operation.
+template <class T>
+concept IsLoad2 = llvm::is_one_of<T, ILoad2, ALoad2, FLoad2, DLoad2, LLoad2>::value;
+
+/// Satisfied when 'T' is a load3 operation.
+template <class T>
+concept IsLoad3 = llvm::is_one_of<T, ILoad3, ALoad3, FLoad3, DLoad3, LLoad3>::value;
+
+/// Satisfied when 'T' is a store operation.
+template <class T>
+concept IsStore = llvm::is_one_of<T, IStore, AStore, FStore, DStore, LStore>::value;
+
+/// Satisfied when 'T' is a store0 operation.
+template <class T>
+concept IsStore0 = llvm::is_one_of<T, IStore0, AStore0, FStore0, DStore0, LStore0>::value;
+
+/// Satisfied when 'T' is a store1 operation.
+template <class T>
+concept IsStore1 = llvm::is_one_of<T, IStore1, AStore1, FStore1, DStore1, LStore1>::value;
+
+/// Satisfied when 'T' is a store2 operation.
+template <class T>
+concept IsStore2 = llvm::is_one_of<T, IStore2, AStore2, FStore2, DStore2, LStore2>::value;
+
+/// Satisfied when 'T' is a store3 operation.
+template <class T>
+concept IsStore3 = llvm::is_one_of<T, IStore3, AStore3, FStore3, DStore3, LStore3>::value;
+
+/// Satisfied when 'T' operates on 'int' operands.
+template <class T>
+concept OperatesOnIntegers =
+    llvm::is_one_of<T, ILoad, ILoad0, ILoad1, ILoad2, ILoad3, IStore, IStore0, IStore1, IStore2, IStore3>::value;
+
+/// Satisfied when 'T' operates on reference operands.
+template <class T>
+concept OperatesOnReferences =
+    llvm::is_one_of<T, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, AStore, AStore0, AStore1, AStore2, AStore3>::value;
+
+/// Satisfied when 'T' operates on 'float' operands.
+template <class T>
+concept OperatesOnFloat =
+    llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2, FStore3>::value;
+
+/// Satisfied when 'T' operates on 'double' operands.
+template <class T>
+concept OperatesOnDouble =
+    llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2, DStore3>::value;
+
+/// Satisfied when 'T' operates on 'long' operands.
+template <class T>
+concept OperatesOnLong =
+    llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2, LStore3>::value;
+
 } // namespace jllvm

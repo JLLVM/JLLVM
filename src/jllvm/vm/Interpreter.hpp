@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/support/BitArrayRef.hpp>
 
@@ -23,14 +24,16 @@ namespace jllvm
 
 class VirtualMachine;
 
+/// Types that are class2 java types.
+template <class T>
+concept InterpreterClass2 = llvm::is_one_of<T, std::int64_t, std::uint64_t, double>::value;
+
 /// Possible primitive types of values in the interpreter. Note that this includes both signed and unsigned variants
 /// of integer types as the most suitable variant is dependent on the operation. E.g. if wraparound semantics are
 /// desirable, doing calculations with unsigned type should be done to avoid undefined behaviour in C++.
 /// Signed integer types can be assumed to be two's complement.
 template <class T>
-concept InterpreterPrimitive =
-    std::same_as<T, std::int32_t> || std::same_as<T, std::int64_t> || std::same_as<T, std::uint32_t>
-    || std::same_as<T, std::uint64_t> || std::same_as<T, float> || std::same_as<T, double>;
+concept InterpreterPrimitive = llvm::is_one_of<T, std::int32_t, std::uint32_t, float>::value || InterpreterClass2<T>;
 
 /// Possible types of values in the interpreter. These are all the primitive types with the addition of pointers to
 /// Java objects (references).
@@ -86,12 +89,22 @@ public:
         std::memcpy(m_operandStack + m_topOfStack, &value, sizeof(T));
         setMaskBit(m_operandGCMask, m_topOfStack, isReference<T>());
         m_topOfStack++;
+        if constexpr (InterpreterClass2<T>)
+        {
+            // "overwrite" the operand stack after as well.
+            setMaskBit(m_operandGCMask, m_topOfStack, isReference<T>());
+            m_topOfStack++;
+        }
     }
 
     /// Pops the top value of type 'T' from the operand stack.
     template <InterpreterValue T>
     T pop()
     {
+        if constexpr (InterpreterClass2<T>)
+        {
+            m_topOfStack--;
+        }
         assert(m_topOfStack != 0 && "bottom of stack already reached");
         T result;
         m_topOfStack--;
@@ -105,6 +118,11 @@ public:
     {
         std::memcpy(m_localVariables + index, &value, sizeof(T));
         setMaskBit(m_localVariableGCMask, index, isReference<T>());
+        if constexpr (InterpreterClass2<T>)
+        {
+            // overwrite local variable after.
+            setMaskBit(m_localVariableGCMask, index + 1, isReference<T>());
+        }
     }
 
     /// Gets the value of the local 'index' and interprets it as 'T'.
