@@ -355,7 +355,7 @@ void jllvm::GarbageCollector::addStackMapEntries(std::uintptr_t addr, llvm::Arra
     }
     auto& vec = m_entries[addr];
     auto iter = vec.insert(vec.end(), entries.begin(), entries.end());
-    // Entries where the locations of the frame value are identical are relocations for the base pointers. These must
+    // Entries where the locations of the frame values are identical are relocations for the base pointers. These must
     // be moved AFTER all derived pointers, which is achieved by partitioning the range of values newly inserted.
     // Not doing so leads to issues as the base pointer may be relocated prior to the derived pointer. Later reading
     // the base pointer would 1) lead to not finding a relocation mapping for the already relocated base pointer and

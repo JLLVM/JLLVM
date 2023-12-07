@@ -204,7 +204,7 @@ protected:
                 case Tag::Direct: return direct == rhs.direct;
                 case Tag::Indirect: return indirect == rhs.indirect;
             }
-            llvm_unreachable("should not eb possible");
+            llvm_unreachable("should not be possible");
         }
     } m_union{};
 
