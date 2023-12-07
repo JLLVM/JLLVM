@@ -140,12 +140,16 @@ protected:
     struct TagOnly
     {
         Tag tag;
+
+        bool operator==(const TagOnly&) const = default;
     };
 
     struct Constant
     {
         Tag tag;
         std::uint64_t constant;
+
+        bool operator==(const Constant&) const = default;
     };
 
     struct Register
@@ -153,6 +157,8 @@ protected:
         Tag tag;
         /// Dwarf register number of the register containing the value.
         int registerNumber;
+
+        bool operator==(const Register&) const = default;
     };
 
     struct Direct
@@ -161,6 +167,8 @@ protected:
         /// Dwarf register number of the register containing the frame pointer.
         int registerNumber;
         std::int32_t offset;
+
+        bool operator==(const Direct&) const = default;
     };
 
     struct Indirect
@@ -170,9 +178,11 @@ protected:
         /// Dwarf register number of the register containing the frame pointer.
         int registerNumber;
         std::int32_t offset;
+
+        bool operator==(const Indirect&) const = default;
     };
 
-    union
+    union FrameValueUnion
     {
         // The first union member is used when default initializing. This initializes it to a constant with 0 as value.
         Constant constant{};
@@ -180,7 +190,26 @@ protected:
         Register inRegister;
         Direct direct;
         Indirect indirect;
+
+        bool operator==(const FrameValueUnion& rhs) const
+        {
+            if (accessTag.tag != rhs.accessTag.tag)
+            {
+                return false;
+            }
+            switch (accessTag.tag)
+            {
+                case Tag::Constant: return constant == rhs.constant;
+                case Tag::Register: return inRegister == rhs.inRegister;
+                case Tag::Direct: return direct == rhs.direct;
+                case Tag::Indirect: return indirect == rhs.indirect;
+            }
+            llvm_unreachable("should not eb possible");
+        }
     } m_union{};
+
+    template <class U>
+    friend class FrameValue;
 
 public:
     FrameValue() = default;
@@ -266,6 +295,17 @@ public:
                                             + m_union.indirect.offset);
         std::memcpy(vector.data(), ptr, m_union.indirect.size);
     }
+
+    /// Returns true if the two frame values refer to the same location.
+    template <class U>
+    bool operator==(const FrameValue<U>& rhs) const
+    {
+        // Workaround 'm_union' of both values technically being different types.
+        // Since they're trivially copyable and identical in layout we can just memcpy one to the other.
+        decltype(m_union) copy;
+        std::memcpy(&copy, &rhs.m_union, sizeof(m_union));
+        return m_union == copy;
+    }
 };
 
 /// Extension of 'FrameValue' that is additionally capable of writing to the location of the frame value.
@@ -312,6 +352,13 @@ public:
             }
             default: llvm_unreachable("invalid tag for writeable frame value");
         }
+    }
+
+    /// Returns true if the two frame values refer to the same location.
+    template <class U>
+    bool operator==(const WriteableFrameValue<U>& rhs) const
+    {
+        return static_cast<const Base&>(*this) == rhs;
     }
 };
 
