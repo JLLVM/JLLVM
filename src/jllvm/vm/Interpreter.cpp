@@ -59,6 +59,123 @@ void jllvm::Interpreter::escapeToJIT()
     llvm_unreachable("not possible");
 }
 
+namespace
+{
+
+using namespace jllvm;
+
+/// Mapping of instruction 'T' to the type it operates on.
+template <class T>
+struct InstructionElementType;
+
+template <OperatesOnReferences T>
+struct InstructionElementType<T>
+{
+    using type = ObjectInterface*;
+};
+
+template <OperatesOnIntegers T>
+struct InstructionElementType<T>
+{
+    using type = std::uint32_t;
+};
+
+template <OperatesOnFloat T>
+struct InstructionElementType<T>
+{
+    using type = float;
+};
+
+template <OperatesOnLong T>
+struct InstructionElementType<T>
+{
+    using type = std::uint64_t;
+};
+
+template <OperatesOnDouble T>
+struct InstructionElementType<T>
+{
+    using type = double;
+};
+
+/// Struct used to implement instructions with generic implementations parameterized on their operand types.
+struct MultiTypeImpls
+{
+    InterpreterContext& context;
+
+    template <IsLoad T>
+    NextPC operator()(T load) const
+    {
+        context.push(context.getLocal<typename InstructionElementType<T>::type>(load.index));
+        return {};
+    }
+
+    template <IsLoad0 T>
+    NextPC operator()(T) const
+    {
+        context.push(context.getLocal<typename InstructionElementType<T>::type>(0));
+        return {};
+    }
+
+    template <IsLoad1 T>
+    NextPC operator()(T) const
+    {
+        context.push(context.getLocal<typename InstructionElementType<T>::type>(1));
+        return {};
+    }
+
+    template <IsLoad2 T>
+    NextPC operator()(T) const
+    {
+        context.push(context.getLocal<typename InstructionElementType<T>::type>(2));
+        return {};
+    }
+
+    template <IsLoad3 T>
+    NextPC operator()(T) const
+    {
+        context.push(context.getLocal<typename InstructionElementType<T>::type>(3));
+        return {};
+    }
+
+    template <IsStore T>
+    NextPC operator()(T store) const
+    {
+        context.setLocal(store.index, context.pop<typename InstructionElementType<T>::type>());
+        return {};
+    }
+
+    template <IsStore0 T>
+    NextPC operator()(T) const
+    {
+        context.setLocal(0, context.pop<typename InstructionElementType<T>::type>());
+        return {};
+    }
+
+    template <IsStore1 T>
+    NextPC operator()(T) const
+    {
+        context.setLocal(1, context.pop<typename InstructionElementType<T>::type>());
+        return {};
+    }
+
+    template <IsStore2 T>
+    NextPC operator()(T) const
+    {
+        context.setLocal(2, context.pop<typename InstructionElementType<T>::type>());
+        return {};
+    }
+
+    template <IsStore3 T>
+    NextPC operator()(T) const
+    {
+        context.setLocal(3, context.pop<typename InstructionElementType<T>::type>());
+        return {};
+    }
+};
+
+} // namespace
+
 std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint16_t& offset,
                                                 InterpreterContext& context)
 {
@@ -75,7 +192,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
         // Update the current offset to the new instruction.
         offset = curr.getOffset();
         InstructionResult result = match(
-            *curr,
+            *curr, MultiTypeImpls{context},
             [&](IAdd)
             {
                 auto lhs = context.pop<std::uint32_t>();
@@ -118,57 +235,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::int32_t>(-1);
                 return NextPC{};
             },
-            [&](ILoad0)
-            {
-                context.push(context.getLocal<std::int32_t>(0));
-                return NextPC{};
-            },
-            [&](ILoad1)
-            {
-                context.push(context.getLocal<std::int32_t>(1));
-                return NextPC{};
-            },
-            [&](ILoad2)
-            {
-                context.push(context.getLocal<std::int32_t>(2));
-                return NextPC{};
-            },
-            [&](ILoad3)
-            {
-                context.push(context.getLocal<std::int32_t>(3));
-                return NextPC{};
-            },
-            [&](ILoad iLoad)
-            {
-                context.push(context.getLocal<std::int32_t>(iLoad.index));
-                return NextPC{};
-            },
             [&](IReturn) { return ReturnValue(context.pop<std::uint32_t>()); },
-            [&](IStore0)
-            {
-                context.setLocal(0, context.pop<std::int32_t>());
-                return NextPC{};
-            },
-            [&](IStore1)
-            {
-                context.setLocal(1, context.pop<std::int32_t>());
-                return NextPC{};
-            },
-            [&](IStore2)
-            {
-                context.setLocal(2, context.pop<std::int32_t>());
-                return NextPC{};
-            },
-            [&](IStore3)
-            {
-                context.setLocal(3, context.pop<std::int32_t>());
-                return NextPC{};
-            },
-            [&](IStore iStore)
-            {
-                context.setLocal(iStore.index, context.pop<std::int32_t>());
-                return NextPC{};
-            },
             [&](LDC ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,

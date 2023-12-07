@@ -93,6 +93,9 @@ public:
     /// Reads out the values of the operand stack at the current bytecode offset.
     /// This method will always return an empty array in following scenarios:
     /// * If the method being executed is not being executed by the interpreter.
+    ///
+    /// Note that 'double' and 'long' occupy two slots in the operand stack array where the first contains the value
+    /// and the second an unspecified value.
     llvm::ArrayRef<std::uint64_t> readOperandStack() const;
 };
 
