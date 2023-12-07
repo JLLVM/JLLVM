@@ -262,7 +262,7 @@ void jllvm::applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool
 
 llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, llvm::LLVMContext& context)
 {
-    auto* pointerType = llvm::PointerType::get(context, 0);
-    return llvm::FunctionType::get(descriptorToType(methodType.returnType(), context), {pointerType, pointerType},
+    return llvm::FunctionType::get(descriptorToType(methodType.returnType(), context),
+                                   {llvm::PointerType::get(context, 0)},
                                    /*isVarArg=*/false);
 }

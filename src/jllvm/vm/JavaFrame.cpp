@@ -44,17 +44,6 @@ llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocals() const
     llvm_unreachable("invalid kind");
 }
 
-llvm::ArrayRef<std::uint64_t> jllvm::JavaFrame::readOperandStack() const
-{
-    switch (m_javaMethodMetadata->getKind())
-    {
-        case JavaMethodMetadata::Kind::JIT:
-        case JavaMethodMetadata::Kind::Native: return {};
-        case JavaMethodMetadata::Kind::Interpreter: return llvm::cast<InterpreterFrame>(*this).getOperandStack();
-    }
-    llvm_unreachable("invalid kind");
-}
-
 llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocals() const
 {
     std::uint16_t numLocals =

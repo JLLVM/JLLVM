@@ -55,7 +55,8 @@ jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFil
 void jllvm::Interpreter::escapeToJIT()
 {
     m_virtualMachine.unwindJavaStack(
-        [&](JavaFrame frame) { m_virtualMachine.getJIT().doI2JOnStackReplacement(frame, *frame.getByteCodeOffset()); });
+        [&](JavaFrame frame)
+        { m_virtualMachine.getJIT().doI2JOnStackReplacement(llvm::cast<InterpreterFrame>(frame)); });
     llvm_unreachable("not possible");
 }
 

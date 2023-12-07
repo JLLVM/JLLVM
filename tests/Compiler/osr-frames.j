@@ -24,8 +24,7 @@
 ; ENTRY-SAME: $0"
 ; LOOP-SAME: $16"
 ; EXC-SAME: $29"
-; CHECK-SAME: ptr %[[OPERANDS:[[:alnum:]]+]]
-; CHECK-SAME: ptr %[[LOCALS:[[:alnum:]]+]]
+; CHECK-SAME: ptr %[[OSR_STATE:[[:alnum:]]+]]
 .method public static test(I)I
 ; CHECK: %[[OP0:.*]] = alloca ptr
 ; CHECK: %[[LOCAL0:.*]] = alloca ptr
@@ -37,16 +36,16 @@
 ; Entry has just one local.
 ; Exc has two locals and no operands on the stack.
 
-; LOOP: %[[GEP:.*]] = getelementptr ptr, ptr %[[OPERANDS]], i32 0
-; LOOP: %[[LOAD:.*]] = load i32, ptr %[[GEP]]
-; LOOP: store i32 %[[LOAD]], ptr %[[OP0]]
-; CHECK: %[[GEP:.*]] = getelementptr ptr, ptr %[[LOCALS]], i32 0
+; CHECK: %[[GEP:.*]] = getelementptr i64, ptr %[[OSR_STATE]], i32 0
 ; CHECK: %[[LOAD:.*]] = load i32, ptr %[[GEP]]
 ; CHECK: store i32 %[[LOAD]], ptr %[[LOCAL0]]
-; EXC: %[[GEP:.*]] = getelementptr ptr, ptr %[[LOCALS]], i32 1
+; EXC: %[[GEP:.*]] = getelementptr i64, ptr %[[OSR_STATE]], i32 1
 ; EXC: %[[LOAD:.*]] = load ptr addrspace(1), ptr %[[GEP]]
 ; EXC: store ptr addrspace(1) %[[LOAD]], ptr %[[LOCAL1]]
-; CHECK: call void @jllvm_osr_frame_delete(ptr %[[OPERANDS]])
+; LOOP: %[[GEP:.*]] = getelementptr i64, ptr %[[OSR_STATE]], i32 2
+; LOOP: %[[LOAD:.*]] = load i32, ptr %[[GEP]]
+; LOOP: store i32 %[[LOAD]], ptr %[[OP0]]
+; CHECK: call void @jllvm_osr_frame_delete(ptr %[[OSR_STATE]])
 
 ; Entry continues to start of bytecode as usual.
 ; ENTRY: br label %[[ENTRY:[[:alnum:]]+]]

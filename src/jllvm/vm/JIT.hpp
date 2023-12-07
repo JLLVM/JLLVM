@@ -40,6 +40,7 @@
 #include <memory>
 
 #include "JavaFrame.hpp"
+#include "OSRState.hpp"
 
 namespace jllvm
 {
@@ -184,15 +185,17 @@ public:
     }
 
     /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
-    /// method at the JVM bytecode corresponding to 'byteCodeOffset'. This method is meant to be used for executing
-    /// exception handlers and therefore puts only 'exception' on the operand stack.
-    /// 'frame' must be the execution of a Java method.
-    [[noreturn]] void doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset,
-                                                    Throwable* exception);
+    /// method. The abstract machine state of the new execution is initialized with 'state'.
+    [[noreturn]] void doOnStackReplacement(JavaFrame frame, OSRState&& state);
 
     /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
-    /// method at the JVM bytecode corresponding to 'byteCodeOffset'.
-    [[noreturn]] void doI2JOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset);
+    /// method. This method is meant to be used for executing exception handlers and therefore puts only 'exception'
+    /// on the operand stack. 'frame' must be the execution of a Java method.
+    [[noreturn]] void doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t handlerOffset, Throwable* exception);
+
+    /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
+    /// method.
+    [[noreturn]] void doI2JOnStackReplacement(InterpreterFrame frame);
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
     /// returning a pointer to the function if successful or an error otherwise.

@@ -89,14 +89,6 @@ public:
     /// * If the method being executed is native and therefore does not have local variables
     /// * If no exception handler exists for a bytecode offset within a JITted method.
     llvm::SmallVector<std::uint64_t> readLocals() const;
-
-    /// Reads out the values of the operand stack at the current bytecode offset.
-    /// This method will always return an empty array in following scenarios:
-    /// * If the method being executed is not being executed by the interpreter.
-    ///
-    /// Note that 'double' and 'long' occupy two slots in the operand stack array where the first contains the value
-    /// and the second an unspecified value.
-    llvm::ArrayRef<std::uint64_t> readOperandStack() const;
 };
 
 /// Specialization of 'JavaFrame' for interpreter frames. This contains all methods specific to interpreter frames.
