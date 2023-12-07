@@ -33,7 +33,7 @@
     .limit locals 1
     iconst_0
     ; EXCEPT: call void @"Static Call to Test.print:(I)V"
-    ; EXCEPT-SAME: "deopt"(i16 1, i16 1, {{[^,]*}})
+    ; EXCEPT-SAME: "deopt"(i16 1, i16 1, {{[^,]*}}, i64 0)
 start:
     invokestatic Test/print(I)V
 end:

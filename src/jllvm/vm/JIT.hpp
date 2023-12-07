@@ -30,6 +30,7 @@
 #include <jllvm/gc/GarbageCollector.hpp>
 #include <jllvm/materialization/ByteCodeCompileLayer.hpp>
 #include <jllvm/materialization/ByteCodeOSRCompileLayer.hpp>
+#include <jllvm/materialization/InterpreterOSRLayer.hpp>
 #include <jllvm/materialization/JIT2InterpreterLayer.hpp>
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
@@ -91,6 +92,7 @@ class JIT
     ByteCodeOSRCompileLayer m_byteCodeOSRCompileLayer;
     JNIImplementationLayer m_jniLayer;
     JIT2InterpreterLayer m_compiled2InterpreterLayer;
+    InterpreterOSRLayer m_interpreterOSRLayer;
 
     llvm::DenseSet<std::uintptr_t> m_javaFrames;
 

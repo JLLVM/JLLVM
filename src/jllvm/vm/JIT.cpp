@@ -104,6 +104,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
       m_byteCodeCompileLayer(m_optimizeLayer, m_interner, m_dataLayout),
       m_byteCodeOSRCompileLayer(m_optimizeLayer, m_interner, m_dataLayout),
       m_compiled2InterpreterLayer(m_interner, m_optimizeLayer, m_dataLayout),
+      m_interpreterOSRLayer(m_interner, m_optimizeLayer, m_dataLayout),
       m_jniLayer(*m_session, m_interner, m_optimizeLayer, m_dataLayout, jniFunctions)
 {
     llvm::orc::JITDylibSearchOrder searchOrder = {
@@ -299,15 +300,20 @@ void jllvm::JIT::doOnStackReplacement(JavaFrame frame, OSRState&& state)
     const Method& method = *frame.getMethod();
     llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, state.getByteCodeOffset()));
     llvm::orc::JITDylib* lookupDylib;
+    ByteCodeOSRLayer* layer;
     switch (state.getTarget())
     {
         case OSRTarget::JIT:
-            allowDuplicateDefinitions(
-                m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, state.getByteCodeOffset()));
+            layer = &m_byteCodeOSRCompileLayer;
             lookupDylib = &m_javaJITSymbols;
             break;
-        case OSRTarget::Interpreter: llvm_unreachable("not yet implemented");
+        case OSRTarget::Interpreter:
+            layer = &m_interpreterOSRLayer;
+            lookupDylib = &m_jit2InterpreterSymbols;
+            break;
     }
+
+    allowDuplicateDefinitions(layer->add(*lookupDylib, &method, state.getByteCodeOffset()));
 
     llvm::JITEvaluatedSymbol osrMethod = llvm::cantFail(m_session->lookup({lookupDylib}, mangledName));
     frame.getUnwindFrame().resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*)>(osrMethod.getAddress()),
