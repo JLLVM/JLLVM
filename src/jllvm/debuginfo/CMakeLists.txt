@@ -1,3 +1,3 @@
 
 add_library(JLLVMDebugInfo TrivialDebugInfoBuilder.cpp)
-target_link_libraries(JLLVMDebugInfo LLVMCore)
+target_link_libraries(JLLVMDebugInfo PUBLIC LLVMCore LLVMSupport)
