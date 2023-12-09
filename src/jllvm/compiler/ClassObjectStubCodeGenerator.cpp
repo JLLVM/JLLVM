@@ -13,53 +13,14 @@
 
 #include "ClassObjectStubCodeGenerator.hpp"
 
-#include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/IRBuilder.h>
+
+#include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 
 #include "ByteCodeCompileUtils.hpp"
 
 namespace
 {
-
-class TrivialDebugInfoBuilder
-{
-    llvm::DIBuilder m_debugBuilder;
-    llvm::DISubprogram* m_subProgram;
-
-public:
-    TrivialDebugInfoBuilder(llvm::Function* function) : m_debugBuilder(*function->getParent())
-    {
-        llvm::DIFile* file = m_debugBuilder.createFile(".", ".");
-        m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
-
-        m_subProgram =
-            m_debugBuilder.createFunction(file, function->getName(), "", file, 1,
-                                          m_debugBuilder.createSubroutineType(m_debugBuilder.getOrCreateTypeArray({})),
-                                          1, llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
-
-        function->setSubprogram(m_subProgram);
-    }
-
-    ~TrivialDebugInfoBuilder()
-    {
-        finalize();
-    }
-
-    TrivialDebugInfoBuilder(const TrivialDebugInfoBuilder&) = delete;
-    TrivialDebugInfoBuilder(TrivialDebugInfoBuilder&&) = delete;
-    TrivialDebugInfoBuilder& operator=(const TrivialDebugInfoBuilder&) = delete;
-    TrivialDebugInfoBuilder& operator=(TrivialDebugInfoBuilder&&) = delete;
-
-    void finalize()
-    {
-        if (!m_subProgram)
-        {
-            return;
-        }
-        m_debugBuilder.finalizeSubprogram(std::exchange(m_subProgram, nullptr));
-        m_debugBuilder.finalize();
-    }
-};
 
 void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const jllvm::ClassObject& classObject)
 {
@@ -185,6 +146,7 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     // Static field accesses trigger class object initializations.
     if (field->isStatic() && classObject.isUnintialized())
@@ -232,6 +194,7 @@ llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& module, jl
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     const Method* resolvedMethod;
     switch (resolution)
@@ -323,6 +286,7 @@ llvm::Function* jllvm::generateSpecialMethodCallStub(llvm::Module& module, const
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     const Method* method = classObject.specialMethodResolution(methodName, descriptor, &objectClass, callerClass);
 
@@ -348,6 +312,7 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     if (classObject.isUnintialized())
     {
@@ -375,6 +340,7 @@ llvm::Function* jllvm::generateClassObjectAccessStub(llvm::Module& module, Field
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(module.getContext(), "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     llvm::Value* pointer = classObjectGlobal(module, classObject);
     builder.CreateRet(pointer);

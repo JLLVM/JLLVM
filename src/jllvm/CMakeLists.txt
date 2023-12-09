@@ -13,6 +13,7 @@
 
 add_subdirectory(class)
 add_subdirectory(compiler)
+add_subdirectory(debuginfo)
 add_subdirectory(gc)
 add_subdirectory(llvm)
 add_subdirectory(main)

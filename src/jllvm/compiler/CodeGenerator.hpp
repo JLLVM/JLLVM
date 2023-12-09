@@ -39,7 +39,6 @@ class CodeGenerator
     const ClassObject& m_classObject;
     const ClassFile& m_classFile;
     llvm::IRBuilder<> m_builder;
-    llvm::DIBuilder m_debugBuilder;
     OperandStack m_operandStack;
     LocalVariables m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
@@ -132,20 +131,10 @@ public:
           m_classObject{*method.getClassObject()},
           m_classFile{*m_classObject.getClassFile()},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
-          m_debugBuilder{*function->getParent()},
           m_operandStack{m_builder, maxStack},
           m_locals{m_builder, maxLocals}
     {
     }
-
-    ~CodeGenerator()
-    {
-        m_debugBuilder.finalize();
-    }
-    CodeGenerator(const CodeGenerator&) = delete;
-    CodeGenerator& operator=(const CodeGenerator&) = delete;
-    CodeGenerator(CodeGenerator&&) = delete;
-    CodeGenerator& operator=(CodeGenerator&&) = delete;
 
     using PrologueGenFn =
         llvm::function_ref<void(llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,

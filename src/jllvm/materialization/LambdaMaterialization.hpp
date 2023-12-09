@@ -18,6 +18,7 @@
 #include <llvm/IR/IRBuilder.h>
 
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
+#include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 #include <jllvm/object/Object.hpp>
 
 namespace jllvm
@@ -162,6 +163,8 @@ public:
             llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage, m_symbol, module.get());
         function->addFnAttr(llvm::Attribute::getWithUWTableKind(function->getContext(), llvm::UWTableKind::Async));
 
+        TrivialDebugInfoBuilder trivialDebugInfo(function);
+
         auto* type = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), sizeof(F));
         auto* closure = new llvm::GlobalVariable(
             *module, type, false, llvm::GlobalValue::InternalLinkage,
@@ -171,6 +174,8 @@ public:
         closure->setAlignment(llvm::Align(alignof(F)));
 
         llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+
+        builder.SetCurrentDebugLocation(trivialDebugInfo.getNoopLoc());
 
         llvm::SmallVector<llvm::Value*> args;
         for (auto& iter : function->args())
@@ -195,6 +200,8 @@ public:
         {
             builder.CreateRet(call);
         }
+
+        trivialDebugInfo.finalize();
 
         m_baseLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
     }

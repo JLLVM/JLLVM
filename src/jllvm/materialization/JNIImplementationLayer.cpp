@@ -21,6 +21,7 @@
 #include <jllvm/class/Descriptors.hpp>
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
+#include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 
 namespace
 {
@@ -102,25 +103,19 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    llvm::DIBuilder debugBuilder(*module);
-    llvm::DIFile* file = debugBuilder.createFile(".", ".");
-
-    debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
-
-    llvm::DISubprogram* subprogram = debugBuilder.createFunction(
-        file, bridgeName, bridgeName, file, 1, debugBuilder.createSubroutineType(debugBuilder.getOrCreateTypeArray({})),
-        1, llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
 
     MethodType methodType = method->getType();
     auto* function = llvm::Function::Create(descriptorToType(methodType, method->isStatic(), *context),
                                             llvm::GlobalValue::ExternalLinkage, bridgeName, module.get());
-    function->setSubprogram(subprogram);
+
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
 
     applyABIAttributes(function, methodType, method->isStatic());
     function->clearGC();
     addJavaMethodMetadata(function, method, JavaMethodMetadata::Kind::Native);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     llvm::Type* returnType = descriptorToType(methodType.returnType(), *context);
     llvm::Type* referenceType = jllvm::referenceType(*context);
@@ -219,8 +214,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         builder.CreateRet(returnValue);
     }
 
-    debugBuilder.finalizeSubprogram(subprogram);
-    debugBuilder.finalize();
+    debugInfoBuilder.finalize();
 
     assert(map.size() == 1 && "ByteCodeLayer only ever defines one method");
     m_irLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
