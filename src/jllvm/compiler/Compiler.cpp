@@ -61,7 +61,6 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
 llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method)
 {
     const MethodInfo& methodInfo = method.getMethodInfo();
-    const ClassObject* classObject = method.getClassObject();
 
     auto* function =
         llvm::Function::Create(osrMethodSignature(method.getType(), module.getContext()),
@@ -72,8 +71,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     auto* code = methodInfo.getAttributes().find<Code>();
     assert(code && "method to compile must have a code attribute");
 
-    llvm::Value* operandStackInput = function->getArg(0);
-    llvm::Value* localsInput = function->getArg(1);
+    llvm::Value* osrState = function->getArg(0);
 
     compileMethodBody(
         function, method, *code,
@@ -82,6 +80,22 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
         {
             // Initialize the operand stack and the local variables from the two input arrays. Using the type info from
             // the type checker, it is possible to load the exact types required.
+            for (auto&& [index, pair] : llvm::enumerate(llvm::zip(typeInfo.locals, locals)))
+            {
+                auto&& [type, local] = pair;
+                // If the local variable has no type, it is uninitialized at that point in time. There is no code for us
+                // to generate in this case.
+                if (!type)
+                {
+                    continue;
+                }
+                assert(type.is<llvm::Type*>()
+                       && "OSR into frame containing 'returnAddress' instances is not supported");
+                llvm::Value* gep = builder.CreateConstGEP1_32(builder.getInt64Ty(), osrState, index);
+                llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
+                local = load;
+            }
+
             {
                 std::size_t index = 0;
                 for (ByteCodeTypeChecker::JVMType type : typeInfo.operandStack)
@@ -89,7 +103,8 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
                     assert(type.is<llvm::Type*>()
                            && "OSR into frame containing 'returnAddress' instances is not supported");
                     llvm::Value* gep =
-                        builder.CreateConstGEP1_32(operandStackInput->getType(), operandStackInput, index++);
+                        builder.CreateConstGEP1_32(builder.getInt64Ty(), osrState, index + typeInfo.locals.size());
+                    index++;
                     auto* llvmType = type.get<llvm::Type*>();
                     llvm::Value* load = builder.CreateLoad(llvmType, gep);
                     operandStack.push_back(load);
@@ -103,28 +118,12 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
                 }
             }
 
-            for (auto&& [index, pair] : llvm::enumerate(llvm::zip(typeInfo.locals, locals)))
-            {
-                auto&& [type, local] = pair;
-                // If the local variable has no type, it is uninitialized at that point in time. There is no code for us
-                // to generate in this case.
-                if (!type)
-                {
-                    continue;
-                }
-                assert(type.is<llvm::Type*>()
-                       && "OSR into frame containing 'returnAddress' instances is not supported");
-                llvm::Value* gep = builder.CreateConstGEP1_32(localsInput->getType(), localsInput, index);
-                llvm::Value* load = builder.CreateLoad(type.get<llvm::Type*>(), gep);
-                local = load;
-            }
-
             // The OSR frame is responsible for deleting its input arrays as the frame that originally allocated the
             // pointer is replaced.
             llvm::FunctionCallee callee = function->getParent()->getOrInsertFunction(
                 "jllvm_osr_frame_delete", builder.getVoidTy(), builder.getPtrTy());
             llvm::cast<llvm::Function>(callee.getCallee())->addFnAttr("gc-leaf-function");
-            builder.CreateCall(callee, operandStackInput);
+            builder.CreateCall(callee, osrState);
         },
         offset);
 

@@ -294,45 +294,32 @@ void jllvm::JIT::optimize(llvm::Module& module)
     mpm.run(module, mam);
 }
 
-void jllvm::JIT::doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset, Throwable* exception)
+void jllvm::JIT::doOnStackReplacement(JavaFrame frame, OSRState&& state)
 {
-    llvm::SmallVector<std::uint64_t> locals = frame.readLocals();
-
-    // Dynamically allocating memory here as this frame will be replaced at the end of this method and all local
-    // variables destroyed. The OSR method will delete the array on entry once no longer needed.
-    auto* operandPtr = new std::uint64_t[locals.size() + 1];
-    *operandPtr = reinterpret_cast<std::uint64_t>(exception);
-    std::uint64_t* localsPtr = operandPtr + 1;
-    llvm::copy(locals, localsPtr);
-
     const Method& method = *frame.getMethod();
-    llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
-    allowDuplicateDefinitions(m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, byteCodeOffset));
+    llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, state.getByteCodeOffset()));
+    llvm::orc::JITDylib* lookupDylib;
+    switch (state.getTarget())
+    {
+        case OSRTarget::JIT:
+            allowDuplicateDefinitions(
+                m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, state.getByteCodeOffset()));
+            lookupDylib = &m_javaJITSymbols;
+            break;
+        case OSRTarget::Interpreter: llvm_unreachable("not yet implemented");
+    }
 
-    llvm::JITEvaluatedSymbol osrMethod = llvm::cantFail(m_session->lookup({&m_javaJITSymbols}, mangledName));
-    frame.getUnwindFrame().resumeExecutionAtFunction(
-        reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()), operandPtr, localsPtr);
+    llvm::JITEvaluatedSymbol osrMethod = llvm::cantFail(m_session->lookup({lookupDylib}, mangledName));
+    frame.getUnwindFrame().resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*)>(osrMethod.getAddress()),
+                                                     state.release());
 }
 
-void jllvm::JIT::doI2JOnStackReplacement(JavaFrame frame, std::uint16_t byteCodeOffset)
+void jllvm::JIT::doExceptionOnStackReplacement(JavaFrame frame, std::uint16_t handlerOffset, Throwable* exception)
 {
-    assert(frame.isInterpreter() && "frame must currently be within the interpreter");
+    doOnStackReplacement(frame, OSRState::fromException(frame, handlerOffset, exception, OSRTarget::JIT));
+}
 
-    llvm::SmallVector<std::uint64_t> locals = frame.readLocals();
-    llvm::ArrayRef<std::uint64_t> operandStack = frame.readOperandStack();
-
-    // Dynamically allocating memory here as this frame will be replaced at the end of this method and all local
-    // variables destroyed. The OSR method will delete the array on entry once no longer needed.
-    auto* operandPtr = new std::uint64_t[locals.size() + operandStack.size()];
-    llvm::copy(operandStack, operandPtr);
-    std::uint64_t* localsPtr = operandPtr + operandStack.size();
-    llvm::copy(locals, localsPtr);
-
-    const Method& method = *frame.getMethod();
-    llvm::orc::SymbolStringPtr mangledName = m_interner(mangleOSRMethod(&method, byteCodeOffset));
-    allowDuplicateDefinitions(m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, byteCodeOffset));
-
-    llvm::JITEvaluatedSymbol osrMethod = llvm::cantFail(m_session->lookup({&m_javaJITSymbols}, mangledName));
-    frame.getUnwindFrame().resumeExecutionAtFunction(
-        reinterpret_cast<void (*)(std::uint64_t*, std::uint64_t*)>(osrMethod.getAddress()), operandPtr, localsPtr);
+void jllvm::JIT::doI2JOnStackReplacement(InterpreterFrame frame)
+{
+    doOnStackReplacement(frame, OSRState::fromInterpreter(frame, OSRTarget::JIT));
 }

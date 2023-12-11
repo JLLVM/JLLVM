@@ -17,6 +17,7 @@ add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp StackMapRegistrationP
         JNIImplementation.cpp NativeImplementation.cpp JavaFrame.cpp native/IO.cpp
         native/Lang.cpp native/JDK.cpp native/Security.cpp
         Interpreter.cpp
+        OSRState.cpp
 )
 target_link_libraries(JLLVMVirtualMachine
         PRIVATE JLLVMLLVMPasses ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
