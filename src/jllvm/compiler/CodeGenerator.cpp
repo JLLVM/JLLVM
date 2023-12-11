@@ -167,7 +167,7 @@ ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& b
 
 } // namespace
 
-void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset)
+void CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t offset)
 {
     TrivialDebugInfoBuilder debugInfoBuilder(m_function);
 
@@ -176,7 +176,7 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
     // This is currently the case for self-recursive functions.
     m_builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
-    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_method};
+    ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, m_code, m_method};
 
     // Perform the type check as the information is potentially required in the prologue generation.
     const ByteCodeTypeChecker::TypeInfo& typeInfo = checker.checkAndGetTypeInfo(offset);
@@ -200,7 +200,7 @@ void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologu
                                                     iter->second.variableState.begin());
     }
 
-    generateCodeBody(code, offset);
+    generateCodeBody(offset);
 
     // 'createBasicBlocks' conservatively creates all basic blocks of the code even if some are not reachable if
     // 'offset' is not 0. Delete these basic blocks by detecting them having never been inserted into.
@@ -232,27 +232,8 @@ void CodeGenerator::createBasicBlocks(const ByteCodeTypeChecker& checker)
     m_retToMap = checker.makeRetToMap();
 }
 
-void CodeGenerator::generateCodeBody(const Code& code, std::uint16_t startOffset)
+void CodeGenerator::generateCodeBody(std::uint16_t startOffset)
 {
-    // IntervalTree used to find all active exception handlers at a given offset. Due to the value type needing to be a
-    // primitive type, an index into the exception table is used.
-    using IntervalTree = llvm::IntervalTree<std::uint16_t, std::size_t>;
-    IntervalTree::Allocator allocator;
-    IntervalTree intervalTree(allocator);
-
-    llvm::DenseMap<std::uint16_t, std::vector<Code::ExceptionTable>> startHandlers;
-    for (auto&& [index, iter] : llvm::enumerate(code.getExceptionTable()))
-    {
-        if (iter.startPc == iter.endPc)
-        {
-            continue;
-        }
-        startHandlers[iter.startPc].push_back(iter);
-        // The interval tree is inclusive while the exception table is exclusive.
-        intervalTree.insert(iter.startPc, iter.endPc - 1, index);
-    }
-    intervalTree.create();
-
     // Branch from the entry block to the first basic block implementing JVM bytecode.
     m_builder.CreateBr(m_basicBlocks.find(startOffset)->second.block);
 
@@ -282,48 +263,11 @@ void CodeGenerator::generateCodeBody(const Code& code, std::uint16_t startOffset
             m_locals.setState(result->second.variableState);
         }
 
-        // Compute the exception handlers active right before the new offset.
-        m_activeHandlers.clear();
-        llvm::DenseMap<std::uint16_t, std::vector<std::list<HandlerInfo>::iterator>> endHandlers;
-        if (start != 0 && !intervalTree.empty())
-        {
-            llvm::SmallVector<std::size_t> handlerIndices = llvm::to_vector(
-                llvm::map_range(intervalTree.getContaining(start - 1),
-                                [](const IntervalTree::DataType* pointer) { return pointer->value(); }));
-            // Order of the entries is the exception table is significant as earlier entries are handled first. Sorting
-            // the indices restores this order.
-            llvm::sort(handlerIndices);
-            for (std::size_t index : handlerIndices)
-            {
-                const Code::ExceptionTable& entry = code.getExceptionTable()[index];
-                m_activeHandlers.emplace_back(entry.handlerPc, entry.catchType);
-                endHandlers[entry.endPc].push_back(std::prev(m_activeHandlers.end()));
-            }
-        }
-
-        llvm::ArrayRef<char> bytes = code.getCode();
+        llvm::ArrayRef<char> bytes = m_code.getCode();
         for (auto curr = ByteCodeIterator(bytes.begin(), start), end = ByteCodeIterator(bytes.end()); curr != end;)
         {
             ByteCodeOp operation = *curr;
             std::size_t offset = getOffset(operation);
-            if (auto result = endHandlers.find(offset); result != endHandlers.end())
-            {
-                for (auto iter : result->second)
-                {
-                    m_activeHandlers.erase(iter);
-                }
-                // No longer needed.
-                endHandlers.erase(result);
-            }
-
-            if (auto result = startHandlers.find(offset); result != startHandlers.end())
-            {
-                for (const Code::ExceptionTable& iter : result->second)
-                {
-                    m_activeHandlers.emplace_back(iter.handlerPc, iter.catchType);
-                    endHandlers[iter.endPc].push_back(std::prev(m_activeHandlers.end()));
-                }
-            }
 
             // Break out of the current straight-line code if the instruction does not fallthrough.
             if (!generateInstruction(std::move(operation)))
@@ -1445,7 +1389,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
 void CodeGenerator::addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llvm::CallBase*& callInst)
 {
-    if (m_activeHandlers.empty())
+    if (llvm::hasNItems(m_code.getHandlersAtUnordered(byteCodeOffset), 0))
     {
         addBytecodeOffsetOnlyDeopts(byteCodeOffset, callInst);
         return;

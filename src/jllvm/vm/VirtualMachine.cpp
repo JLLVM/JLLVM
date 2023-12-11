@@ -451,21 +451,16 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
             // Exception handler to use is the very first one in the [start, end) range where the type of the exception
             // is an instance of the catch type.
             std::optional<std::uint16_t> handlerPc;
-            for (const Code::ExceptionTable& exceptionTable : code->getExceptionTable())
+            for (const Code::ExceptionTable* exceptionTable : code->getHandlersAt(*byteCodeOffset))
             {
-                if (exceptionTable.startPc > byteCodeOffset || byteCodeOffset >= exceptionTable.endPc)
-                {
-                    continue;
-                }
-
                 // Catch-all handlers as is used by 'finally' blocks don't have a catch type.
-                if (!exceptionTable.catchType)
+                if (!exceptionTable->catchType)
                 {
-                    handlerPc = exceptionTable.handlerPc;
+                    handlerPc = exceptionTable->handlerPc;
                     break;
                 }
 
-                const ClassInfo* info = exceptionTable.catchType.resolve(classFile);
+                const ClassInfo* info = exceptionTable->catchType.resolve(classFile);
                 ClassObject* catchType =
                     m_classLoader.forNameLoaded(ObjectType(info->nameIndex.resolve(classFile)->text));
                 if (!catchType)
@@ -476,7 +471,7 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
                 if (exception->instanceOf(catchType))
                 {
                     // Found the correct exception handler.
-                    handlerPc = exceptionTable.handlerPc;
+                    handlerPc = exceptionTable->handlerPc;
                     break;
                 }
             }

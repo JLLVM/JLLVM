@@ -47,7 +47,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
         auto [iter, inserted] = m_basicBlocks.try_emplace(next, typeStack, m_locals);
         if (inserted)
         {
-            m_offsetStack.push_back(next);
+            m_offsetStack.insert(next);
             return;
         }
 
@@ -83,7 +83,7 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
         if (merged != iter->second.second)
         {
             iter->second.second = std::move(merged);
-            m_offsetStack.push_back(next);
+            m_offsetStack.insert(next);
         }
     };
     auto checkRet = [&](auto& ret)
@@ -121,14 +121,18 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
             m_byteCodeTypeInfo.locals = m_locals;
         }
 
-        if (auto result = m_exceptionHandlerStarts.find(getOffset(operation)); result != m_exceptionHandlerStarts.end())
-        {
-            for (std::uint16_t handlerPc : result->second)
+        match(
+            operation,
+            [](auto&& operation) requires(!MayThrowException<std::decay_t<decltype(operation)>>) {
+
+            },
+            [&](auto&& operation) requires MayThrowException<std::decay_t<decltype(operation)>>
             {
-                // exception handlers have only the exception object on the type stack.
-                pushNext(handlerPc, JVMType(m_addressType));
-            }
-        }
+                for (const Code::ExceptionTable* entry : m_code.getHandlersAtUnordered(operation.offset))
+                {
+                    pushNext(entry->handlerPc, JVMType(m_addressType));
+                }
+            });
 
         match(
             operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
@@ -503,19 +507,13 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
 
 const ByteCodeTypeChecker::TypeInfo& ByteCodeTypeChecker::checkAndGetTypeInfo(std::uint16_t offset)
 {
-    for (const auto& exception : m_code.getExceptionTable())
-    {
-        m_exceptionHandlerStarts[exception.startPc].push_back(exception.handlerPc);
-    }
-
     m_basicBlocks.insert({0, {{}, m_locals}});
-    m_offsetStack.push_back(0);
+    m_offsetStack.insert(0);
     m_byteCodeTypeInfo.offset = offset;
 
     while (!m_offsetStack.empty())
     {
-        std::uint16_t startOffset = m_offsetStack.back();
-        m_offsetStack.pop_back();
+        std::uint16_t startOffset = m_offsetStack.pop_back_val();
 
         checkBasicBlock(m_code.getCode(), startOffset);
     }

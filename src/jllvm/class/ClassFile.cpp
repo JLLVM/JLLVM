@@ -253,11 +253,14 @@ Code Code::parse(llvm::ArrayRef<char> bytes)
     result.m_code = llvm::ArrayRef(rawString.begin(), rawString.end());
     auto exceptionTableCount = consume<std::uint16_t>(bytes);
     result.m_exceptionTable.resize(exceptionTableCount);
-    for (auto& iter : result.m_exceptionTable)
+    for (auto&& [index, iter] : llvm::enumerate(result.m_exceptionTable))
     {
         iter = {consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes),
                 consume<PoolIndex<ClassInfo>>(bytes)};
+        // The interval tree is inclusive while the exception table is exclusive.
+        result.m_intervalTree.insert(iter.startPc, iter.endPc - 1, index);
     }
+    result.m_intervalTree.create();
     return result;
 }
 
