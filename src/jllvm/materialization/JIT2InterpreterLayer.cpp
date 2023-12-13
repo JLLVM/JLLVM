@@ -19,6 +19,8 @@
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 
+#include "InterpreterEntry.hpp"
+
 void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
                                        const Method* method)
 {
@@ -50,102 +52,70 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     builder.SetCurrentDebugLocation(llvm::DILocation::get(builder.getContext(), 1, 1, subprogram));
 
-    Code* code = method->getMethodInfo().getAttributes().find<Code>();
-    assert(code && "cannot run method without code");
-
-    // Allocate all the variables for the interpretation context.
-    llvm::AllocaInst* byteCodeOffset = builder.CreateAlloca(builder.getInt16Ty());
-    llvm::AllocaInst* topOfStack = builder.CreateAlloca(builder.getInt16Ty());
-    llvm::AllocaInst* operandStack =
-        builder.CreateAlloca(llvm::ArrayType::get(builder.getInt64Ty(), code->getMaxStack()));
-    llvm::AllocaInst* operandGCMask =
-        builder.CreateAlloca(llvm::ArrayType::get(builder.getInt64Ty(), llvm::divideCeil(code->getMaxStack(), 64)));
-    llvm::AllocaInst* localVariables =
-        builder.CreateAlloca(llvm::ArrayType::get(builder.getInt64Ty(), code->getMaxLocals()));
-    llvm::AllocaInst* localVariablesGCMask =
-        builder.CreateAlloca(llvm::ArrayType::get(builder.getInt64Ty(), llvm::divideCeil(code->getMaxLocals(), 64)));
-    llvm::Value* methodRef = methodGlobal(*module, method);
-
-    // Zero init all the allocas.
-    builder.CreateMemSet(byteCodeOffset, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
-    builder.CreateMemSet(topOfStack, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
-    builder.CreateMemSet(operandStack, builder.getInt8(0), sizeof(std::uint64_t) * code->getMaxStack(), std::nullopt);
-    builder.CreateMemSet(operandGCMask, builder.getInt8(0),
-                         sizeof(std::uint64_t) * llvm::divideCeil(code->getMaxStack(), 64), std::nullopt);
-    builder.CreateMemSet(localVariables, builder.getInt8(0), sizeof(std::uint64_t) * code->getMaxLocals(),
-                         std::nullopt);
-    builder.CreateMemSet(localVariablesGCMask, builder.getInt8(0), llvm::divideCeil(code->getMaxLocals(), 64),
-                         std::nullopt);
-
-    // Initialize the local variables from the function arguments. This does the translation from the C calling
-    // convention to the interpreters local variables.
-    // If the argument being stored into the local variable is a reference type, the corresponding bit is set in the GC
-    // mask as well.
-    std::size_t localVariableIndex = 0;
-    if (!method->isStatic())
-    {
-        // Store the 'this' argument.
-        llvm::Value* gep = builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariables, localVariableIndex);
-        builder.CreateStore(function->getArg(0), gep);
-        llvm::Value* maskGep =
-            builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariablesGCMask, localVariableIndex / 64);
-        llvm::Value* value = builder.CreateLoad(builder.getInt64Ty(), maskGep);
-        value = builder.CreateOr(value, builder.getInt64(1 << (localVariableIndex % 64)));
-        builder.CreateStore(value, maskGep);
-        localVariableIndex++;
-    }
-
-    for (auto&& [argument, paramType] :
-         llvm::zip_equal(llvm::drop_begin(function->args(), localVariableIndex), method->getType().parameters()))
-    {
-        llvm::Value* gep = builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariables, localVariableIndex);
-        builder.CreateStore(&argument, gep);
-        if (paramType.isReference())
+    llvm::Value* returnValue = generateInterpreterEntry(
+        builder, *method,
+        [&](llvm::IRBuilder<>& builder, llvm::AllocaInst* byteCodeOffset, llvm::AllocaInst* topOfStack,
+            llvm::AllocaInst* operandStack, llvm::AllocaInst* operandGCMask, llvm::AllocaInst* localVariables,
+            llvm::AllocaInst* localVariablesGCMask, const Code& code)
         {
-            llvm::Value* maskGep =
-                builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariablesGCMask, localVariableIndex / 64);
-            llvm::Value* value = builder.CreateLoad(builder.getInt64Ty(), maskGep);
-            value = builder.CreateOr(value, builder.getInt64(1 << (localVariableIndex % 64)));
-            builder.CreateStore(value, maskGep);
-        }
+            // Zero init all the allocas.
+            builder.CreateMemSet(byteCodeOffset, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
+            builder.CreateMemSet(topOfStack, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
+            builder.CreateMemSet(operandStack, builder.getInt8(0), sizeof(std::uint64_t) * code.getMaxStack(),
+                                 std::nullopt);
+            builder.CreateMemSet(operandGCMask, builder.getInt8(0),
+                                 sizeof(std::uint64_t) * llvm::divideCeil(code.getMaxStack(), 64), std::nullopt);
+            builder.CreateMemSet(localVariables, builder.getInt8(0), sizeof(std::uint64_t) * code.getMaxLocals(),
+                                 std::nullopt);
+            builder.CreateMemSet(localVariablesGCMask, builder.getInt8(0), llvm::divideCeil(code.getMaxLocals(), 64),
+                                 std::nullopt);
 
-        localVariableIndex++;
-        if (paramType.isWide())
-        {
-            localVariableIndex++;
-        }
-    }
+            // Initialize the local variables from the function arguments. This does the translation from the C calling
+            // convention to the interpreters local variables.
+            // If the argument being stored into the local variable is a reference type, the corresponding bit is set in
+            // the GC mask as well.
+            std::size_t localVariableIndex = 0;
+            if (!method->isStatic())
+            {
+                // Store the 'this' argument.
+                llvm::Value* gep = builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariables, localVariableIndex);
+                builder.CreateStore(function->getArg(0), gep);
+                llvm::Value* maskGep =
+                    builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariablesGCMask, localVariableIndex / 64);
+                llvm::Value* value = builder.CreateLoad(builder.getInt64Ty(), maskGep);
+                value = builder.CreateOr(value, builder.getInt64(1 << (localVariableIndex % 64)));
+                builder.CreateStore(value, maskGep);
+                localVariableIndex++;
+            }
 
-    std::array<llvm::Value*, 7> arguments = {methodRef,     byteCodeOffset, topOfStack,          operandStack,
-                                             operandGCMask, localVariables, localVariablesGCMask};
-    std::array<llvm::Type*, 7> types{};
-    llvm::transform(arguments, types.begin(), std::mem_fn(&llvm::Value::getType));
+            for (auto&& [argument, paramType] : llvm::zip_equal(llvm::drop_begin(function->args(), localVariableIndex),
+                                                                method->getType().parameters()))
+            {
+                llvm::Value* gep = builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariables, localVariableIndex);
+                builder.CreateStore(&argument, gep);
+                if (paramType.isReference())
+                {
+                    llvm::Value* maskGep =
+                        builder.CreateConstGEP1_32(builder.getInt64Ty(), localVariablesGCMask, localVariableIndex / 64);
+                    llvm::Value* value = builder.CreateLoad(builder.getInt64Ty(), maskGep);
+                    value = builder.CreateOr(value, builder.getInt64(1 << (localVariableIndex % 64)));
+                    builder.CreateStore(value, maskGep);
+                }
 
-    // Deopt all allocas used as context during interpretation. This makes it possible for the unwinder to read the
-    // local variables, the operand stack, the bytecode offset and where GC pointers are contained during unwinding.
-    llvm::CallInst* callInst = builder.CreateCall(
-        module->getOrInsertFunction("jllvm_interpreter",
-                                    llvm::FunctionType::get(builder.getInt64Ty(), types, /*isVarArg=*/false)),
-        arguments, llvm::OperandBundleDef("deopt", llvm::ArrayRef(arguments).drop_front()));
-
-    if (function->getReturnType()->isVoidTy())
+                localVariableIndex++;
+                if (paramType.isWide())
+                {
+                    localVariableIndex++;
+                }
+            }
+        });
+    if (returnValue)
     {
-        builder.CreateRetVoid();
+        builder.CreateRet(returnValue);
     }
     else
     {
-        // Translate the uint64_t returned by the interpreter to the corresponding type in the C calling convention.
-        llvm::TypeSize typeSize = m_dataLayout.getTypeSizeInBits(function->getReturnType());
-        assert(!typeSize.isScalable() && "return type is never a scalable type");
-
-        llvm::Value* value = callInst;
-        llvm::IntegerType* intNTy = builder.getIntNTy(typeSize.getFixedValue());
-        if (intNTy != value->getType())
-        {
-            value = builder.CreateTrunc(value, intNTy);
-        }
-        value = builder.CreateBitOrPointerCast(value, function->getReturnType());
-        builder.CreateRet(value);
+        builder.CreateRetVoid();
     }
 
     debugBuilder.finalizeSubprogram(subprogram);

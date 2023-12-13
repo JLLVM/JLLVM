@@ -89,6 +89,11 @@ public:
     /// * If the method being executed is native and therefore does not have local variables
     /// * If no exception handler exists for a bytecode offset within a JITted method.
     llvm::SmallVector<std::uint64_t> readLocals() const;
+
+    /// Reads the GC mask for the local variables at the current bytecode offset.
+    /// This is a bitset where the 'i'th bit being set corresponding to the 'i'th local variable being a reference type.
+    /// This method will return an empty array in the same scenarios as 'readLocals'.
+    llvm::SmallVector<std::uint64_t> readLocalsGCMask() const;
 };
 
 /// Specialization of 'JavaFrame' for interpreter frames. This contains all methods specific to interpreter frames.
@@ -112,6 +117,9 @@ public:
     BitArrayRef<> getLocalsGCMask() const;
 
     /// Returns a mutable view of the operand stack of the interpreter.
+    ///
+    /// Note that 'double' and 'long' occupy two slots in the operand stack array where the first contains the value
+    /// and the second an unspecified value.
     llvm::MutableArrayRef<std::uint64_t> getOperandStack() const;
 
     /// Returns the bitset denoting where Java references are contained within the interpreter operand stack.

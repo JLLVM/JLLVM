@@ -17,6 +17,8 @@
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ModRef.h>
 
+#include <jllvm/support/BitArrayRef.hpp>
+
 using namespace jllvm;
 
 namespace
@@ -1485,6 +1487,19 @@ void CodeGenerator::addExceptionHandlingDeopts(std::uint16_t byteCodeOffset, llv
                         }
                         return value;
                     });
+
+    std::vector<std::uint64_t> localsGCMask(llvm::divideCeil(m_locals.size(), 64));
+    auto ref = MutableBitArrayRef(localsGCMask.data(), m_locals.size());
+    llvm::Type* reference = referenceType(m_builder.getContext());
+    for (auto [index, value] : llvm::enumerate(llvm::ArrayRef<llvm::Value*>(deoptOperands).take_back(m_locals.size())))
+    {
+        if (value->getType() == reference)
+        {
+            ref[index] = true;
+        }
+    }
+    llvm::transform(localsGCMask, std::back_inserter(deoptOperands),
+                    [&](std::uint64_t mask) { return m_builder.getInt64(mask); });
 
     llvm::CallBase* newCall = llvm::CallBase::addOperandBundle(
         callInst, llvm::LLVMContext::OB_deopt, llvm::OperandBundleDef("deopt", std::move(deoptOperands)), callInst);

@@ -93,6 +93,7 @@ public:
         {
             std::uint16_t byteCodeOffset{};
             std::vector<FrameValue<std::uint64_t>> locals;
+            std::vector<std::uint64_t> localsGCMask;
         };
 
         /// Pointer to a dynamically allocated instance. This is not just a 'llvm::DenseMap' as that is 1) not a

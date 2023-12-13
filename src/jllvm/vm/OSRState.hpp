@@ -46,9 +46,33 @@ class OSRState
         return llvm::divideCeil(size, 64);
     }
 
+    static std::size_t calculateInterpreterBufferSize(std::uint16_t numLocalVariables, std::uint16_t numOperandStack)
+    {
+        return 1 + numLocalVariables + numOperandStack + getNumGCMask(numLocalVariables)
+               + getNumGCMask(numOperandStack);
+    }
+
     static std::size_t calculateJITBufferSize(std::uint16_t numLocalVariables, std::uint16_t numOperandStack)
     {
         return numLocalVariables + numOperandStack;
+    }
+
+    OSRState(std::uint16_t byteCodeOffset, auto&& locals, auto&& operandStack, auto&& localsGCMask,
+             auto&& operandStackGCMask)
+        : m_target(OSRTarget::Interpreter), m_byteCodeOffset(byteCodeOffset)
+    {
+        std::size_t numLocals = llvm::size(locals);
+        std::size_t numOperandStack = llvm::size(operandStack);
+
+        m_buffer = std::make_unique<std::uint64_t[]>(calculateInterpreterBufferSize(numLocals, numOperandStack));
+        m_buffer[0] = byteCodeOffset | numOperandStack << 16;
+
+        auto outIter = llvm::copy(std::forward<decltype(locals)>(locals), std::next(m_buffer.get()));
+        outIter = llvm::copy(std::forward<decltype(operandStack)>(operandStack), outIter);
+        outIter = std::copy_n(std::begin(std::forward<decltype(localsGCMask)>(localsGCMask)), getNumGCMask(numLocals),
+                              outIter);
+        std::copy_n(std::begin(std::forward<decltype(operandStackGCMask)>(operandStackGCMask)),
+                    getNumGCMask(numOperandStack), outIter);
     }
 
     OSRState(std::uint16_t byteCodeOffset, auto&& locals, auto&& operandStack)
@@ -74,6 +98,13 @@ public:
     /// Releases the internal buffer filled with the OSR state and returns it.
     ///
     /// The pointed to array depends on the target being OSRed into.
+    ///
+    /// If the target is an interpreter frame, the memory has the following layout:
+    /// std::uint64_t firstElement = byteCodeOffset | numOperandStack << 16
+    /// std::uint64_t localVariables[numLocalVariables]
+    /// std::uint64_t operandStack[numOperandStack]
+    /// std::uint64_t localVariablesGCMask[ceil(numLocalVariables/64)]
+    /// std::uint64_t operandStackGCMask[ceil(numOperandStack/64)]
     ///
     /// If the target is a JIT frame, the memory has the following layout:
     ///  std::uint64_t localVariables[numLocalVariables]

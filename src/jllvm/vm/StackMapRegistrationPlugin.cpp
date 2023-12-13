@@ -97,19 +97,37 @@ void jllvm::StackMapRegistrationPlugin::parseJITEntry(JavaMethodMetadata::JITDat
         LocalsStartPos = 5,
     };
 
-    assert(record.getLocation(DeoptCountPos).getSmallConstant() != 0 && "jit frame must have deopt values");
+    std::uint32_t deoptCount = record.getLocation(DeoptCountPos).getSmallConstant();
+    assert(deoptCount != 0 && "jit frame must have deopt values");
 
     std::uint64_t addr = functionAddress + record.getInstructionOffset();
     std::uint16_t byteCodeOffset = record.getLocation(BytecodeDeoptPos).getSmallConstant();
     std::uint16_t numLocals = record.getLocation(NumLocalsPos).getSmallConstant();
 
+    auto range = llvm::seq<std::uint32_t>(LocalsStartPos, LocalsStartPos + deoptCount);
+    auto indexIter = range.begin();
+
     std::vector<FrameValue<std::uint64_t>> locals(numLocals);
-    for (std::uint32_t i = LocalsStartPos; i < LocalsStartPos + numLocals; i++)
+    for (FrameValue<std::uint64_t>& iter : locals)
     {
-        locals[i - LocalsStartPos] = toFrameValue<std::uint64_t>(record.getLocation(i), parser);
+        iter = toFrameValue<std::uint64_t>(record.getLocation(*indexIter++), parser);
     }
 
-    jitData.insert(addr, {byteCodeOffset, std::move(locals)});
+    std::vector<std::uint64_t> localsGCMask(llvm::divideCeil(numLocals, 64));
+    for (std::uint64_t& iter : localsGCMask)
+    {
+        StackMapParser::LocationAccessor location = record.getLocation(*indexIter++);
+        if (location.getKind() == StackMapParser::LocationKind::Constant)
+        {
+            iter = location.getSmallConstant();
+        }
+        else
+        {
+            iter = parser.getConstant(location.getConstantIndex()).getValue();
+        }
+    }
+
+    jitData.insert(addr, {byteCodeOffset, std::move(locals), std::move(localsGCMask)});
 }
 
 void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::MaterializationResponsibility& mr,

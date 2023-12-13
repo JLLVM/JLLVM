@@ -40,6 +40,9 @@ TEMPLATE_PRODUCT_TEST_CASE("BitArrayRef", "[BitArrayRef]", (BitArrayRef, Mutable
     CHECK(ref[2] == false);
     CHECK(ref[3] == true);
     CHECK(ref[4] == false);
+
+    CHECK_THAT(llvm::make_range(ref.words_begin(), ref.words_end()),
+               RangeEquals(std::initializer_list<decltype(value)>{value}));
 }
 
 TEMPLATE_TEST_CASE("MutableBitArrayRef", "[MutableBitArrayRef]", std::uint32_t, std::uint64_t)

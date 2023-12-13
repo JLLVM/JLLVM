@@ -73,3 +73,19 @@ jllvm::BitArrayRef<> jllvm::InterpreterFrame::getOperandStackGCMask() const
     std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().operandGCMask.readScalar(*m_unwindFrame);
     return BitArrayRef<>(mask, numStack);
 }
+
+llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocalsGCMask() const
+{
+    switch (m_javaMethodMetadata->getKind())
+    {
+        case JavaMethodMetadata::Kind::Native: return {};
+        case JavaMethodMetadata::Kind::JIT:
+            return llvm::to_vector(m_javaMethodMetadata->getJITData()[m_unwindFrame->getProgramCounter()].localsGCMask);
+
+        case JavaMethodMetadata::Kind::Interpreter:
+        {
+            BitArrayRef<> bitArray = llvm::cast<InterpreterFrame>(*this).getLocalsGCMask();
+            return llvm::SmallVector<std::uint64_t>(bitArray.words_begin(), bitArray.words_end());
+        }
+    }
+}

@@ -77,6 +77,18 @@ public:
         assert(index < m_size);
         return *std::next(begin(), index);
     }
+
+    /// Returns an iterator to the first word the instance references.
+    auto words_begin() const
+    {
+        return m_bits;
+    }
+
+    /// Returns an iterator past the last word the instance references.
+    auto words_end() const
+    {
+        return m_bits + llvm::divideCeil(m_size, numBits);
+    }
 };
 
 /// Mutable view of a buffer of 'IntegerType', interpreting it as a bitset of a given size.
