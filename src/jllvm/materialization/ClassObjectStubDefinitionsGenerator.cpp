@@ -106,7 +106,8 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
         }
         if (auto* stringGlobal = get_if<DemangledStringGlobal>(&demangleVariant))
         {
-            generated[symbol] = llvm::JITEvaluatedSymbol::fromPointer(m_stringInterner.intern(stringGlobal->contents));
+            generated[symbol] =
+                llvm::JITEvaluatedSymbol::fromPointer(m_classLoader.getStringInterner().intern(stringGlobal->contents));
             continue;
         }
 

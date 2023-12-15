@@ -13,12 +13,6 @@
 
 #include "StringInterner.hpp"
 
-void jllvm::StringInterner::loadStringClass()
-{
-    m_stringClass = &m_classLoader.forName(stringDescriptor);
-    checkStructure();
-}
-
 void jllvm::StringInterner::checkStructure()
 {
 #ifdef NDEBUG
@@ -56,8 +50,9 @@ void jllvm::StringInterner::checkStructure()
 
 jllvm::String* jllvm::StringInterner::createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding)
 {
-    auto* value =
-        Array<std::uint8_t>::create(m_allocator, m_classLoader.forNameLoaded(byteArrayDescriptor), buffer.size());
+    assert(m_stringClass && "String class object must be initialized");
+
+    auto* value = Array<std::uint8_t>::create(m_allocator, m_byteArrayClass, buffer.size());
     llvm::copy(buffer, value->begin());
 
     auto* string = new (m_allocator.Allocate(sizeof(String), alignof(String)))

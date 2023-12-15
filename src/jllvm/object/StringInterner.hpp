@@ -13,11 +13,7 @@
 
 #pragma once
 
-#include <llvm/Support/raw_ostream.h>
-
-#include <jllvm/support/Encoding.hpp>
-
-#include "ClassLoader.hpp"
+#include "ClassObject.hpp"
 
 namespace jllvm
 {
@@ -28,21 +24,20 @@ class StringInterner
 
     llvm::DenseMap<std::pair<llvm::ArrayRef<std::uint8_t>, std::uint8_t>, String*> m_contentToStringMap;
     llvm::BumpPtrAllocator m_allocator;
-    ClassLoader& m_classLoader;
-    ClassObject* m_stringClass{nullptr};
+    ClassObject* m_byteArrayClass{};
+    ClassObject* m_stringClass{};
 
     void checkStructure();
 
     String* createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding);
 
 public:
-    StringInterner(ClassLoader& classLoader) : m_classLoader(classLoader) {}
-
-    void loadStringClass();
-
-    ClassObject& getStringClass() const
+    template <std::invocable<FieldType> F>
+    void initialize(F&& initializer)
     {
-        return *m_stringClass;
+        m_byteArrayClass = initializer(byteArrayDescriptor);
+        m_stringClass = initializer(stringDescriptor);
+        checkStructure();
     }
 
     String* intern(llvm::StringRef utf8String);

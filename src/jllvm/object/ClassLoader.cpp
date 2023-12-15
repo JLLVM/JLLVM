@@ -124,10 +124,31 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             {
                 fields.emplace_back(fieldInfo.getName(classFile), descriptor, m_allocateStatic(),
                                     fieldInfo.getAccessFlags());
-                continue;
+            }
+            else
+            {
+                fields.emplace_back(fieldInfo.getName(classFile), descriptor, fieldInfo.getAccessFlags());
             }
 
-            fields.emplace_back(fieldInfo.getName(classFile), descriptor, fieldInfo.getAccessFlags());
+            if (auto* constantValue = fieldInfo.getAttributes().find<ConstantValue>())
+            {
+                void* staticAddress = fields.back().getAddressOfStatic();
+                match(
+                    constantValue->value_index.resolve(classFile),
+                    [&](const IntegerInfo* intInfo)
+                    { std::memcpy(staticAddress, &intInfo->value, sizeof(intInfo->value)); },
+                    [&](const FloatInfo* floatInfo)
+                    { std::memcpy(staticAddress, &floatInfo->value, sizeof(floatInfo->value)); },
+                    [&](const LongInfo* longInfo)
+                    { std::memcpy(staticAddress, &longInfo->value, sizeof(longInfo->value)); },
+                    [&](const DoubleInfo* dfInfo)
+                    { std::memcpy(staticAddress, &dfInfo->value, sizeof(dfInfo->value)); },
+                    [&](const StringInfo* stringInfo)
+                    {
+                        String* string = m_stringInterner.intern(stringInfo->stringValue.resolve(classFile)->text);
+                        std::memcpy(staticAddress, &string, sizeof(string));
+                    });
+            }
             continue;
         }
 
@@ -263,12 +284,13 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
     return add(std::move(result));
 }
 
-jllvm::ClassLoader::ClassLoader(std::vector<std::string>&& classPaths,
+jllvm::ClassLoader::ClassLoader(StringInterner& stringInterner, std::vector<std::string>&& classPaths,
                                 llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
                                 llvm::unique_function<void**()> allocateStatic)
-    : m_classPaths(std::move(classPaths)),
-      m_prepareClassObject(std::move(prepareClassObject)),
-      m_allocateStatic(std::move(allocateStatic))
+    : m_stringInterner{stringInterner},
+      m_classPaths{std::move(classPaths)},
+      m_prepareClassObject{std::move(prepareClassObject)},
+      m_allocateStatic{std::move(allocateStatic)}
 {
     m_mapping.try_emplace("B", &m_byte);
     m_mapping.try_emplace("C", &m_char);

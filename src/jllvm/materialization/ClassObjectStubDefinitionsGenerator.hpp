@@ -19,8 +19,6 @@
 
 #include <jllvm/object/ClassLoader.hpp>
 
-#include "jllvm/object/StringInterner.hpp"
-
 namespace jllvm
 {
 
@@ -36,14 +34,13 @@ class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerato
     llvm::orc::JITDylib& m_impl;
     llvm::DataLayout m_dataLayout;
     ClassLoader& m_classLoader;
-    StringInterner& m_stringInterner;
     ClassObject* m_objectClassCache = nullptr;
 
 public:
     explicit ClassObjectStubDefinitionsGenerator(llvm::orc::IndirectStubsManager& stubsManager,
                                                  llvm::orc::IRLayer& baseLayer, const llvm::DataLayout& dataLayout,
                                                  const llvm::orc::JITDylibSearchOrder& linkOrder,
-                                                 ClassLoader& classLoader, StringInterner& stringInterner)
+                                                 ClassLoader& classLoader)
         : m_stubsManager{stubsManager},
           m_callbackManager{llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
               llvm::Triple(LLVM_HOST_TRIPLE), baseLayer.getExecutionSession(),
@@ -51,8 +48,7 @@ public:
           m_baseLayer{baseLayer},
           m_impl{m_baseLayer.getExecutionSession().createBareJITDylib("<classObjectStubs>")},
           m_dataLayout{dataLayout},
-          m_classLoader{classLoader},
-          m_stringInterner{stringInterner}
+          m_classLoader{classLoader}
     {
         m_impl.setLinkOrder(linkOrder);
     }
