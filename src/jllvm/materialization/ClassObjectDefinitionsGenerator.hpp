@@ -13,35 +13,28 @@
 
 #pragma once
 
-#include <llvm/ExecutionEngine/Orc/Layer.h>
+#include <llvm/ExecutionEngine/Orc/Core.h>
+#include <llvm/IR/DataLayout.h>
 
-#include "ByteCodeLayer.hpp"
+#include <jllvm/object/ClassLoader.hpp>
 
 namespace jllvm
 {
-/// Layer for compiling a JVM method to LLVM IR and handing it to an IR Layer for further compilation.
-class ByteCodeCompileLayer : public ByteCodeLayer
+
+/// Definitions generator used to resolve any global references to class objects in LLVM IR.
+class ClassObjectDefinitionsGenerator : public llvm::orc::DefinitionGenerator
 {
-    llvm::orc::IRLayer& m_baseLayer;
+    ClassLoader& m_classLoader;
     llvm::DataLayout m_dataLayout;
 
 public:
-    ByteCodeCompileLayer(llvm::orc::IRLayer& baseLayer, llvm::orc::MangleAndInterner& mangler,
-                         const llvm::DataLayout& dataLayout)
-        : ByteCodeLayer{mangler}, m_baseLayer{baseLayer}, m_dataLayout{dataLayout}
+    ClassObjectDefinitionsGenerator(ClassLoader& classLoader, const llvm::DataLayout& dataLayout)
+        : m_classLoader(classLoader), m_dataLayout(dataLayout)
     {
     }
 
-    llvm::orc::IRLayer& getBaseLayer() const
-    {
-        return m_baseLayer;
-    }
-
-    const llvm::DataLayout& getDataLayout() const
-    {
-        return m_dataLayout;
-    }
-
-    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
+    llvm::Error tryToGenerate(llvm::orc::LookupState&, llvm::orc::LookupKind, llvm::orc::JITDylib& dylib,
+                              llvm::orc::JITDylibLookupFlags,
+                              const llvm::orc::SymbolLookupSet& symbolLookupSet) override;
 };
 } // namespace jllvm

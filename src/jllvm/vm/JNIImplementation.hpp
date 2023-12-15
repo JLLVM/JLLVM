@@ -15,10 +15,11 @@
 
 #include <jni.h>
 
-#include "VirtualMachine.hpp"
-
 namespace jllvm
 {
+
+class VirtualMachine;
+
 /// Returns the 'VirtualMachine' instance associated with the 'JNIEnv'.
 VirtualMachine& virtualMachineFromJNIEnv(JNIEnv* env);
 } // namespace jllvm

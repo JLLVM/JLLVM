@@ -17,7 +17,9 @@ set(LLVM_TARGET_DEFINITIONS Opts.td)
 tablegen(LLVM Opts.inc -gen-opt-parser-defs)
 add_public_tablegen_target(JLLVMMainOptsTableGen)
 
+llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
+
 add_library(JLLVMMain Main.cpp CommandLine.cpp CommandLine.hpp)
-target_link_libraries(JLLVMMain PUBLIC LLVMSupport PRIVATE LLVMOption JLLVMVirtualMachine)
+target_link_libraries(JLLVMMain PUBLIC LLVMSupport PRIVATE ${llvm_native_libs} LLVMOption JLLVMVirtualMachine)
 target_include_directories(JLLVMMain PUBLIC ${PROJECT_BINARY_DIR}/src)
 add_dependencies(JLLVMMain JLLVMMainOptsTableGen)

@@ -17,8 +17,41 @@
 
 #include "VirtualMachine.hpp"
 
+jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
+    : m_virtualMachine(virtualMachine),
+      m_enableOSR(enableOSR),
+      m_jit2InterpreterSymbols(
+          m_virtualMachine.getRuntime().getJITCCDylib().getExecutionSession().createBareJITDylib("<jit2interpreter>")),
+      m_compiled2InterpreterLayer(virtualMachine.getRuntime().getInterner(),
+                                  virtualMachine.getRuntime().getLLVMIRLayer(),
+                                  virtualMachine.getRuntime().getDataLayout()),
+      m_interpreterOSRLayer(m_compiled2InterpreterLayer.getInterner(), m_compiled2InterpreterLayer.getBaseLayer(),
+                            m_compiled2InterpreterLayer.getDataLayout())
+{
+    m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getClassAndMethodObjectsDylib());
+    m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
+
+    addImplementationSymbols(
+        std::pair{"jllvm_interpreter",
+                  [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
+                      std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,
+                      std::uint64_t* localVariablesGCMask)
+                  {
+                      InterpreterContext context(*topOfStack, operandStack, operandGCMask, localVariables,
+                                                 localVariablesGCMask);
+                      return executeMethod(*method, *byteCodeOffset, context);
+                  }},
+        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }});
+}
+
 namespace
 {
+
+void allowDuplicateDefinitions(llvm::Error&& error)
+{
+    llvm::handleAllErrors(std::move(error), [](const llvm::orc::DuplicateDefinition&) {});
+}
+
 /// Tag returned when interpreting an instruction to jump to a new bytecode offset.
 struct SetPC
 {
@@ -78,7 +111,11 @@ void jllvm::Interpreter::escapeToJIT()
 {
     m_virtualMachine.unwindJavaStack(
         [&](JavaFrame frame)
-        { m_virtualMachine.getJIT().doI2JOnStackReplacement(llvm::cast<InterpreterFrame>(frame)); });
+        {
+            m_virtualMachine.getRuntime().doOnStackReplacement(
+                frame,
+                m_virtualMachine.getJIT().createOSRStateFromInterpreterFrame(llvm::cast<InterpreterFrame>(frame)));
+        });
     llvm_unreachable("not possible");
 }
 
@@ -880,4 +917,56 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             result, [](ReturnValue) {}, [&](NextPC) { ++curr; },
             [&](SetPC setPc) { curr = ByteCodeIterator(codeArray.data(), setPc.newPC); });
     }
+}
+
+void* Interpreter::getOSREntry(const Method& method, std::uint16_t byteCodeOffset)
+{
+    llvm::orc::SymbolStringPtr mangledName =
+        m_interpreterOSRLayer.getInterner()(mangleOSRMethod(&method, byteCodeOffset));
+    allowDuplicateDefinitions(m_interpreterOSRLayer.add(m_jit2InterpreterSymbols, &method, byteCodeOffset));
+
+    llvm::JITEvaluatedSymbol osrMethod =
+        llvm::cantFail(m_virtualMachine.getRuntime().getSession().lookup({&m_jit2InterpreterSymbols}, mangledName));
+    return reinterpret_cast<void*>(osrMethod.getAddress());
+}
+
+OSRState Interpreter::createOSRStateFromInterpreterFrame(InterpreterFrame frame)
+{
+    return OSRState(*this, *frame.getByteCodeOffset(),
+                    createOSRBuffer(*frame.getByteCodeOffset(), frame.readLocals(), frame.getOperandStack(),
+                                    frame.getLocalsGCMask(), frame.getOperandStackGCMask()));
+}
+
+OSRState Interpreter::createOSRStateForExceptionHandler(JavaFrame frame, std::uint16_t handlerOffset,
+                                                        Throwable* throwable)
+{
+    llvm::SmallVector<std::uint64_t> localsGcMask = frame.readLocalsGCMask();
+    auto operandStackGCMask = std::initializer_list<std::uint64_t>{0b1};
+    return OSRState(
+        *this, handlerOffset,
+        createOSRBuffer(
+            handlerOffset, frame.readLocals(),
+            /*operandStack=*/std::initializer_list<std::uint64_t>{reinterpret_cast<std::uint64_t>(throwable)},
+            BitArrayRef(localsGcMask.data(), localsGcMask.size() * 64),
+            BitArrayRef(data(operandStackGCMask), operandStackGCMask.size() * 64)));
+}
+
+std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(std::uint16_t byteCodeOffset,
+                                                              llvm::ArrayRef<std::uint64_t> locals,
+                                                              llvm::ArrayRef<std::uint64_t> operandStack,
+                                                              BitArrayRef<> localsGCMask,
+                                                              BitArrayRef<> operandStackGCMask)
+{
+    std::size_t numLocals = llvm::size(locals);
+    std::size_t numOperandStack = llvm::size(operandStack);
+
+    auto buffer = std::make_unique<std::uint64_t[]>(1 + numLocals + numOperandStack + localsGCMask.numWords()
+                                                    + operandStackGCMask.numWords());
+    buffer[0] = byteCodeOffset | numOperandStack << 16;
+
+    auto* outIter = llvm::copy(locals, std::next(buffer.get()));
+    outIter = llvm::copy(operandStack, outIter);
+    outIter = std::copy_n(localsGCMask.words_begin(), localsGCMask.numWords(), outIter);
+    std::copy_n(operandStackGCMask.words_begin(), operandStackGCMask.numWords(), outIter);
+    return buffer;
 }

@@ -12,34 +12,3 @@
 // see <http://www.gnu.org/licenses/>.
 
 #include "OSRState.hpp"
-
-jllvm::OSRState jllvm::OSRState::fromInterpreter(InterpreterFrame sourceFrame, OSRTarget target)
-{
-    switch (target)
-    {
-        case OSRTarget::Interpreter:
-            return OSRState(*sourceFrame.getByteCodeOffset(), sourceFrame.readLocals(), sourceFrame.getOperandStack(),
-                            sourceFrame.readLocalsGCMask(), sourceFrame.getOperandStackGCMask());
-        case OSRTarget::JIT:
-            return OSRState(*sourceFrame.getByteCodeOffset(), sourceFrame.readLocals(), sourceFrame.getOperandStack());
-    }
-}
-
-jllvm::OSRState jllvm::OSRState::fromException(JavaFrame sourceFrame, std::uint16_t handlerOffset, Throwable* exception,
-                                               OSRTarget target)
-{
-    assert(!sourceFrame.isNative() && "cannot OSR out of native frame");
-
-    switch (target)
-    {
-        case OSRTarget::Interpreter:
-            return OSRState(
-                handlerOffset, sourceFrame.readLocals(),
-                /*operandStack=*/std::initializer_list<std::uint64_t>{reinterpret_cast<std::uint64_t>(exception)},
-                sourceFrame.readLocalsGCMask(), /*operandStackGCMask=*/std::initializer_list<std::uint64_t>{0b1});
-        case OSRTarget::JIT:
-            return OSRState(
-                handlerOffset, sourceFrame.readLocals(),
-                /*operandStack=*/std::initializer_list<std::uint64_t>{reinterpret_cast<std::uint64_t>(exception)});
-    }
-}

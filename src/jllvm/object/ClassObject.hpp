@@ -829,6 +829,13 @@ public:
     /// Note: This is an expensive operation and should only be used if a topological traversal order is required.
     auto maximallySpecificInterfaces() const;
 
+    /// Performs method selection as described in the JVM spec:
+    /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6
+    ///
+    /// This is the process used by 'invokevirtual' to map a call to 'resolvedMethod' where the 'this' object of the
+    /// invoke is an instance of this class object to the actual method that should be executed.
+    const Method& methodSelection(const Method& resolvedMethod);
+
     /// Performs method resolution as described in the JVM Spec:
     /// https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3 This is the low level procedure
     /// used to find a method within a class given a method name and type.

@@ -27,10 +27,23 @@
 #include "InteropHelpers.hpp"
 #include "Interpreter.hpp"
 #include "JIT.hpp"
+#include "JNIBridge.hpp"
 #include "JavaFrame.hpp"
+#include "Runtime.hpp"
 
 namespace jllvm
 {
+
+/// Where code should be executed by default.
+enum class ExecutionMode
+{
+    /// Executes code in the JIT whenever possible.
+    JIT,
+    /// Executes code in the interpreter whenever possible.
+    Interpreter,
+    /// Dynamically adjusts where code is being executed.
+    Mixed
+};
 
 /// Options used to boot the VM.
 struct BootOptions
@@ -50,19 +63,39 @@ class VirtualMachine
     JNINativeInterfaceUPtr createJNIEnvironment();
 
     JNINativeInterfaceUPtr m_jniEnv = createJNIEnvironment();
+    StringInterner m_stringInterner;
     ClassLoader m_classLoader;
     GarbageCollector m_gc;
-    StringInterner m_stringInterner;
+    Runtime m_runtime;
     JIT m_jit;
     Interpreter m_interpreter;
+    JNIBridge m_jni;
     std::mt19937 m_pseudoGen;
     std::uniform_int_distribution<std::uint32_t> m_hashIntDistrib;
     GCRootRef<Object> m_mainThread = m_gc.allocateStatic();
     GCRootRef<Object> m_mainThreadGroup = m_gc.allocateStatic();
     std::string m_javaHome;
+    ExecutionMode m_executionMode;
 
     // Instances of 'Model::State', subtypes of ModelState.
     std::vector<std::unique_ptr<ModelState>> m_modelState;
+
+    /// Returns the executor that should be used by default when first executing a method.
+    Executor& getDefaultExecutor()
+    {
+        return getDefaultOSRTarget();
+    }
+
+    /// Returns the OSR target that should be used by default when performing OSR.
+    OSRTarget& getDefaultOSRTarget()
+    {
+        OSRTarget* defaultExecutor = &m_interpreter;
+        if (m_executionMode == ExecutionMode::JIT)
+        {
+            defaultExecutor = &m_jit;
+        }
+        return *defaultExecutor;
+    }
 
 public:
     explicit VirtualMachine(BootOptions&& options);
@@ -84,6 +117,18 @@ public:
     /// Note: The value returned is non-deterministic between program executions and seeded at VM startup.
     ///       It also never returns 0, but may return any other value that fits within 'int32_t'.
     std::int32_t createNewHashCode();
+
+    /// Returns the runtime instance of this VM.
+    Runtime& getRuntime()
+    {
+        return m_runtime;
+    }
+
+    /// Returns the JNI instance of this VM.
+    JNIBridge& getJNI()
+    {
+        return m_jni;
+    }
 
     /// Returns the jit instance of the virtual machine.
     JIT& getJIT()
@@ -127,7 +172,8 @@ public:
     template <JavaConvertible... Args>
     void executeObjectConstructor(ObjectInterface* object, MethodType methodDescriptor, Args... args)
     {
-        auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getClassName(), "<init>", methodDescriptor));
+        void* addr = m_runtime.lookupJITCC(object->getClass()->getClassName(), "<init>", methodDescriptor);
+        assert(addr);
         invokeJava<void>(addr, object, args...);
     }
 
@@ -136,7 +182,8 @@ public:
     Ret executeStaticMethod(llvm::StringRef className, llvm::StringRef methodName, MethodType methodDescriptor,
                             Args... args)
     {
-        auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
+        void* addr = m_runtime.lookupJITCC(className, methodName, methodDescriptor);
+        assert(addr);
         return invokeJava<Ret>(addr, args...);
     }
 
@@ -180,7 +227,7 @@ public:
         return unwindStack(
             [&, this](UnwindFrame& frame)
             {
-                const JavaMethodMetadata* metadata = m_jit.getJavaMethodMetadata(frame.getFunctionPointer());
+                const JavaMethodMetadata* metadata = m_runtime.getJavaMethodMetadata(frame.getFunctionPointer());
                 if (!metadata)
                 {
                     return UnwindAction::ContinueUnwinding;

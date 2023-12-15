@@ -257,6 +257,93 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
     return llvm::is_contained(getSuperClasses(), other);
 }
 
+namespace
+{
+bool canOverride(const jllvm::ClassObject* derivedClass, const jllvm::Method& base)
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.5
+
+    switch (base.getVisibility())
+    {
+        case jllvm::Visibility::Private: return false;
+        case jllvm::Visibility::Public:
+        case jllvm::Visibility::Protected: return true;
+        case jllvm::Visibility::Package:
+            // 5.4.5 mA is marked neither ACC_PUBLIC nor ACC_PROTECTED nor ACC_PRIVATE, and either (a) the declaration
+            // of mA appears in the same run-time package as the declaration of mC.
+            // TODO: I am pretty sure this is not how the spec defines packages, but it'll do for now.
+            if (derivedClass->getPackageName() == base.getClassObject()->getPackageName())
+            {
+                return true;
+            }
+
+            // TODO: 5.4.5 b)
+            llvm_unreachable("NOT YET IMPLEMENTED");
+    }
+    llvm_unreachable("All visibilities handled");
+}
+} // namespace
+
+const jllvm::Method& jllvm::ClassObject::methodSelection(const Method& resolvedMethod)
+{
+    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
+    if (resolvedMethod.getVisibility() == jllvm::Visibility::Private)
+    {
+        return resolvedMethod;
+    }
+
+    // Step 2
+
+    // If C contains a declaration of an instance method m that can override mR (§5.4.5), then m is the selected method.
+
+    // Otherwise, if C has a superclass, a search for a declaration of an instance method that can override mR is
+    // performed, starting with the direct superclass of C and continuing with the direct superclass of that class, and
+    // so forth, until a method is found or no further superclasses exist. If a method is found, it is the selected
+    // method.
+    for (const ClassObject* curr : getSuperClasses())
+    {
+        const Method* result =
+            curr->getMethod(resolvedMethod.getName(), resolvedMethod.getType(), [&](const Method& method)
+                            { return !method.isStatic() && canOverride(curr, resolvedMethod); });
+        if (result)
+        {
+            return *result;
+        }
+    }
+
+    // Otherwise, the maximally-specific superinterface methods of C are determined (§5.4.3.3). If exactly one matches
+    // mR's name and descriptor and is not abstract, then it is the selected method.
+
+    // A maximally-specific superinterface method of a class or interface C for a particular method name and descriptor
+    // is any method for which all of the following are true:
+    //
+    // The method is declared in a superinterface (direct or indirect) of C.
+    //
+    // The method is declared with the specified name and descriptor.
+    //
+    // The method has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set.
+    //
+    // Where the method is declared in interface I, there exists no other maximally-specific superinterface method of C
+    // with the specified name and descriptor that is declared in a subinterface of I.
+
+    for (const ClassObject* interface : maximallySpecificInterfaces())
+    {
+        const Method* result =
+            interface->getMethod(resolvedMethod.getName(), resolvedMethod.getType(),
+                                 [&](const jllvm::Method& method)
+                                 {
+                                     return !method.isStatic() && method.getVisibility() != jllvm::Visibility::Private
+                                            && !method.isAbstract() && canOverride(interface, resolvedMethod);
+                                 });
+        if (result)
+        {
+            return *result;
+        }
+    }
+
+    llvm_unreachable("should not be possible");
+}
+
 const jllvm::Method* jllvm::ClassObject::methodResolution(llvm::StringRef methodName, MethodType methodType) const
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.3.3

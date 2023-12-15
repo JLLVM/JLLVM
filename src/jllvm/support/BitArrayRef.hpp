@@ -71,6 +71,12 @@ public:
         return m_size;
     }
 
+    /// Returns the number of words of this 'BitArrayRef' required to hold the number of bits.
+    std::size_t numWords() const
+    {
+        return llvm::divideCeil(m_size, numBits);
+    }
+
     /// Returns the value of the 'index'th bit.
     bool operator[](std::size_t index) const
     {
@@ -87,7 +93,7 @@ public:
     /// Returns an iterator past the last word the instance references.
     auto words_end() const
     {
-        return m_bits + llvm::divideCeil(m_size, numBits);
+        return m_bits + numWords();
     }
 };
 

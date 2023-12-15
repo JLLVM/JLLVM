@@ -33,6 +33,16 @@ public:
     {
     }
 
+    llvm::orc::IRLayer& getBaseLayer() const
+    {
+        return m_baseLayer;
+    }
+
+    const llvm::DataLayout& getDataLayout() const
+    {
+        return m_dataLayout;
+    }
+
     void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
 };
 } // namespace jllvm

@@ -13,24 +13,35 @@
 
 #pragma once
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/MathExtras.h>
-
 #include <cassert>
 #include <cstdint>
-#include <limits>
 #include <memory>
 
+#include "Executor.hpp"
 #include "JavaFrame.hpp"
 
 namespace jllvm
 {
 
-/// Target tier that should replace the existing Java frame.
-enum class OSRTarget
+class OSRState;
+
+/// Class representing 'Executor's capable of producing OSR versions of methods for entry via OSR.
+class OSRTarget : public Executor
 {
-    Interpreter,
-    JIT,
+public:
+    /// Returns an OSR version for 'method' starting at the given 'byteCodeOffset'.
+    /// The method must have the signature '<original-ret-type>(uint64_t*)' where the 'uint64_t*' is the buffer the
+    /// 'OSRState's are initialized with by the 'createOSRState*' methods below. This buffer should be used to
+    /// initialize the abstract machine state at the given 'byteCodeOffset'.
+    virtual void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) = 0;
+
+    /// Methods creating an 'OSRState' method suitable for use by functions returned by 'getOSREntry' and initializing
+    /// it from their given parameters.
+
+    virtual OSRState createOSRStateFromInterpreterFrame(InterpreterFrame frame) = 0;
+
+    virtual OSRState createOSRStateForExceptionHandler(JavaFrame frame, std::uint16_t handlerOffset,
+                                                       Throwable* throwable) = 0;
 };
 
 /// Class representing the abstract machine state required for transitioning execution from one tier to another.
@@ -38,78 +49,19 @@ enum class OSRTarget
 class OSRState
 {
     std::unique_ptr<std::uint64_t[]> m_buffer;
-    OSRTarget m_target{};
+    OSRTarget* m_target{};
     std::uint16_t m_byteCodeOffset{};
 
-    static std::size_t getNumGCMask(std::uint16_t size)
-    {
-        return llvm::divideCeil(size, 64);
-    }
-
-    static std::size_t calculateInterpreterBufferSize(std::uint16_t numLocalVariables, std::uint16_t numOperandStack)
-    {
-        return 1 + numLocalVariables + numOperandStack + getNumGCMask(numLocalVariables)
-               + getNumGCMask(numOperandStack);
-    }
-
-    static std::size_t calculateJITBufferSize(std::uint16_t numLocalVariables, std::uint16_t numOperandStack)
-    {
-        return numLocalVariables + numOperandStack;
-    }
-
-    OSRState(std::uint16_t byteCodeOffset, auto&& locals, auto&& operandStack, auto&& localsGCMask,
-             auto&& operandStackGCMask)
-        : m_target(OSRTarget::Interpreter), m_byteCodeOffset(byteCodeOffset)
-    {
-        std::size_t numLocals = llvm::size(locals);
-        std::size_t numOperandStack = llvm::size(operandStack);
-
-        m_buffer = std::make_unique<std::uint64_t[]>(calculateInterpreterBufferSize(numLocals, numOperandStack));
-        m_buffer[0] = byteCodeOffset | numOperandStack << 16;
-
-        auto outIter = llvm::copy(std::forward<decltype(locals)>(locals), std::next(m_buffer.get()));
-        outIter = llvm::copy(std::forward<decltype(operandStack)>(operandStack), outIter);
-        outIter = std::copy_n(std::begin(std::forward<decltype(localsGCMask)>(localsGCMask)), getNumGCMask(numLocals),
-                              outIter);
-        std::copy_n(std::begin(std::forward<decltype(operandStackGCMask)>(operandStackGCMask)),
-                    getNumGCMask(numOperandStack), outIter);
-    }
-
-    OSRState(std::uint16_t byteCodeOffset, auto&& locals, auto&& operandStack)
-        : m_target(OSRTarget::JIT), m_byteCodeOffset(byteCodeOffset)
-    {
-        std::size_t numLocals = llvm::size(locals);
-        std::size_t numOperandStack = llvm::size(operandStack);
-
-        m_buffer = std::make_unique<std::uint64_t[]>(calculateJITBufferSize(numLocals, numOperandStack));
-
-        auto outIter = llvm::copy(std::forward<decltype(locals)>(locals), m_buffer.get());
-        llvm::copy(std::forward<decltype(operandStack)>(operandStack), outIter);
-    }
-
 public:
-    /// Creates an OSRState from an interpreter frame.
-    static OSRState fromInterpreter(InterpreterFrame sourceFrame, OSRTarget target);
-
-    /// Creates an OSRState for exception handling from a source frame and an exception.
-    static OSRState fromException(JavaFrame sourceFrame, std::uint16_t handlerOffset, Throwable* exception,
-                                  OSRTarget target);
+    /// Constructor used by 'OSRTarget's to initialize the OSR state as required by their OSR entries.
+    OSRState(OSRTarget& target, std::uint16_t byteCodeOffset, std::unique_ptr<std::uint64_t[]> internalCCStructure)
+        : m_target(&target), m_byteCodeOffset(byteCodeOffset), m_buffer(std::move(internalCCStructure))
+    {
+    }
 
     /// Releases the internal buffer filled with the OSR state and returns it.
     ///
     /// The pointed to array depends on the target being OSRed into.
-    ///
-    /// If the target is an interpreter frame, the memory has the following layout:
-    /// std::uint64_t firstElement = byteCodeOffset | numOperandStack << 16
-    /// std::uint64_t localVariables[numLocalVariables]
-    /// std::uint64_t operandStack[numOperandStack]
-    /// std::uint64_t localVariablesGCMask[ceil(numLocalVariables/64)]
-    /// std::uint64_t operandStackGCMask[ceil(numOperandStack/64)]
-    ///
-    /// If the target is a JIT frame, the memory has the following layout:
-    ///  std::uint64_t localVariables[numLocalVariables]
-    ///  std::uint64_t operandStack[numOperandStack]
-    ///
     /// This array is used by OSR versions to initialize their machine state.
     std::uint64_t* release()
     {
@@ -124,9 +76,9 @@ public:
     }
 
     /// Returns the OSR target of this state.
-    OSRTarget getTarget() const
+    OSRTarget& getTarget() const
     {
-        return m_target;
+        return *m_target;
     }
 };
 } // namespace jllvm
