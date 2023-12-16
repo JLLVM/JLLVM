@@ -201,11 +201,11 @@ public:
 
     /// Looks up the method 'methodName' within the class 'className' with the type given by 'methodDescriptor'
     /// returning a pointer to the function if successful or an error otherwise.
-    llvm::Expected<llvm::JITEvaluatedSymbol> lookup(FieldType classDescriptor, llvm::StringRef methodName,
+    llvm::Expected<llvm::JITEvaluatedSymbol> lookup(llvm::StringRef className, llvm::StringRef methodName,
                                                     MethodType methodDescriptor)
     {
         return m_session->lookup({&m_externalStubs},
-                                 m_interner(mangleDirectMethodCall(classDescriptor, methodName, methodDescriptor)));
+                                 m_interner(mangleDirectMethodCall(className, methodName, methodDescriptor)));
     }
 };
 } // namespace jllvm

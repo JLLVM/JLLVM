@@ -15,9 +15,9 @@
 .method public static native print(I)V
 .end method
 
-; CHECK-LABEL: define void @"LTest;.test:()V"
+; CHECK-LABEL: define void @"Test.test:()V"
 ; CHECK-SAME: prefix
-; CHECK-SAME: ptr @"&LTest;.test:()V"
+; CHECK-SAME: ptr @"&Test.test:()V"
 .method public static test()V
     .limit stack 1
     return

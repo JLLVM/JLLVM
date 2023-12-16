@@ -56,7 +56,7 @@ class ClassLoader
     ClassObject m_void{0, "V"};
 
     ClassObject* m_metaClassObject = nullptr;
-    ClassObject* m_objectClassObject = nullptr;
+
 
 public:
     /// Constructs a class loader with 'classPaths', which are all directories that class files will be searched for.

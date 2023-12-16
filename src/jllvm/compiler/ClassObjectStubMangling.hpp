@@ -36,8 +36,8 @@ namespace jllvm
 /// The function signature of the call must match the method descriptor with the 'this' object as first argument.
 ///
 /// Syntax:
-/// <direct-call> ::= <class-descriptor> '.' <method-name> ':' <descriptor>
-std::string mangleDirectMethodCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor);
+/// <direct-call> ::= <class-name> '.' <method-name> ':' <descriptor>
+std::string mangleDirectMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor);
 
 std::string mangleDirectMethodCall(const Method* method);
 
@@ -57,7 +57,7 @@ std::string mangleOSRMethod(const Method* method, unsigned offset);
 ///
 /// Syntax:
 /// <field-access> ::= <class-name> '.' <field-name> ':' <descriptor>
-std::string mangleFieldAccess(llvm::StringRef classDescriptor, llvm::StringRef fieldName, FieldType descriptor);
+std::string mangleFieldAccess(llvm::StringRef className, llvm::StringRef fieldName, FieldType descriptor);
 
 enum class MethodResolution
 {
@@ -73,8 +73,8 @@ enum class MethodResolution
 /// Syntax:
 /// <method-resolution-call> ::= <method-resolution> <direct-call>
 /// <method-resolution> ::= 'Virtual Call to ' | 'Interface Call to '
-std::string mangleMethodResolutionCall(MethodResolution resolution, FieldType classDescriptor, llvm::StringRef methodName,
-                                       MethodType descriptor);
+std::string mangleMethodResolutionCall(MethodResolution resolution, llvm::StringRef className,
+                                       llvm::StringRef methodName, MethodType descriptor);
 
 /// Mangling for calling a function performing the method resolution and call of a 'invokespecial' instruction.
 /// 'callerClass' should be set to the descriptor of the calling class object if the caller's class file has
@@ -83,7 +83,7 @@ std::string mangleMethodResolutionCall(MethodResolution resolution, FieldType cl
 ///
 /// Syntax:
 /// <special-method-call> ::= 'Special Call to ' <direct-call> [ ':from ' <descriptor> ]
-std::string mangleSpecialMethodCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor,
+std::string mangleSpecialMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor,
                                     std::optional<FieldType> callerClass);
 
 /// Mangling for calling a function performing static method resolution and then calling the resolved method.
@@ -91,7 +91,7 @@ std::string mangleSpecialMethodCall(FieldType classDescriptor, llvm::StringRef m
 ///
 /// Syntax:
 /// <static-call> ::= 'Static Call to ' <direct-call>
-std::string mangleStaticCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor);
+std::string mangleStaticCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor);
 
 /// Mangling for calling a function returning a loaded class object.
 /// The function signature of the call must be: () -> reference.
@@ -130,7 +130,7 @@ struct DemangledFieldAccess
 struct DemangledMethodResolutionCall
 {
     MethodResolution resolution{};
-    FieldType classDescriptor;
+    llvm::StringRef className;
     llvm::StringRef methodName;
     MethodType descriptor;
 };
@@ -138,7 +138,7 @@ struct DemangledMethodResolutionCall
 /// A call produced via 'mangleStaticCall'.
 struct DemangledStaticCall
 {
-    FieldType classDescriptor;
+    llvm::StringRef className;
     llvm::StringRef methodName;
     MethodType descriptor;
 };
@@ -146,7 +146,7 @@ struct DemangledStaticCall
 /// A call produced via 'mangleSpecialMethodCall'.
 struct DemangledSpecialCall
 {
-    FieldType classDescriptor;
+    llvm::StringRef className;
     llvm::StringRef methodName;
     MethodType descriptor;
     std::optional<FieldType> callerClass;

@@ -511,7 +511,7 @@ public:
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
     /// 'stringSaver' is used to save the array type descriptor created and used as class name.
-    static ClassObject* createArray(llvm::BumpPtrAllocator& allocator, ClassObject* objectClass,
+    static ClassObject* createArray(llvm::BumpPtrAllocator& allocator, const ClassObject* metaClass,
                                     const ClassObject* componentType, llvm::StringSaver& stringSaver);
 
     /// Constructor for creating the class objects for primitive types with a size and name.

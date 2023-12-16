@@ -59,7 +59,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledStaticCall& staticCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(staticCall.classDescriptor);
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(staticCall.className));
                 if (!classObject)
                 {
                     return nullptr;
@@ -69,7 +69,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledMethodResolutionCall& methodResolutionCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(methodResolutionCall.classDescriptor);
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(methodResolutionCall.className));
                 if (!classObject)
                 {
                     return nullptr;
@@ -80,7 +80,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledSpecialCall& specialCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(specialCall.classDescriptor);
+                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(specialCall.className));
                 if (!classObject)
                 {
                     return nullptr;

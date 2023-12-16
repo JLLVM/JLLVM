@@ -127,16 +127,16 @@ public:
     template <JavaConvertible... Args>
     void executeObjectConstructor(ObjectInterface* object, MethodType methodDescriptor, Args... args)
     {
-        auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getDescriptor(), "<init>", methodDescriptor));
+        auto addr = llvm::cantFail(m_jit.lookup(object->getClass()->getClassName(), "<init>", methodDescriptor));
         invokeJava<void>(addr, object, args...);
     }
 
     /// Calls the static method 'methodName' with types 'methodDescriptor' within 'className' using 'args'.
     template <JavaCompatible Ret = void, JavaConvertible... Args>
-    Ret executeStaticMethod(FieldType classDescriptor, llvm::StringRef methodName, MethodType methodDescriptor,
+    Ret executeStaticMethod(llvm::StringRef className, llvm::StringRef methodName, MethodType methodDescriptor,
                             Args... args)
     {
-        auto addr = llvm::cantFail(m_jit.lookup(classDescriptor, methodName, methodDescriptor));
+        auto addr = llvm::cantFail(m_jit.lookup(className, methodName, methodDescriptor));
         return invokeJava<Ret>(addr, args...);
     }
 

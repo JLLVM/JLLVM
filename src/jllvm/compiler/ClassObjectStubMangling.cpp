@@ -13,9 +13,9 @@
 
 #include "ClassObjectStubMangling.hpp"
 
-std::string jllvm::mangleDirectMethodCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor)
+std::string jllvm::mangleDirectMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor)
 {
-    return (classDescriptor.textual() + "." + methodName + ":" + descriptor.textual()).str();
+    return (className + "." + methodName + ":" + descriptor.textual()).str();
 }
 
 std::string jllvm::mangleDirectMethodCall(const MethodInfo& methodInfo, const ClassFile& classFile)
@@ -24,12 +24,12 @@ std::string jllvm::mangleDirectMethodCall(const MethodInfo& methodInfo, const Cl
     llvm::StringRef methodName = methodInfo.getName(classFile);
     MethodType descriptor = methodInfo.getDescriptor(classFile);
 
-    return mangleDirectMethodCall(ObjectType(className), methodName, descriptor);
+    return mangleDirectMethodCall(className, methodName, descriptor);
 }
 
 std::string jllvm::mangleDirectMethodCall(const jllvm::Method* method)
 {
-    return mangleDirectMethodCall(method->getClassObject()->getDescriptor(), method->getName(), method->getType());
+    return mangleDirectMethodCall(method->getClassObject()->getClassName(), method->getName(), method->getType());
 }
 
 std::string jllvm::mangleOSRMethod(const jllvm::Method* method, unsigned offset)
@@ -45,10 +45,10 @@ std::string jllvm::mangleFieldAccess(llvm::StringRef className, llvm::StringRef 
 constexpr llvm::StringLiteral virtualCallPrefix = "Virtual Call to ";
 constexpr llvm::StringLiteral interfaceCallPrefix = "Interface Call to ";
 
-std::string jllvm::mangleMethodResolutionCall(MethodResolution resolution, FieldType classDescriptor,
+std::string jllvm::mangleMethodResolutionCall(MethodResolution resolution, llvm::StringRef className,
                                               llvm::StringRef methodName, MethodType descriptor)
 {
-    std::string directMethodMangling = mangleDirectMethodCall(classDescriptor, methodName, descriptor);
+    std::string directMethodMangling = mangleDirectMethodCall(className, methodName, descriptor);
     switch (resolution)
     {
         case MethodResolution::Virtual: return (virtualCallPrefix + directMethodMangling).str();
@@ -60,19 +60,19 @@ std::string jllvm::mangleMethodResolutionCall(MethodResolution resolution, Field
 constexpr llvm::StringLiteral specialCallPrefix = "Special Call to ";
 constexpr llvm::StringLiteral specialCallInfix = ":from ";
 
-std::string jllvm::mangleSpecialMethodCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor,
+std::string jllvm::mangleSpecialMethodCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor,
                                            std::optional<FieldType> callerClass)
 {
-    return (specialCallPrefix + mangleDirectMethodCall(classDescriptor, methodName, descriptor)
+    return (specialCallPrefix + mangleDirectMethodCall(className, methodName, descriptor)
             + (callerClass ? specialCallInfix + callerClass->textual() : ""))
         .str();
 }
 
 constexpr llvm::StringLiteral staticCallPrefix = "Static Call to ";
 
-std::string jllvm::mangleStaticCall(FieldType classDescriptor, llvm::StringRef methodName, MethodType descriptor)
+std::string jllvm::mangleStaticCall(llvm::StringRef className, llvm::StringRef methodName, MethodType descriptor)
 {
-    return (staticCallPrefix + mangleDirectMethodCall(classDescriptor, methodName, descriptor)).str();
+    return (staticCallPrefix + mangleDirectMethodCall(className, methodName, descriptor)).str();
 }
 
 constexpr llvm::StringLiteral classObjectPrefix = "Load ";
@@ -176,9 +176,9 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
         }
         if (isStatic)
         {
-            return DemangledStaticCall{FieldType(className), name, MethodType(symbolName)};
+            return DemangledStaticCall{className, name, MethodType(symbolName)};
         }
-        return DemangledMethodResolutionCall{*resolution, FieldType(className), name, MethodType(symbolName)};
+        return DemangledMethodResolutionCall{*resolution, className, name, MethodType(symbolName)};
     }
 
     if (isSpecialMethod)
@@ -192,7 +192,7 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
             {
                 return std::monostate{};
             }
-            return DemangledSpecialCall{FieldType(className), name, MethodType(methodType), std::nullopt};
+            return DemangledSpecialCall{className, name, MethodType(methodType), std::nullopt};
         }
         if (!symbolName.consume_front(specialCallInfix))
         {
@@ -202,7 +202,7 @@ jllvm::DemangledVariant jllvm::demangleStubSymbolName(llvm::StringRef symbolName
         {
             return std::monostate{};
         }
-        return DemangledSpecialCall{FieldType(className), name, MethodType(methodType), FieldType(symbolName)};
+        return DemangledSpecialCall{className, name, MethodType(methodType), FieldType(symbolName)};
     }
 
     if (FieldType::verify(symbolName))
