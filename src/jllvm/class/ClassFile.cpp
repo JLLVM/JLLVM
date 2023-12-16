@@ -219,13 +219,19 @@ jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llv
                   [&]()
                   { return consume<PoolIndex<ClassInfo>>(bytes).resolve(result)->nameIndex.resolve(result)->text; });
 
-    result.m_fields.resize(consume<std::uint16_t>(bytes));
-    std::generate(result.m_fields.begin(), result.m_fields.end(),
-                  [&]() { return parseFieldOrMethodInfo<FieldInfo>(bytes, result); });
+    auto fieldCount = consume<std::uint16_t>(bytes);
+    result.m_fields.reserve(fieldCount);
+    for (std::size_t i = 0; i < fieldCount; i++)
+    {
+        result.m_fields.push_back(parseFieldOrMethodInfo<FieldInfo>(bytes, result));
+    }
 
-    result.m_methods.resize(consume<std::uint16_t>(bytes));
-    std::generate(result.m_methods.begin(), result.m_methods.end(),
-                  [&]() { return parseFieldOrMethodInfo<MethodInfo>(bytes, result); });
+    auto methodCount = consume<std::uint16_t>(bytes);
+    result.m_methods.reserve(methodCount);
+    for (std::size_t i = 0; i < methodCount; i++)
+    {
+        result.m_methods.push_back(parseFieldOrMethodInfo<MethodInfo>(bytes, result));
+    }
 
     auto attributeCount = consume<std::uint16_t>(bytes);
     for (std::size_t i = 0; i < attributeCount; i++)

@@ -357,13 +357,6 @@ class FieldInfo
     AttributeMap m_attributes;
 
 public:
-    FieldInfo() = default;
-    ~FieldInfo() = default;
-    FieldInfo(const FieldInfo&) = delete;
-    FieldInfo& operator=(const FieldInfo&) = delete;
-    FieldInfo(FieldInfo&&) = default;
-    FieldInfo& operator=(FieldInfo&&) = default;
-
     FieldInfo(AccessFlag accessFlags, PoolIndex<Utf8Info> nameIndex, PoolIndex<Utf8Info> descriptorIndex,
               AttributeMap&& attributes)
         : m_accessFlags(accessFlags),
@@ -407,13 +400,6 @@ class MethodInfo
     AttributeMap m_attributes;
 
 public:
-    MethodInfo() = default;
-    ~MethodInfo() = default;
-    MethodInfo(const MethodInfo&) = delete;
-    MethodInfo& operator=(const MethodInfo&) = delete;
-    MethodInfo(MethodInfo&&) = default;
-    MethodInfo& operator=(MethodInfo&&) = default;
-
     MethodInfo(AccessFlag accessFlags, PoolIndex<Utf8Info> nameIndex, PoolIndex<Utf8Info> descriptorIndex,
                AttributeMap&& attributes)
         : m_accessFlags(accessFlags),

@@ -32,6 +32,8 @@ class StringInterner
     String* createString(llvm::ArrayRef<std::uint8_t> buffer, jllvm::CompactEncoding encoding);
 
 public:
+    /// Initialize the interner by loading the required Java classes. Has to be called before the first call to 'intern'.
+    /// 'initializer' must return a pointer to a fully initialized class object for 'FieldType' of its argument.
     template <std::invocable<FieldType> F>
     void initialize(F&& initializer)
     {
