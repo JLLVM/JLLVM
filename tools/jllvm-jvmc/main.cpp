@@ -130,6 +130,8 @@ int main(int argc, char** argv)
 
     loader.loadBootstrapClasses();
 
+    stringInterner.initialize([&](jllvm::FieldType fieldType) { return &loader.forName(fieldType); });
+
     auto buffer = llvm::MemoryBuffer::getFile(inputFile);
     if (!buffer)
     {
