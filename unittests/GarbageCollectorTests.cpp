@@ -28,14 +28,17 @@ class GarbageCollectorFixture
 
 protected:
     GarbageCollector gc{/*heapSize=*/128};
+    ClassObject metaObject;
+    ClassObject objectClass;
     ClassObject emptyTestObject;
     ClassObject* arrayOfEmptyTestObject;
 
 public:
     GarbageCollectorFixture()
-        : emptyTestObject(/*metaClass=*/nullptr, /*fieldAreaSize=*/0, "TestObject"),
-          arrayOfEmptyTestObject(
-              ClassObject::createArray(m_allocator, /*metaClass=*/nullptr, &emptyTestObject, m_stringSaver))
+        : metaObject(&metaObject, /*fieldAreaSize=*/0, "MetaObject"),
+          objectClass(&metaObject, /*fieldAreaSize=*/0, "Object"),
+          emptyTestObject(&metaObject, /*fieldAreaSize=*/0, "TestObject"),
+          arrayOfEmptyTestObject(ClassObject::createArray(m_allocator, &objectClass, &emptyTestObject, m_stringSaver))
     {
     }
 };
@@ -77,8 +80,9 @@ TEST_CASE_METHOD(GarbageCollectorFixture, "Create Array", "[GC]")
     // Memory access remains valid.
     CHECK(object->getClass() == arrayOfEmptyTestObject);
     CHECK_THAT(*object, SizeIs(4));
-    CHECK_THAT(*object, AllMatch(Predicate<Object*>(
-                            [&](Object* object) { return object->getClass() == &emptyTestObject; }, "can be accessed")));
+    CHECK_THAT(*object,
+               AllMatch(Predicate<Object*>([&](Object* object) { return object->getClass() == &emptyTestObject; },
+                                           "can be accessed")));
 }
 
 SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoot]")

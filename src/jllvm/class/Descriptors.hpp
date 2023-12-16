@@ -129,6 +129,8 @@ public:
             default: return false;
         }
     }
+
+    constexpr static FieldType fromPretty(std::string_view text);
 };
 
 /// <BaseType> ::= 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z'
@@ -486,6 +488,15 @@ constexpr bool FieldType::isWide() const
 {
     std::optional<BaseType> baseType = get_if<BaseType>(this);
     return baseType == BaseType::Long || baseType == BaseType::Double;
+}
+
+constexpr FieldType FieldType::fromPretty(std::string_view text)
+{
+    if (text.starts_with('['))
+    {
+        return ArrayType{text.substr(1)};
+    }
+    return ObjectType{text};
 }
 
 } // namespace jllvm
