@@ -131,7 +131,7 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-        std::move(bootOptions.classPath),
+        m_stringInterner, std::move(bootOptions.classPath),
         [this](ClassObject& classObject)
         {
             m_jit.add(&classObject);
@@ -174,8 +174,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
             }
         },
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
-      m_stringInterner(m_classLoader),
-      m_jit(JIT::create(m_classLoader, m_gc, m_stringInterner, m_jniEnv.get(), bootOptions.executionMode)),
+      m_jit(JIT::create(m_classLoader, m_gc, m_jniEnv.get(), bootOptions.executionMode)),
       m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
       m_gc(/*random value for now*/ 1 << 20),
       // Seed from the C++ implementations entropy source.
@@ -194,7 +193,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
         std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
         std::pair{"jllvm_throw", [&](Throwable* object) { throwJavaException(object); }},
-        std::pair{"jllvm_initialize_class_object", [&](ClassObject* classObject)
+        std::pair{"jllvm_initialize_class_object",
+                  [&](ClassObject* classObject)
                   {
                       // This should have been checked inline in LLVM IR.
                       assert(!classObject->isInitialized());
@@ -309,8 +309,13 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
 
     initialize(m_classLoader.loadBootstrapClasses());
 
-    m_stringInterner.loadStringClass();
-    initialize(m_stringInterner.getStringClass());
+    m_stringInterner.initialize(
+        [&](FieldType descriptor)
+        {
+            ClassObject* classObject = &m_classLoader.forName(descriptor);
+            initialize(*classObject);
+            return classObject;
+        });
 
     if (!bootOptions.systemInitialization)
     {

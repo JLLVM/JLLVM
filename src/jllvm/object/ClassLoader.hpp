@@ -25,6 +25,7 @@
 #include <list>
 
 #include "ClassObject.hpp"
+#include "StringInterner.hpp"
 
 namespace jllvm
 {
@@ -37,6 +38,7 @@ class ClassLoader
 
     llvm::BumpPtrAllocator m_stringAllocator;
     llvm::StringSaver m_stringSaver{m_stringAllocator};
+    StringInterner& m_stringInterner;
     std::vector<std::unique_ptr<llvm::MemoryBuffer>> m_memoryBuffers;
     std::list<ClassFile> m_classFiles;
 
@@ -57,13 +59,14 @@ class ClassLoader
 
     ClassObject* m_metaClassObject = nullptr;
 
-
 public:
     /// Constructs a class loader with 'classPaths', which are all directories that class files will be searched for.
     /// 'prepareClassObject' is called when a class file has been loaded and a class object derived from it. This can
     /// be used to register the class object or prepare it in an additional action outside of the class loader.
     /// 'allocateStatic' should allocate and return 'pointer sized' storage for any static variables of reference type.
-    ClassLoader(std::vector<std::string>&& classPaths, llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
+    /// 'stringInterner' is used to intern strings that are values of constant fields
+    ClassLoader(StringInterner& stringInterner, std::vector<std::string>&& classPaths,
+                llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
                 llvm::unique_function<void**()> allocateStatic);
 
     ~ClassLoader();
@@ -96,6 +99,12 @@ public:
     auto getLoadedClassObjects() const
     {
         return llvm::make_second_range(m_mapping);
+    }
+
+    /// Returns the string interner used for interning constant strings
+    StringInterner& getStringInterner() const
+    {
+        return m_stringInterner;
     }
 };
 

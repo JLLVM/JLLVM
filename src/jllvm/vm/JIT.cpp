@@ -77,8 +77,8 @@ extern "C" void __bzero();
 
 jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
                 std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu, llvm::orc::JITTargetMachineBuilder&& builder,
-                llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc,
-                StringInterner& stringInterner, void* jniFunctions, ExecutionMode executionMode)
+                llvm::DataLayout&& layout, ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions,
+                ExecutionMode executionMode)
     : m_session(std::move(session)),
       m_externalStubs(llvm::cantFail(m_session->createJITDylib("<stubs>"))),
       m_javaJITSymbols(llvm::cantFail(m_session->createJITDylib("<javaJIT>"))),
@@ -89,7 +89,6 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
       m_lazyCallThroughManager(m_epciu->getLazyCallThroughManager()),
       m_externalStubsManager(m_epciu->createIndirectStubsManager()),
       m_classLoader(classLoader),
-      m_stringInterner(stringInterner),
       m_executionMode(executionMode),
       m_dataLayout(layout),
       m_interner(*m_session, m_dataLayout),
@@ -120,7 +119,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
     // The functions created by the stub class object stub definitions generator are also considered an
     // implementation detail and may only link against the stubs.
     m_implDetails.addGenerator(std::make_unique<ClassObjectStubDefinitionsGenerator>(
-        *m_externalStubsManager, m_optimizeLayer, m_dataLayout, searchOrder, classLoader, stringInterner));
+        *m_externalStubsManager, m_optimizeLayer, m_dataLayout, searchOrder, classLoader));
 
     m_objectLayer.addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
         *m_session, std::make_unique<llvm::orc::EPCDebugObjectRegistrar>(
@@ -150,8 +149,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
 #endif
 }
 
-jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                              void* jniFunctions, ExecutionMode executionMode)
+jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions,
+                              ExecutionMode executionMode)
 {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -175,8 +174,8 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, St
     jtmb.getOptions().ExceptionModel = llvm::ExceptionHandling::DwarfCFI;
     jtmb.setCodeGenOptLevel(llvm::CodeGenOpt::Aggressive);
     auto dl = llvm::cantFail(jtmb.getDefaultDataLayoutForTarget());
-    return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, stringInterner,
-               jniFunctions, executionMode);
+    return JIT(std::move(es), std::move(epciu), std::move(jtmb), std::move(dl), classLoader, gc, jniFunctions,
+               executionMode);
 }
 
 jllvm::JIT::~JIT()

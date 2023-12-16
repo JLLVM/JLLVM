@@ -84,7 +84,7 @@ class OSRState
         m_buffer = std::make_unique<std::uint64_t[]>(calculateJITBufferSize(numLocals, numOperandStack));
 
         auto outIter = llvm::copy(std::forward<decltype(locals)>(locals), m_buffer.get());
-        outIter = llvm::copy(std::forward<decltype(operandStack)>(operandStack), outIter);
+        llvm::copy(std::forward<decltype(operandStack)>(operandStack), outIter);
     }
 
 public:

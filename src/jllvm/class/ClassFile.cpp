@@ -15,12 +15,14 @@
 
 #include <llvm/Support/ErrorHandling.h>
 
-#include <jllvm/support/Bytes.hpp>
-
 using namespace jllvm;
 
 namespace
 {
+
+template <class T>
+concept FieldOrMethodInfo = llvm::is_one_of<T, FieldInfo, MethodInfo>::value;
+
 std::uint8_t deduceByteCount(std::uint8_t c)
 {
     if (c <= 0x7F)
@@ -162,7 +164,7 @@ std::pair<PoolIndex<Utf8Info>, llvm::ArrayRef<char>> parseAttributeInfo(llvm::Ar
     return {nameIndex, {raw.begin(), raw.end()}};
 }
 
-template <class T>
+template <FieldOrMethodInfo T>
 T parseFieldOrMethodInfo(llvm::ArrayRef<char>& bytes, const ClassFile& classFile)
 {
     auto accessFlags = consume<AccessFlag>(bytes);
@@ -205,21 +207,27 @@ jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llv
         }
     }
     result.m_accessFlags = consume<AccessFlag>(bytes);
-    result.m_thisClass = consume<std::uint16_t>(bytes);
-    result.m_superClass = consume<std::uint16_t>(bytes);
-    result.m_interfaces.resize(consume<std::uint16_t>(bytes));
-    for (auto& elem : result.m_interfaces)
+    result.m_thisClass = consume<PoolIndex<ClassInfo>>(bytes).resolve(result)->nameIndex.resolve(result)->text;
+
+    if (auto superClass = consume<PoolIndex<ClassInfo>>(bytes))
     {
-        elem = consume<PoolIndex<ClassInfo>>(bytes).resolve(result)->nameIndex.resolve(result)->text;
+        result.m_superClass = superClass.resolve(result)->nameIndex.resolve(result)->text;
     }
 
+    result.m_interfaces.resize(consume<std::uint16_t>(bytes));
+    std::generate(result.m_interfaces.begin(), result.m_interfaces.end(),
+                  [&]()
+                  { return consume<PoolIndex<ClassInfo>>(bytes).resolve(result)->nameIndex.resolve(result)->text; });
+
     auto fieldCount = consume<std::uint16_t>(bytes);
+    result.m_fields.reserve(fieldCount);
     for (std::size_t i = 0; i < fieldCount; i++)
     {
         result.m_fields.push_back(parseFieldOrMethodInfo<FieldInfo>(bytes, result));
     }
 
     auto methodCount = consume<std::uint16_t>(bytes);
+    result.m_methods.reserve(methodCount);
     for (std::size_t i = 0; i < methodCount; i++)
     {
         result.m_methods.push_back(parseFieldOrMethodInfo<MethodInfo>(bytes, result));
@@ -233,20 +241,6 @@ jllvm::ClassFile jllvm::ClassFile::parseFromFile(llvm::ArrayRef<char> bytes, llv
     }
 
     return result;
-}
-
-llvm::StringRef ClassFile::getThisClass() const
-{
-    return m_thisClass.resolve(*this)->nameIndex.resolve(*this)->text;
-}
-
-std::optional<llvm::StringRef> ClassFile::getSuperClass() const
-{
-    if (!m_superClass)
-    {
-        return std::nullopt;
-    }
-    return m_superClass.resolve(*this)->nameIndex.resolve(*this)->text;
 }
 
 Code Code::parse(llvm::ArrayRef<char> bytes)

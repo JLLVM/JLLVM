@@ -122,11 +122,15 @@ int main(int argc, char** argv)
     llvm::sys::fs::make_absolute(inputFile);
     classPath.emplace_back(llvm::sys::path::parent_path(inputFile));
 
+    jllvm::StringInterner stringInterner;
+
     jllvm::ClassLoader loader(
-        std::move(classPath), [](jllvm::ClassObject&) {},
+        stringInterner, std::move(classPath), [](jllvm::ClassObject&) {},
         [&]() -> void** { return new (allocator.Allocate<void*>()) void* {}; });
 
     loader.loadBootstrapClasses();
+
+    stringInterner.initialize([&](jllvm::FieldType fieldType) { return &loader.forName(fieldType); });
 
     auto buffer = llvm::MemoryBuffer::getFile(inputFile);
     if (!buffer)

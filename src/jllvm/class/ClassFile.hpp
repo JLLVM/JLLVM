@@ -19,6 +19,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/StringSaver.h>
 
+#include <jllvm/support/Bytes.hpp>
 #include <jllvm/support/Variant.hpp>
 
 #include <cstdint>
@@ -334,6 +335,19 @@ public:
     }
 };
 
+/// 'ConstantValue' attribute attached to fields
+struct ConstantValue
+{
+    PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo> value_index{};
+
+    constexpr static llvm::StringRef identifier = "ConstantValue";
+
+    static ConstantValue parse(llvm::ArrayRef<char> bytes)
+    {
+        return {consume<std::uint16_t>(bytes)};
+    }
+};
+
 /// Info object of a field of the class represented by the class file.
 class FieldInfo
 {
@@ -458,8 +472,8 @@ class ClassFile
 {
     std::vector<ConstantPoolInfo> m_constantPool;
     AccessFlag m_accessFlags;
-    PoolIndex<ClassInfo> m_thisClass;
-    PoolIndex<ClassInfo> m_superClass;
+    llvm::StringRef m_thisClass;
+    std::optional<llvm::StringRef> m_superClass;
     std::vector<llvm::StringRef> m_interfaces;
     std::vector<FieldInfo> m_fields;
     std::vector<MethodInfo> m_methods;
@@ -476,10 +490,16 @@ public:
     static ClassFile parseFromFile(llvm::ArrayRef<char> bytes, llvm::StringSaver& stringSaver);
 
     /// Returns the name of the class defined by this class file.
-    llvm::StringRef getThisClass() const;
+    llvm::StringRef getThisClass() const
+    {
+        return m_thisClass;
+    }
 
     /// Returns the name of the super class of this class. Note, this is a null entry for java/lang/Object.
-    std::optional<llvm::StringRef> getSuperClass() const;
+    std::optional<llvm::StringRef> getSuperClass() const
+    {
+        return m_superClass;
+    }
 
     /// Returns the interfaces implemented by this class.
     llvm::ArrayRef<llvm::StringRef> getInterfaces() const

@@ -35,7 +35,6 @@
 #include <jllvm/materialization/JNIImplementationLayer.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/object/ClassLoader.hpp>
-#include <jllvm/object/StringInterner.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
 
 #include <memory>
@@ -79,7 +78,6 @@ class JIT
     std::unique_ptr<llvm::orc::IndirectStubsManager> m_externalStubsManager;
 
     ClassLoader& m_classLoader;
-    StringInterner& m_stringInterner;
 
     llvm::DataLayout m_dataLayout;
     ExecutionMode m_executionMode;
@@ -100,11 +98,11 @@ class JIT
 
     JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session, std::unique_ptr<llvm::orc::EPCIndirectionUtils>&& epciu,
         llvm::orc::JITTargetMachineBuilder&& builder, llvm::DataLayout&& layout, ClassLoader& classLoader,
-        GarbageCollector& gc, StringInterner& stringInterner, void* jniFunctions, ExecutionMode executionMode);
+        GarbageCollector& gc, void* jniFunctions, ExecutionMode executionMode);
 
 public:
-    static jllvm::JIT create(ClassLoader& classLoader, GarbageCollector& gc, StringInterner& stringInterner,
-                             void* jniFunctions, ExecutionMode executionMode);
+    static jllvm::JIT create(ClassLoader& classLoader, GarbageCollector& gc, void* jniFunctions,
+                             ExecutionMode executionMode);
 
     ~JIT();
 
