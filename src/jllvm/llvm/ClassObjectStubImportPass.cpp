@@ -42,7 +42,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             variant,
             [&](const DemangledFieldAccess& fieldAccess) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(fieldAccess.className));
+                ClassObject* classObject = m_classLoader.forNameLoaded(FieldType::fromMangled(fieldAccess.className));
                 if (!classObject)
                 {
                     return nullptr;
@@ -59,7 +59,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledStaticCall& staticCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(staticCall.className));
+                ClassObject* classObject = m_classLoader.forNameLoaded(FieldType::fromMangled(staticCall.className));
                 if (!classObject)
                 {
                     return nullptr;
@@ -69,7 +69,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledMethodResolutionCall& methodResolutionCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(methodResolutionCall.className));
+                ClassObject* classObject = m_classLoader.forNameLoaded(FieldType::fromMangled(methodResolutionCall.className));
                 if (!classObject)
                 {
                     return nullptr;
@@ -80,7 +80,7 @@ llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& modu
             },
             [&](const DemangledSpecialCall& specialCall) -> llvm::Function*
             {
-                ClassObject* classObject = m_classLoader.forNameLoaded(ObjectType(specialCall.className));
+                ClassObject* classObject = m_classLoader.forNameLoaded(FieldType::fromMangled(specialCall.className));
                 if (!classObject)
                 {
                     return nullptr;
