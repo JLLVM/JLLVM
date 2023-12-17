@@ -51,7 +51,7 @@ handler:
 endHandler:
     pop
     ; EXC: call void @"Static Call to Test.deopt:()V"
-    ; EXC-SAME: "deopt"(i16 {{[0-9]+}}, i16 2, i8 poison, i8 poison)
+    ; EXC-SAME: "deopt"(i16 {{[0-9]+}}, i16 2, i8 poison, i8 poison, i64 0)
     invokestatic Test/deopt()V
 endFunction:
     return
