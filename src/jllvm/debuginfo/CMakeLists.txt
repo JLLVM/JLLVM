@@ -11,14 +11,5 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-add_subdirectory(class)
-add_subdirectory(compiler)
-add_subdirectory(debuginfo)
-add_subdirectory(gc)
-add_subdirectory(llvm)
-add_subdirectory(main)
-add_subdirectory(materialization)
-add_subdirectory(object)
-add_subdirectory(support)
-add_subdirectory(unwind)
-add_subdirectory(vm)
+add_library(JLLVMDebugInfo TrivialDebugInfoBuilder.cpp)
+target_link_libraries(JLLVMDebugInfo PUBLIC LLVMCore LLVMSupport)

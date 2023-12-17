@@ -18,6 +18,7 @@
 
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
+#include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 
 #include "InterpreterEntry.hpp"
 
@@ -29,20 +30,11 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    llvm::DIBuilder debugBuilder(*module);
-    llvm::DIFile* file = debugBuilder.createFile(".", ".");
-
-    debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
-
     auto* function =
         llvm::Function::Create(descriptorToType(method->getType(), method->isStatic(), *context),
                                llvm::GlobalValue::ExternalLinkage, mangleDirectMethodCall(method), module.get());
 
-    llvm::DISubprogram* subprogram =
-        debugBuilder.createFunction(file, function->getName(), function->getName(), file, 1,
-                                    debugBuilder.createSubroutineType(debugBuilder.getOrCreateTypeArray({})), 1,
-                                    llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
-    function->setSubprogram(subprogram);
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
 
     applyABIAttributes(function, method->getType(), method->isStatic());
     function->clearGC();
@@ -50,7 +42,7 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
-    builder.SetCurrentDebugLocation(llvm::DILocation::get(builder.getContext(), 1, 1, subprogram));
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     llvm::Value* returnValue = generateInterpreterEntry(
         builder, *method,
@@ -118,8 +110,7 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
         builder.CreateRetVoid();
     }
 
-    debugBuilder.finalizeSubprogram(subprogram);
-    debugBuilder.finalize();
+    debugInfoBuilder.finalize();
 
     m_baseLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
 }

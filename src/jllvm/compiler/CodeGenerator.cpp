@@ -17,6 +17,7 @@
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ModRef.h>
 
+#include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 #include <jllvm/support/BitArrayRef.hpp>
 
 using namespace jllvm;
@@ -168,20 +169,12 @@ ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& b
 
 void CodeGenerator::generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset)
 {
-    llvm::DIFile* file = m_debugBuilder.createFile("temp.java", ".");
-    llvm::DICompileUnit* cu = m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
-
-    llvm::DISubprogram* subprogram =
-        m_debugBuilder.createFunction(file, m_function->getName(), "", file, 1,
-                                      m_debugBuilder.createSubroutineType(m_debugBuilder.getOrCreateTypeArray({})), 1,
-                                      llvm::DINode::FlagZero, llvm::DISubprogram::SPFlagDefinition);
-    m_function->setSubprogram(subprogram);
-    auto onExit = llvm::make_scope_exit([&] { m_debugBuilder.finalizeSubprogram(subprogram); });
+    TrivialDebugInfoBuilder debugInfoBuilder(m_function);
 
     // Dummy debug location until we generate proper debug location. This is required by LLVM as it requires any call
     // to a function that has debug info and is eligible to be inlined to have debug locations on the call.
     // This is currently the case for self-recursive functions.
-    m_builder.SetCurrentDebugLocation(llvm::DILocation::get(m_builder.getContext(), 1, 1, subprogram));
+    m_builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
     ByteCodeTypeChecker checker{m_builder.getContext(), m_classFile, code, m_method};
 
