@@ -225,7 +225,7 @@ llvm::Function* jllvm::generateMethodResolutionCallStub(llvm::Module& module, jl
 
     auto* function = llvm::Function::Create(
         functionType, llvm::GlobalValue::ExternalLinkage,
-        mangleMethodResolutionCall(resolution, classObject.getDescriptor(), methodName, descriptor), module);
+        mangleMethodResolutionCall(resolution, classObject.getClassName(), methodName, descriptor), module);
     applyABIAttributes(function, descriptor, /*isStatic=*/false);
 
     llvm::SmallVector<llvm::Value*> args = llvm::to_vector_of<llvm::Value*>(llvm::make_pointer_range(function->args()));
@@ -316,7 +316,7 @@ llvm::Function* jllvm::generateSpecialMethodCallStub(llvm::Module& module, const
 
     auto* function = llvm::Function::Create(
         functionType, llvm::GlobalValue::ExternalLinkage,
-        mangleSpecialMethodCall(classObject.getDescriptor(), methodName, descriptor,
+        mangleSpecialMethodCall(classObject.getClassName(), methodName, descriptor,
                                 callerClass ? callerClass->getDescriptor() : std::optional<FieldType>{}),
         module);
     applyABIAttributes(function, descriptor, /*isStatic=*/false);
@@ -343,7 +343,7 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
 
     auto* function =
         llvm::Function::Create(functionType, llvm::GlobalValue::ExternalLinkage,
-                               mangleStaticCall(classObject.getDescriptor(), methodName, descriptor), module);
+                               mangleStaticCall(classObject.getClassName(), methodName, descriptor), module);
     applyABIAttributes(function, descriptor, /*isStatic=*/true);
 
     TrivialDebugInfoBuilder debugInfoBuilder(function);

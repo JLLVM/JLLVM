@@ -307,8 +307,8 @@ jllvm::ClassLoader::ClassLoader(StringInterner& stringInterner, std::vector<std:
 
 jllvm::ClassObject& jllvm::ClassLoader::loadBootstrapClasses()
 {
-    m_objectClassObject = &forName("Ljava/lang/Object;");
     m_metaClassObject = &forName("Ljava/lang/Class;");
+    m_objectClassObject = &forName("Ljava/lang/Object;");
 
     // With the meta class object loaded we can update all so far loaded class objects to be of type 'Class'.
     // This includes 'Class' itself.

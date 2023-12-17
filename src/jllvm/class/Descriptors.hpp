@@ -98,37 +98,11 @@ public:
     constexpr bool isWide() const;
 
     /// Returns true if the given string is a valid 'FieldType' descriptor.
-    constexpr static bool verify(std::string_view text)
-    {
-        if (text.empty())
-        {
-            return false;
-        }
-        switch (text.front())
-        {
-            case 'B':
-            case 'C':
-            case 'D':
-            case 'F':
-            case 'I':
-            case 'J':
-            case 'S':
-            case 'V':
-            case 'Z': return text.size() == 1;
-            case '[': return FieldType::verify(text.substr(1));
-            case 'L':
-            {
-                text = text.substr(1);
-                auto pos = text.find(';');
-                if (pos == std::string_view::npos || pos == 0)
-                {
-                    return false;
-                }
-                return pos + 1 == text.size();
-            }
-            default: return false;
-        }
-    }
+    constexpr static bool verify(std::string_view text);
+
+    /// Parses a 'FieldType' from a given string in the 'className' format used by the ClassObjectStubMangler:
+    /// <className> ::= '[' <descriptor> | <simple-class-name (without 'L')>
+    constexpr static FieldType fromMangled(std::string_view text);
 };
 
 /// <BaseType> ::= 'B' | 'C' | 'D' | 'F' | 'I' | 'J' | 'S' | 'Z'
@@ -486,6 +460,47 @@ constexpr bool FieldType::isWide() const
 {
     std::optional<BaseType> baseType = get_if<BaseType>(this);
     return baseType == BaseType::Long || baseType == BaseType::Double;
+}
+
+constexpr bool FieldType::verify(std::string_view text)
+{
+    if (text.empty())
+    {
+        return false;
+    }
+    switch (text.front())
+    {
+        case 'B':
+        case 'C':
+        case 'D':
+        case 'F':
+        case 'I':
+        case 'J':
+        case 'S':
+        case 'V':
+        case 'Z': return text.size() == 1;
+        case '[': return FieldType::verify(text.substr(1));
+        case 'L':
+        {
+            text = text.substr(1);
+            auto pos = text.find(';');
+            if (pos == std::string_view::npos || pos == 0)
+            {
+                return false;
+            }
+            return pos + 1 == text.size();
+        }
+        default: return false;
+    }
+}
+
+constexpr FieldType FieldType::fromMangled(std::string_view text)
+{
+    if (text.starts_with('['))
+    {
+        return ArrayType{text.substr(1)};
+    }
+    return ObjectType{text};
 }
 
 } // namespace jllvm

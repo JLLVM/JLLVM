@@ -34,26 +34,26 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
         variant,
         [&](const DemangledFieldAccess& fieldAccess)
         {
-            ClassObject& classObject = classLoader.forName(ObjectType(fieldAccess.className));
+            ClassObject& classObject = classLoader.forName(FieldType::fromMangled(fieldAccess.className));
             generateFieldAccessStub(*module, classObject, fieldAccess.fieldName, fieldAccess.descriptor);
         },
         [&](DemangledLoadClassObject demangledLoadClassObject)
         { generateClassObjectAccessStub(*module, demangledLoadClassObject.classObject); },
         [&](const DemangledStaticCall& staticCall)
         {
-            ClassObject& classObject = classLoader.forName(staticCall.classDescriptor);
+            ClassObject& classObject = classLoader.forName(FieldType::fromMangled(staticCall.className));
             generateStaticCallStub(*module, classObject, staticCall.methodName, staticCall.descriptor, *objectClass);
         },
         [&](const DemangledMethodResolutionCall& methodResolutionCall)
         {
-            ClassObject& classObject = classLoader.forName(methodResolutionCall.classDescriptor);
+            ClassObject& classObject = classLoader.forName(FieldType::fromMangled(methodResolutionCall.className));
             generateMethodResolutionCallStub(*module, methodResolutionCall.resolution, classObject,
                                              methodResolutionCall.methodName, methodResolutionCall.descriptor,
                                              *objectClass);
         },
         [&](const DemangledSpecialCall& specialCall)
         {
-            ClassObject& classObject = classLoader.forName(specialCall.classDescriptor);
+            ClassObject& classObject = classLoader.forName(FieldType::fromMangled(specialCall.className));
             ClassObject* callerClass = nullptr;
             if (specialCall.callerClass)
             {

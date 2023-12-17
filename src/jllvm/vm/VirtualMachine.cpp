@@ -58,17 +58,17 @@ bool canOverride(const jllvm::Method& derived, const jllvm::ClassObject* derived
 jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* classObject,
                                   const jllvm::Method& resolvedMethod, const jllvm::ClassObject* resolvedMethodClass)
 {
-    auto doLookup = [&](jllvm::FieldType classDescriptor) -> jllvm::VTableSlot
+    auto doLookup = [&](llvm::StringRef className) -> jllvm::VTableSlot
     {
         return reinterpret_cast<jllvm::VTableSlot>(
-            llvm::cantFail(jit.lookup(classDescriptor, resolvedMethod.getName(), resolvedMethod.getType())).getAddress());
+            llvm::cantFail(jit.lookup(className, resolvedMethod.getName(), resolvedMethod.getType())).getAddress());
     };
 
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
 
     if (resolvedMethod.getVisibility() == jllvm::Visibility::Private)
     {
-        return doLookup(resolvedMethodClass->getDescriptor());
+        return doLookup(resolvedMethodClass->getClassName());
     }
 
     // Step 2
@@ -92,7 +92,7 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
         {
             return nullptr;
         }
-        return doLookup(curr->getDescriptor());
+        return doLookup(curr->getClassName());
     }
 
     // Otherwise, the maximally-specific superinterface methods of C are determined (§5.4.3.3). If exactly one matches
@@ -120,7 +120,7 @@ jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* cla
                                     && canOverride(method, interface, resolvedMethod, resolvedMethodClass);
                          }))
         {
-            return doLookup(interface->getDescriptor());
+            return doLookup(interface->getClassName());
         }
     }
 
@@ -340,7 +340,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                              m_stringInterner.intern("main"));
 
     initialize(m_classLoader.forName("Ljava/lang/System;"));
-    executeStaticMethod("Ljava/lang/System;", "initPhase1", "()V");
+    executeStaticMethod("java/lang/System", "initPhase1", "()V");
 }
 
 jllvm::VirtualMachine::~VirtualMachine() = default;
@@ -355,7 +355,7 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 
     ClassObject& classObject = m_classLoader.add(std::move(*buffer));
     initialize(classObject);
-    auto lookup = m_jit.lookup(classObject.getDescriptor(), "main", "([Ljava/lang/String;)V");
+    auto lookup = m_jit.lookup(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
     if (!lookup)
     {
         llvm::report_fatal_error(("Failed to find main method due to " + toString(lookup.takeError())).c_str());
@@ -418,7 +418,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         initialize(*base);
     }
 
-    auto classInitializer = m_jit.lookup(classObject.getDescriptor(), "<clinit>", "()V");
+    auto classInitializer = m_jit.lookup(classObject.getClassName(), "<clinit>", "()V");
     if (!classInitializer)
     {
         llvm::consumeError(classInitializer.takeError());
@@ -427,7 +427,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
 
     LLVM_DEBUG({
         llvm::dbgs() << "Executing class initializer "
-                     << mangleDirectMethodCall(classObject.getDescriptor(), "<clinit>", "()V") << '\n';
+                     << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
     reinterpret_cast<void (*)()>(classInitializer->getAddress())();
     classObject.setInitializationStatus(InitializationStatus::Initialized);

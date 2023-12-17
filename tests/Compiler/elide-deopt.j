@@ -21,7 +21,7 @@
     .limit stack 2
     .limit locals 1
     iconst_0
-    ; NO_EXCEPT: call void @"Static Call to LTest;.print:(I)V"
+    ; NO_EXCEPT: call void @"Static Call to Test.print:(I)V"
     ; NO_EXCEPT-SAME: "deopt"(i16 1, i16 0)
     invokestatic Test/print(I)V
     return
@@ -32,7 +32,7 @@
     .limit stack 2
     .limit locals 1
     iconst_0
-    ; EXCEPT: call void @"Static Call to LTest;.print:(I)V"
+    ; EXCEPT: call void @"Static Call to Test.print:(I)V"
     ; EXCEPT-SAME: "deopt"(i16 1, i16 1, {{[^,]*}}, i64 0)
 start:
     invokestatic Test/print(I)V
