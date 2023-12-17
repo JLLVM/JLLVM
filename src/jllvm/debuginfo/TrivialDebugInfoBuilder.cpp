@@ -19,7 +19,7 @@ jllvm::TrivialDebugInfoBuilder::TrivialDebugInfoBuilder(llvm::Function* function
     : m_debugBuilder(*function->getParent())
 {
     llvm::DIFile* file = m_debugBuilder.createFile(".", ".");
-    unsigned runtimeVersion = 1;
+    constexpr unsigned runtimeVersion = 1;
     m_debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, /*Producer=*/"JLLVM", /*isOptimized=*/true,
                                      /*Flags=*/"", runtimeVersion);
 
