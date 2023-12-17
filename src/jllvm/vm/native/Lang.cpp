@@ -15,6 +15,55 @@
 
 #include <llvm/Support/Endian.h>
 
+jllvm::Object* jllvm::lang::ObjectModel::clone()
+{
+    const ClassObject* thisClass = javaThis->getClass();
+    ClassLoader& classLoader = virtualMachine.getClassLoader();
+    GarbageCollector& garbageCollector = virtualMachine.getGC();
+
+    auto arrayClone = [&]<class T = Object*>(T = {})
+    {
+        auto original = static_cast<GCRootRef<Array<T>>>(javaThis);
+        auto* clone = garbageCollector.allocate<Array<T>>(original->getClass(), original->size());
+        llvm::copy(*original, clone->begin());
+
+        return static_cast<Object*>(static_cast<ObjectInterface*>(clone));
+    };
+
+    if (thisClass->isArray())
+    {
+        return match(
+            thisClass->getComponentType()->getDescriptor(),
+            [&](BaseType baseType)
+            {
+                switch (baseType.getValue())
+                {
+                    case BaseType::Boolean:
+                    case BaseType::Char:
+                    case BaseType::Byte:
+                    case BaseType::Short:
+                    case BaseType::Int: return arrayClone(std::int32_t{});
+                    case BaseType::Float: return arrayClone(float{});
+                    case BaseType::Double: return arrayClone(double{});
+                    case BaseType::Long: return arrayClone(std::int64_t{});
+                    case BaseType::Void: break;
+                }
+                llvm_unreachable("void parameter is not possible");
+            },
+            [&](auto) { return arrayClone(); });
+    }
+
+    if (thisClass->wouldBeInstanceOf(&classLoader.forName("Ljava/lang/Cloneable;")))
+    {
+        return nullptr;
+    }
+
+    auto* exception =
+        garbageCollector.allocate<Throwable>(&classLoader.forName("Ljava/lang/CloneNotSupportedException;"));
+    virtualMachine.executeObjectConstructor(exception, "()V");
+    virtualMachine.throwJavaException(exception);
+}
+
 void jllvm::lang::SystemModel::arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
                                          GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length)
 {

@@ -47,9 +47,11 @@ public:
         // Noop while we are single threaded.
     }
 
+    Object* clone();
+
     constexpr static llvm::StringLiteral className = "java/lang/Object";
     constexpr static auto methods =
-        std::make_tuple(&ObjectModel::hashCode, &ObjectModel::getClass, &ObjectModel::notifyAll);
+        std::make_tuple(&ObjectModel::hashCode, &ObjectModel::getClass, &ObjectModel::notifyAll, &ObjectModel::clone);
 };
 
 /// Model implementation for the native methods of Javas 'Class' class.
