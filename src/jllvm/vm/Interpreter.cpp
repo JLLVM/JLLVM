@@ -194,6 +194,69 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
         offset = curr.getOffset();
         InstructionResult result = match(
             *curr, MultiTypeImpls{context},
+            [&](Dup)
+            {
+                InterpreterContext::RawValue value = context.popRaw();
+                context.pushRaw(value);
+                context.pushRaw(value);
+                return NextPC{};
+            },
+            [&](DupX1)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                context.pushRaw(value1);
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                return NextPC{};
+            },
+            [&](DupX2)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                InterpreterContext::RawValue value3 = context.popRaw();
+                context.pushRaw(value1);
+                context.pushRaw(value3);
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                return NextPC{};
+            },
+            [&](Dup2)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                return NextPC{};
+            },
+            [&](Dup2X1)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                InterpreterContext::RawValue value3 = context.popRaw();
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                context.pushRaw(value3);
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                return NextPC{};
+            },
+            [&](Dup2X2)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                InterpreterContext::RawValue value3 = context.popRaw();
+                InterpreterContext::RawValue value4 = context.popRaw();
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                context.pushRaw(value4);
+                context.pushRaw(value3);
+                context.pushRaw(value2);
+                context.pushRaw(value1);
+                return NextPC{};
+            },
             [&](IAdd)
             {
                 auto lhs = context.pop<std::uint32_t>();
@@ -253,6 +316,26 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 ClassObject* classObject = getClassObject(classFile, newInst.index);
                 m_virtualMachine.initialize(*classObject);
                 context.push(m_virtualMachine.getGC().allocate(classObject));
+                return NextPC{};
+            },
+            [&](Nop) { return NextPC{}; },
+            [&](Pop)
+            {
+                context.popRaw();
+                return NextPC{};
+            },
+            [&](Pop2)
+            {
+                context.popRaw();
+                context.popRaw();
+                return NextPC{};
+            },
+            [&](Swap)
+            {
+                InterpreterContext::RawValue value1 = context.popRaw();
+                InterpreterContext::RawValue value2 = context.popRaw();
+                context.pushRaw(value1);
+                context.pushRaw(value2);
                 return NextPC{};
             },
             [&](ByteCodeBase) -> InstructionResult

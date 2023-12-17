@@ -16,6 +16,7 @@
 #include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/support/BitArrayRef.hpp>
+#include <jllvm/support/Bytes.hpp>
 
 #include <cstdint>
 
@@ -86,15 +87,30 @@ public:
     template <InterpreterValue T>
     void push(T value)
     {
-        std::memcpy(m_operandStack + m_topOfStack, &value, sizeof(T));
-        setMaskBit(m_operandGCMask, m_topOfStack, isReference<T>());
-        m_topOfStack++;
+        pushRaw(llvm::bit_cast<NextSizedUInt<T>>(value), isReference<T>());
         if constexpr (InterpreterClass2<T>)
         {
             // "overwrite" the operand stack after as well.
-            setMaskBit(m_operandGCMask, m_topOfStack, isReference<T>());
-            m_topOfStack++;
+            pushRaw(0, isReference<T>());
         }
+    }
+
+    /// Pushes the value into the top operand stack slot.
+    /// This method operates on operand slots rather than 'InterpreterValue' as 'push' does.
+    /// This notably has different behaviour for types such as 'long' or 'double'.
+    void pushRaw(std::uint64_t value, bool isReference)
+    {
+        m_operandStack[m_topOfStack] = value;
+        setMaskBit(m_operandGCMask, m_topOfStack, isReference);
+        m_topOfStack++;
+    }
+
+    /// A raw value consisting of the value and a boolean denoting whether the type is a reference type.
+    using RawValue = std::pair<std::uint64_t, bool>;
+
+    void pushRaw(RawValue pair)
+    {
+        pushRaw(pair.first, pair.second);
     }
 
     /// Pops the top value of type 'T' from the operand stack.
@@ -103,13 +119,18 @@ public:
     {
         if constexpr (InterpreterClass2<T>)
         {
-            m_topOfStack--;
+            popRaw();
         }
+        return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(popRaw().first));
+    }
+
+    /// Pops the top-most operand stack slot from the stack.
+    RawValue popRaw()
+    {
         assert(m_topOfStack != 0 && "bottom of stack already reached");
-        T result;
-        m_topOfStack--;
-        std::memcpy(&result, m_operandStack + m_topOfStack, sizeof(T));
-        return result;
+        bool isReference = BitArrayRef(m_operandGCMask, m_topOfStack)[--m_topOfStack];
+        std::uint64_t copy = m_operandStack[m_topOfStack];
+        return {copy, isReference};
     }
 
     /// Sets the local 'index' to the given 'value'.
