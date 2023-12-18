@@ -15,19 +15,19 @@
 
 #include <llvm/Support/Endian.h>
 
-jllvm::Object* jllvm::lang::ObjectModel::clone()
+jllvm::ObjectInterface* jllvm::lang::ObjectModel::clone()
 {
     const ClassObject* thisClass = javaThis->getClass();
     ClassLoader& classLoader = virtualMachine.getClassLoader();
     GarbageCollector& garbageCollector = virtualMachine.getGC();
 
-    auto arrayClone = [&]<class T = Object*>(T = {})
+    auto arrayClone = [&]<class T = Object*>(T = {})->ObjectInterface*
     {
         auto original = static_cast<GCRootRef<Array<T>>>(javaThis);
         auto* clone = garbageCollector.allocate<Array<T>>(original->getClass(), original->size());
         llvm::copy(*original, clone->begin());
 
-        return static_cast<Object*>(static_cast<ObjectInterface*>(clone));
+        return clone;
     };
 
     if (thisClass->isArray())

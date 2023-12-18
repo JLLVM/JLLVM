@@ -47,7 +47,7 @@ public:
         // Noop while we are single threaded.
     }
 
-    Object* clone();
+    ObjectInterface* clone();
 
     constexpr static llvm::StringLiteral className = "java/lang/Object";
     constexpr static auto methods =
