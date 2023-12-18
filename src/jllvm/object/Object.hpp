@@ -213,6 +213,8 @@ struct Throwable : ObjectInterface
     Array<Object*>* stackTrace = nullptr;
     std::int32_t depth{};
     Object* suppressedExceptions = nullptr;
+
+    explicit Throwable(const ClassObject* classObject) : header(classObject) {}
 };
 
 static_assert(std::is_standard_layout_v<Throwable>);

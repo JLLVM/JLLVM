@@ -457,9 +457,9 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             auto index = PoolIndex<ClassInfo>{aNewArray.index};
             llvm::Value* count = m_operandStack.pop_back();
 
-            llvm::Value* classObject =
-                getClassObject(getOffset(operation),
-                               ArrayType(ObjectType(index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text)));
+            llvm::Value* classObject = getClassObject(
+                getOffset(operation),
+                ArrayType(FieldType::fromMangled(index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text)));
 
             generateNegativeArraySizeCheck(getOffset(operation), count);
 
