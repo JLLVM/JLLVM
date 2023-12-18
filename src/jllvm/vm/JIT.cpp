@@ -37,6 +37,8 @@
 
 #include <utility>
 
+#include <unwind.h>
+
 #include "StackMapRegistrationPlugin.hpp"
 
 #define DEBUG_TYPE "jvm"
@@ -71,6 +73,8 @@ void allowDuplicateDefinitions(llvm::Error&& error)
 
 } // namespace
 
+// NOLINTNEXTLINE(*-reserved-identifier, *-identifier-naming): Name standardized by the Itanium ABI.
+extern "C" int __gxx_personality_v0(...);
 #ifdef __APPLE__
 extern "C" void __bzero();
 #endif
@@ -136,6 +140,8 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
         {m_interner("memset"), llvm::JITEvaluatedSymbol::fromPointer(memset)},
         {m_interner("memcpy"), llvm::JITEvaluatedSymbol::fromPointer(memcpy)},
         {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)},
+        {m_interner("__gxx_personality_v0"), llvm::JITEvaluatedSymbol::fromPointer(__gxx_personality_v0)},
+        {m_interner("_Unwind_Resume"), llvm::JITEvaluatedSymbol::fromPointer(_Unwind_Resume)},
 #ifdef __APPLE__
         {m_interner("__bzero"), llvm::JITEvaluatedSymbol::fromPointer(::__bzero)},
 #endif
