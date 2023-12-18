@@ -79,30 +79,118 @@ template <OperatesOnIntegers T>
 struct InstructionElementType<T>
 {
     using type = std::uint32_t;
+    using unsigned_type = type;
+    using signed_type = std::int32_t;
 };
 
 template <OperatesOnFloat T>
 struct InstructionElementType<T>
 {
     using type = float;
+    using unsigned_type = type;
+    using signed_type = type;
 };
 
 template <OperatesOnLong T>
 struct InstructionElementType<T>
 {
     using type = std::uint64_t;
+    using unsigned_type = type;
+    using signed_type = std::int64_t;
 };
 
 template <OperatesOnDouble T>
 struct InstructionElementType<T>
 {
     using type = double;
+    using unsigned_type = type;
+    using signed_type = type;
 };
 
 /// Struct used to implement instructions with generic implementations parameterized on their operand types.
 struct MultiTypeImpls
 {
     InterpreterContext& context;
+
+    template <IsAdd T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs + rhs);
+        return {};
+    }
+
+    template <IsSub T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs - rhs);
+        return {};
+    }
+
+    template <IsNeg T>
+    NextPC operator()(T) const
+    {
+        context.push(-context.pop<typename InstructionElementType<T>::signed_type>());
+        return {};
+    }
+
+    template <IsMul T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs * rhs);
+        return {};
+    }
+
+    template <class T>
+    NextPC operator()(T) const requires llvm::is_one_of<T, FDiv, DDiv>::value
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::type>();
+        context.push(lhs / rhs);
+        return {};
+    }
+
+    template <class T>
+    NextPC operator()(T) const requires llvm::is_one_of<T, IDiv, LDiv>::value
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::signed_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::signed_type>();
+        if (rhs == 0)
+        {
+            // TODO: Throw ArithmeticException.
+            llvm::report_fatal_error("Throwing ArithmeticException is not yet implemented");
+        }
+        context.push(lhs / rhs);
+        return {};
+    }
+
+    template <class T>
+    NextPC operator()(T) const requires llvm::is_one_of<T, FRem, DRem>::value
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::type>();
+        context.push(std::fmod(lhs, rhs));
+        return {};
+    }
+
+    template <class T>
+    NextPC operator()(T) const requires llvm::is_one_of<T, IRem, LRem>::value
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::signed_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::signed_type>();
+        if (rhs == 0)
+        {
+            // TODO: Throw ArithmeticException.
+            llvm::report_fatal_error("Throwing ArithmeticException is not yet implemented");
+        }
+        context.push(lhs % rhs);
+        return {};
+    }
 
     template <IsLoad T>
     NextPC operator()(T load) const
@@ -257,13 +345,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value1);
                 return NextPC{};
             },
-            [&](IAdd)
-            {
-                auto lhs = context.pop<std::uint32_t>();
-                auto rhs = context.pop<std::uint32_t>();
-                context.push(lhs + rhs);
-                return NextPC{};
-            },
             [&](IConst0)
             {
                 context.push<std::int32_t>(0);
@@ -297,6 +378,12 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             [&](IConstM1)
             {
                 context.push<std::int32_t>(-1);
+                return NextPC{};
+            },
+            [&](IInc iInc)
+            {
+                context.setLocal(iInc.index,
+                                 static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
                 return NextPC{};
             },
             [&](IReturn) { return ReturnValue(context.pop<std::uint32_t>()); },
