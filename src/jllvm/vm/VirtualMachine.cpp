@@ -373,16 +373,9 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
     catch (const Throwable& activeException)
     {
         // TODO: Use printStackTrace:()V in the future
-
-        // Equivalent to Throwable:toString() (does not yet work).
-        std::string s = activeException.getClass()->getClassName().str();
-        std::replace(s.begin(), s.end(), '/', '.');
-        llvm::errs() << s;
-        if (activeException.detailMessage)
-        {
-            llvm::errs() << ": " << activeException.detailMessage->toUTF8();
-        }
-        llvm::errs() << '\n';
+        auto* string =
+            executeStaticMethod<String*>("java/lang/Throwable", "toString", "()Ljava/lang/String;", &activeException);
+        llvm::errs() << string->toUTF8() << '\n';
 
         return -1;
     }

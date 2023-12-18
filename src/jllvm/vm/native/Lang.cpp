@@ -62,41 +62,55 @@ jllvm::ObjectInterface* jllvm::lang::ObjectModel::clone()
     }
 
     String* string = virtualMachine.getStringInterner().intern(thisClass->getClassName());
-    auto exception = garbageCollector.root(
-        garbageCollector.allocate<Throwable>(&classLoader.forName("Ljava/lang/CloneNotSupportedException;")));
-    virtualMachine.executeObjectConstructor(exception, "(Ljava/lang/String;)V", string);
-    virtualMachine.throwJavaException(exception);
+    virtualMachine.throwException("Ljava/lang/CloneNotSupportedException;", "(Ljava/lang/String;)V", string);
 }
 
-void jllvm::lang::SystemModel::arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
-                                         GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length)
+void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObject>, GCRootRef<Object> src,
+                                         std::int32_t srcPos, GCRootRef<Object> dest, std::int32_t destPos,
+                                         std::int32_t length)
 {
     if (!src || !dest)
     {
-        // TODO: throw NullPointerException
-        llvm_unreachable("Not yet implemented");
+        vm.throwException("Ljava/lang/NullPointerException;", "()V");
     }
     const ClassObject* srcClass = src->getClass();
     const ClassObject* destClass = dest->getClass();
 
-    if (!srcClass->isArray() || !destClass->isArray())
+    if (!srcClass->isArray())
     {
-        // TODO: throw ArrayStoreException
-        llvm_unreachable("Not yet implemented");
+        std::string name = srcClass->getDescriptor().pretty();
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: source type {0} is not an array", name).str());
+        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
     }
+
+    if (!destClass->isArray())
+    {
+        std::string name = destClass->getDescriptor().pretty();
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: destination type {0} is not an array", name).str());
+        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+    }
+
     const ClassObject* srcComp = srcClass->getComponentType();
     const ClassObject* destComp = destClass->getComponentType();
 
     if (srcComp->isPrimitive() != destComp->isPrimitive())
     {
-        // TODO: throw ArrayStoreException
-        llvm_unreachable("Not yet implemented");
+        std::string fromName = srcComp->isPrimitive() ? srcClass->getDescriptor().pretty() : "object array[]";
+        std::string toName = destComp->isPrimitive() ? destClass->getDescriptor().pretty() : "object array[]";
+        String* string = vm.getStringInterner().intern(
+            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName).str());
+        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
     }
 
     if (srcComp->isPrimitive() && destComp->isPrimitive() && srcComp != destComp)
     {
-        // TODO: throw ArrayStoreException
-        llvm_unreachable("Not yet implemented");
+        std::string fromName = srcClass->getDescriptor().pretty();
+        std::string toName = destClass->getDescriptor().pretty();
+        String* string = vm.getStringInterner().intern(
+            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName).str());
+        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
     }
 
     auto srcArr = static_cast<GCRootRef<Array<>>>(src);
@@ -104,29 +118,44 @@ void jllvm::lang::SystemModel::arraycopy(GCRootRef<ClassObject>, GCRootRef<Objec
 
     if (srcPos < 0)
     {
-        // TODO: throw IndexOutOfBoundsException
-        llvm_unreachable("Not yet implemented");
+        std::string elemName = srcComp->isPrimitive() ? srcComp->getDescriptor().pretty() : "object array";
+        String* string = vm.getStringInterner().intern(
+            llvm::formatv("arraycopy: source index {0} out of bounds for {1}[{2}]", srcPos, elemName, srcArr->size())
+                .str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
     if (destPos < 0)
     {
-        // TODO: throw IndexOutOfBoundsException
-        llvm_unreachable("Not yet implemented");
+        std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
+        String* string = vm.getStringInterner().intern(
+            llvm::formatv("arraycopy: destination index {0} out of bounds for {1}[{2}]", destPos, elemName, destArr->size())
+                .str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
     if (length < 0)
     {
-        // TODO: throw IndexOutOfBoundsException
-        llvm_unreachable("Not yet implemented");
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: length {0} is negative", length).str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
 
     if (srcPos + length > srcArr->size())
     {
-        // TODO: throw IndexOutOfBoundsException
-        llvm_unreachable("Not yet implemented");
+        std::string elemName = srcComp->isPrimitive() ? srcComp->getDescriptor().pretty() : "object array";
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: last source index {0} out of bounds for {1}[{2}]",
+                                                        srcPos + length, elemName, srcArr->size())
+                                              .str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
     if (destPos + length > destArr->size())
     {
-        // TODO: throw IndexOutOfBoundsException
-        llvm_unreachable("Not yet implemented");
+        std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: last destination index {0} out of bounds for {1}[{2}]",
+                                                        destPos + length, elemName, destArr->size())
+                                              .str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
 
     if (srcComp->isPrimitive() || srcComp->wouldBeInstanceOf(destComp))
@@ -144,8 +173,14 @@ void jllvm::lang::SystemModel::arraycopy(GCRootRef<ClassObject>, GCRootRef<Objec
     {
         if (object && !object->instanceOf(destComp))
         {
-            // TODO: Throw ArrayStoreException
-            llvm_unreachable("Not yet implemented");
+            std::string fromName = srcClass->getDescriptor().pretty();
+            std::string toName = destComp->getDescriptor().pretty();
+            String* string = vm.getStringInterner().intern(
+                llvm::formatv(
+                    "arraycopy: element type mismatch: can not cast one of the elements of {0} to the type of the destination array, {1}",
+                    fromName, toName)
+                    .str());
+            vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
         }
         (*destArr)[destPos++] = object;
     }

@@ -76,5 +76,115 @@ class Test
         System.arraycopy(zArr1, 0, zArr2, 0, zArr1.length);
         // CHECK: [true, false, true, false]
         print(Arrays.toString(zArr2));
+
+        try
+        {
+            System.arraycopy(null, 0, new int[0], 0, 0);
+        }
+        catch (NullPointerException e)
+        {
+            // CHECK: NullPointerException
+            print("NullPointerException");
+        }
+
+        try
+        {
+            System.arraycopy(new Object(), 0, new int[0], 0, 0);
+        }
+        catch (ArrayStoreException e)
+        {
+            // CHECK: java.lang.ArrayStoreException: arraycopy: source type java.lang.Object is not an array
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new int[0], 0, new Object(), 0, 0);
+        }
+        catch (ArrayStoreException e)
+        {
+            // CHECK: java.lang.ArrayStoreException: arraycopy: destination type java.lang.Object is not an array
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new boolean[0], 0, new Object[0], 0, 0);
+        }
+        catch (ArrayStoreException e)
+        {
+            // CHECK: java.lang.ArrayStoreException: arraycopy: type mismatch: can not copy boolean[] into object array[]
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new byte[0], 0, new char[0], 0, 0);
+        }
+        catch (ArrayStoreException e)
+        {
+            // CHECK: java.lang.ArrayStoreException: arraycopy: type mismatch: can not copy byte[] into char[]
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new Object[]{new Object()}, 0, new Test[1], 0, 1);
+        }
+        catch (ArrayStoreException e)
+        {
+            // CHECK: java.lang.ArrayStoreException: arraycopy: element type mismatch: can not cast one of the elements of java.lang.Object[] to the type of the destination array, Test
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new short[0], -1, new short[1], 0, 0);
+        }
+        catch (IndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException: arraycopy: source index -1 out of bounds for short[0]
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new int[2], 0, new int[3], -2, 0);
+        }
+        catch (IndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException: arraycopy: destination index -2 out of bounds for int[3]
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new long[4], 0, new long[5], 0, -3);
+        }
+        catch (IndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException: arraycopy: length -3 is negative
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new float[6], 0, new float[7], 0, 8);
+        }
+        catch (IndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException: arraycopy: last source index 8 out of bounds for float[6]
+            print(e.toString());
+        }
+
+        try
+        {
+            System.arraycopy(new double[11], 0, new double[9], 0, 10);
+        }
+        catch (IndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException: arraycopy: last destination index 10 out of bounds for double[9]
+            print(e.toString());
+        }
     }
 }

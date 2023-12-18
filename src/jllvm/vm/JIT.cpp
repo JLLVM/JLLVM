@@ -162,7 +162,6 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, vo
     epciu->createLazyCallThroughManager(*es, llvm::pointerToJITTargetAddress(+[]
                                                                              {
                                                                                  // TODO: throw UnsatisfiedLinkError
-                                                                                 // exception.
                                                                                  llvm::report_fatal_error(
                                                                                      "Dynamic linking failed");
                                                                              }));

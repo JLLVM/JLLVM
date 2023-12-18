@@ -150,6 +150,15 @@ public:
     /// found in Java code.
     [[noreturn]] void throwJavaException(Throwable* exception);
 
+    /// Constructs and throws a Java exception which can be caught by exception handlers in Java as detailed above.
+    template <JavaConvertible... Args>
+    [[noreturn]] void throwException(FieldType exceptionType, MethodType constructor, Args... args)
+    {
+        GCUniqueRoot exception = m_gc.root(m_gc.allocate<Throwable>(&m_classLoader.forName(exceptionType)));
+        executeObjectConstructor(exception, constructor, args...);
+        throwJavaException(exception);
+    }
+
     /// Performs stack unwinding, calling 'f' for every Java frame encountered.
     /// 'f' may optionally return a 'UnwindAction' to control whether unwinding should continue.
     /// Returns true if 'UnwindAction::UnwindAction' was ever returned.

@@ -140,8 +140,7 @@ public:
             }
         }
 
-        // TODO: throw InternalError
-        return 0;
+        virtualMachine.throwException("Ljava/lang/InternalError;", "()V");
     }
 
     void storeFence()
