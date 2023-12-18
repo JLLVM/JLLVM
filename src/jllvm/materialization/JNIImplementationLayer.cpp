@@ -123,6 +123,13 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
     if (lookup)
     {
+        // For exception handling, we reuse the exception handler from our C++ implementation. We currently only
+        // support implementations using the Itanium ABI with DWARF exception handling. Once we support any other
+        // implementations (e.g. Windows), we'll want to write our own personality function.
+        llvm::FunctionCallee personalityFn = module->getOrInsertFunction(
+            "__gxx_personality_v0", llvm::FunctionType::get(builder.getInt32Ty(), /*isVarArg=*/true));
+        function->setPersonalityFn(llvm::cast<llvm::Constant>(personalityFn.getCallee()));
+
         llvm::Value* environment = builder.CreateAlloca(llvm::StructType::get(builder.getPtrTy()));
         builder.CreateStore(
             builder.CreateIntToPtr(builder.getInt64(reinterpret_cast<std::uintptr_t>(m_jniNativeFunctions)),
@@ -164,7 +171,11 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         }
 
         llvm::Value* callee = builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
-        llvm::CallInst* result = builder.CreateCall(llvm::FunctionType::get(returnType, argTypes, false), callee, args);
+
+        auto* normalDest = llvm::BasicBlock::Create(*context, "", function);
+        auto* exceptionDest = llvm::BasicBlock::Create(*context, "", function);
+        llvm::InvokeInst* result = builder.CreateInvoke(llvm::FunctionType::get(returnType, argTypes, false), callee,
+                                                        normalDest, exceptionDest, args);
         for (auto&& [index, type] : llvm::enumerate(methodType.parameters()))
         {
             auto baseType = get_if<BaseType>(&type);
@@ -177,6 +188,20 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
                                  baseType->isUnsigned() ? llvm::Attribute::ZExt : llvm::Attribute::SExt);
         }
 
+        // Require popping the local frame even if an exception is thrown.
+        builder.SetInsertPoint(exceptionDest);
+        // Note that the struct type used here is simply copied from Clang. The code does not make use of the struct in
+        // any way except forwarding it to the resume instruction.
+        llvm::LandingPadInst* landingPadInst =
+            builder.CreateLandingPad(llvm::StructType::get(builder.getPtrTy(), builder.getInt32Ty()), /*NumClauses=*/0);
+        // Catch all exceptions. Requires executing the resume instruction when done.
+        landingPadInst->setCleanup(true);
+
+        llvm::FunctionCallee popLocalFrame = module->getOrInsertFunction("jllvm_pop_local_frame", builder.getVoidTy());
+        builder.CreateCall(popLocalFrame);
+        builder.CreateResume(landingPadInst);
+
+        builder.SetInsertPoint(normalDest);
         returnValue = result;
         if (result->getType() == referenceType)
         {
@@ -184,7 +209,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
             returnValue = builder.CreateLoad(referenceType, result);
         }
 
-        builder.CreateCall(module->getOrInsertFunction("jllvm_pop_local_frame", builder.getVoidTy()));
+        builder.CreateCall(popLocalFrame);
     }
     else
     {
