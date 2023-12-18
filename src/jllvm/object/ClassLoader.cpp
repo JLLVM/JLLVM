@@ -279,6 +279,7 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
 
     if (!result)
     {
+        // TODO: throw NoClassDefFoundError
         llvm::report_fatal_error("No *.class file found for class " + className);
     }
 

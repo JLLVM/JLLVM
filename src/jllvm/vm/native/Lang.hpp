@@ -192,8 +192,8 @@ class SystemModel : public ModelBase<SystemModelState>
 public:
     using Base::Base;
 
-    static void arraycopy(GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos, GCRootRef<Object> dest,
-                          std::int32_t destPos, std::int32_t length);
+    static void arraycopy(VirtualMachine& vm, GCRootRef<ClassObject>, GCRootRef<Object> src, std::int32_t srcPos,
+                          GCRootRef<Object> dest, std::int32_t destPos, std::int32_t length);
 
     static void registerNatives(State& state, GCRootRef<ClassObject> classObject)
     {

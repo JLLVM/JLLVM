@@ -165,13 +165,8 @@ jllvm::JIT jllvm::JIT::create(ClassLoader& classLoader, GarbageCollector& gc, vo
     auto epc = llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create());
     auto es = std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
     auto epciu = llvm::cantFail(llvm::orc::EPCIndirectionUtils::Create(es->getExecutorProcessControl()));
-    epciu->createLazyCallThroughManager(*es, llvm::pointerToJITTargetAddress(+[]
-                                                                             {
-                                                                                 // TODO: throw UnsatisfiedLinkError
-                                                                                 // exception.
-                                                                                 llvm::report_fatal_error(
-                                                                                     "Dynamic linking failed");
-                                                                             }));
+    epciu->createLazyCallThroughManager(
+        *es, llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Dynamic linking failed"); }));
 
     llvm::cantFail(llvm::orc::setUpInProcessLCTMReentryViaEPCIU(*epciu));
 

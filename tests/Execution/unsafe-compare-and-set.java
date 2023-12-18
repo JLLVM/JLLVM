@@ -129,5 +129,15 @@ class Test
             // CHECK: Success
             print("Success");
         }
+
+        try
+        {
+           u.objectFieldOffset(Test.class, "x");
+        }
+        catch (InternalError e)
+        {
+           // CHECK: java.lang.InternalError
+           print(e.toString());
+        }
     }
 }
