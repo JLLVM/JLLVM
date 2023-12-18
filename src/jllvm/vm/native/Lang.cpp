@@ -55,12 +55,16 @@ jllvm::Object* jllvm::lang::ObjectModel::clone()
 
     if (thisClass->wouldBeInstanceOf(&classLoader.forName("Ljava/lang/Cloneable;")))
     {
-        return nullptr;
+        Object* clone = garbageCollector.allocate(thisClass);
+        std::memcpy(reinterpret_cast<char*>(clone) + sizeof(ObjectHeader),
+                    reinterpret_cast<char*>(javaThis.address()) + sizeof(ObjectHeader), thisClass->getFieldAreaSize());
+        return clone;
     }
 
-    auto* exception =
-        garbageCollector.allocate<Throwable>(&classLoader.forName("Ljava/lang/CloneNotSupportedException;"));
-    virtualMachine.executeObjectConstructor(exception, "()V");
+    String* string = virtualMachine.getStringInterner().intern(thisClass->getClassName());
+    auto exception = garbageCollector.root(
+        garbageCollector.allocate<Throwable>(&classLoader.forName("Ljava/lang/CloneNotSupportedException;")));
+    virtualMachine.executeObjectConstructor(exception, "(Ljava/lang/String;)V", string);
     virtualMachine.throwJavaException(exception);
 }
 
