@@ -113,18 +113,7 @@ public:
     std::uint32_t arrayIndexScale0(GCRootRef<ClassObject> arrayClass)
     {
         assert(arrayClass->isArray());
-        const ClassObject* componentType = arrayClass->getComponentType();
-        if (!componentType->isPrimitive())
-        {
-            return sizeof(Object*);
-        }
-
-        static llvm::DenseMap<llvm::StringRef, std::uint32_t> mapping = {
-            {"Z", sizeof(bool)},         {"C", sizeof(std::uint16_t)}, {"B", sizeof(std::int8_t)},
-            {"S", sizeof(std::int16_t)}, {"I", sizeof(std::int32_t)},  {"D", sizeof(double)},
-            {"F", sizeof(float)},        {"L", sizeof(std::int64_t)},
-        };
-        return mapping.lookup(componentType->getClassName());
+        return arrayClass->getComponentType()->getDescriptor().sizeOf();
     }
 
     std::uint32_t objectFieldOffset1(GCRootRef<ClassObject> clazz, GCRootRef<String> fieldName)

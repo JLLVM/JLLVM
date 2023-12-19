@@ -152,25 +152,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             continue;
         }
 
-        auto fieldSizeAndAlignment = match(
-            fieldInfo.getDescriptor(classFile),
-            [](BaseType baseType) -> std::size_t
-            {
-                switch (baseType.getValue())
-                {
-                    case BaseType::Byte: return 1;
-                    case BaseType::Char: return 2;
-                    case BaseType::Double: return sizeof(double);
-                    case BaseType::Float: return sizeof(float);
-                    case BaseType::Int: return 4;
-                    case BaseType::Long: return 8;
-                    case BaseType::Short: return 2;
-                    case BaseType::Boolean: return 1;
-                    case BaseType::Void: break;
-                }
-                llvm_unreachable("Field can't be void");
-            },
-            [](const ObjectType&) { return sizeof(void*); }, [](const ArrayType&) { return sizeof(void*); });
+        std::size_t fieldSizeAndAlignment = fieldInfo.getDescriptor(classFile).sizeOf();
         instanceSize = llvm::alignTo(instanceSize, fieldSizeAndAlignment);
         fields.emplace_back(fieldInfo.getName(classFile), fieldInfo.getDescriptor(classFile),
                             instanceSize + sizeof(ObjectHeader), fieldInfo.getAccessFlags());

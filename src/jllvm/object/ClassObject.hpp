@@ -623,6 +623,11 @@ public:
         return getField(fieldName, fieldType, &Field::isStatic);
     }
 
+    Field* getStaticField(llvm::StringRef fieldName, FieldType fieldType)
+    {
+        return getField(fieldName, fieldType, &Field::isStatic);
+    }
+
     /// Non-const and strongly typed variant of the above, retuning a 'StaticFieldRef' instead.
     template <class T>
     StaticFieldRef<T> getStaticField(llvm::StringRef fieldName, FieldType fieldType)
