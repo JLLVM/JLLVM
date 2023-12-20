@@ -184,6 +184,6 @@ public:
     /// offset are kept up-to-date during execution with the current local variables, operand stack and offset being
     /// executed.
     /// Returns the result of the method bitcast to an uint64_t.
-    std::uint64_t executeMethod(const Method& putField, std::uint16_t& offset, InterpreterContext& context);
+    std::uint64_t executeMethod(const Method& method, std::uint16_t& offset, InterpreterContext& context);
 };
 } // namespace jllvm
