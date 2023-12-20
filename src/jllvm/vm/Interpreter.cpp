@@ -273,6 +273,14 @@ struct MultiTypeImpls
         context.setLocal(3, context.pop<typename InstructionElementType<T>::type>());
         return {};
     }
+
+    /// Implementation for all return instructions that return a value with the exception of 'ireturn'.
+    /// 'ireturn' has special semantics if the return type of the method is an integer type other than 'int'.
+    template <IsReturnValue T>
+    ReturnValue operator()(T) const requires(!std::same_as<T, IReturn>)
+    {
+        return ReturnValue(context.pop<typename InstructionElementType<T>::type>());
+    }
 };
 
 } // namespace
@@ -285,6 +293,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     assert(code && "method being interpreted must have code");
     llvm::ArrayRef<char> codeArray = code->getCode();
     auto curr = ByteCodeIterator(codeArray.data(), offset);
+    MethodType methodType = method.getType();
 
     using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
 
@@ -434,7 +443,24 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                                  static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
                 return NextPC{};
             },
-            [&](IReturn) { return ReturnValue(context.pop<std::uint32_t>()); },
+            [&](IReturn)
+            {
+                auto value = context.pop<std::uint32_t>();
+                switch (get<BaseType>(methodType.returnType()).getValue())
+                {
+                    case BaseType::Boolean: value &= 0b1; break;
+                    case BaseType::Char: value = static_cast<std::int32_t>(static_cast<std::uint16_t>(value)); break;
+                    case BaseType::Byte: value = static_cast<std::int32_t>(static_cast<std::int8_t>(value)); break;
+                    case BaseType::Short: value = static_cast<std::int32_t>(static_cast<std::int16_t>(value)); break;
+                    case BaseType::Int: break;
+                    case BaseType::Long:
+                    case BaseType::Void:
+                    case BaseType::Float:
+                    case BaseType::Double:
+                    default: llvm_unreachable("not possible");
+                }
+                return ReturnValue(value);
+            },
             [&](LDC ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
@@ -499,6 +525,11 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 std::memcpy(field->getAddressOfStatic(), &value, descriptor.sizeOf());
                 return NextPC{};
+            },
+            [&](Return)
+            {
+                // "Noop" return value for void methods.
+                return ReturnValue{0};
             },
             [&](Swap)
             {

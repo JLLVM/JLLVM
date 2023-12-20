@@ -226,29 +226,34 @@ concept IsStore2 = llvm::is_one_of<T, IStore2, AStore2, FStore2, DStore2, LStore
 template <class T>
 concept IsStore3 = llvm::is_one_of<T, IStore3, AStore3, FStore3, DStore3, LStore3>::value;
 
+/// Satisfied when 'T' is a return with a value.
+template <class T>
+concept IsReturnValue = llvm::is_one_of<T, AReturn, DReturn, FReturn, IReturn, LReturn>::value;
+
 /// Satisfied when 'T' operates on 'int' operands.
 template <class T>
-concept OperatesOnIntegers = llvm::is_one_of<T, ILoad, ILoad0, ILoad1, ILoad2, ILoad3, IStore, IStore0, IStore1,
-                                             IStore2, IStore3, IAdd, ISub, IMul, IDiv, IRem, IInc, INeg>::value;
+concept OperatesOnIntegers =
+    llvm::is_one_of<T, ILoad, ILoad0, ILoad1, ILoad2, ILoad3, IStore, IStore0, IStore1, IStore2, IStore3, IAdd, ISub,
+                    IMul, IDiv, IRem, IInc, INeg, IReturn>::value;
 
 /// Satisfied when 'T' operates on reference operands.
 template <class T>
-concept OperatesOnReferences =
-    llvm::is_one_of<T, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, AStore, AStore0, AStore1, AStore2, AStore3>::value;
+concept OperatesOnReferences = llvm::is_one_of<T, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, AStore, AStore0, AStore1,
+                                               AStore2, AStore3, AReturn>::value;
 
 /// Satisfied when 'T' operates on 'float' operands.
 template <class T>
 concept OperatesOnFloat = llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2,
-                                          FStore3, FAdd, FSub, FMul, FDiv, FRem, FNeg>::value;
+                                          FStore3, FAdd, FSub, FMul, FDiv, FRem, FNeg, FReturn>::value;
 
 /// Satisfied when 'T' operates on 'double' operands.
 template <class T>
 concept OperatesOnDouble = llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2,
-                                           DStore3, DAdd, DSub, DMul, DDiv, DRem, DNeg>::value;
+                                           DStore3, DAdd, DSub, DMul, DDiv, DRem, DNeg, DReturn>::value;
 
 /// Satisfied when 'T' operates on 'long' operands.
 template <class T>
 concept OperatesOnLong = llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2,
-                                         LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg>::value;
+                                         LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg, LReturn>::value;
 
 } // namespace jllvm
