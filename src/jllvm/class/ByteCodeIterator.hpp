@@ -186,27 +186,27 @@ concept IsNeg = llvm::is_one_of<T, INeg, FNeg, DNeg, LNeg>::value;
 template <class T>
 concept IsMul = llvm::is_one_of<T, IMul, FMul, DMul, LMul>::value;
 
-/// Satisfied when 'T' is performs an equal comparison.
+/// Satisfied when 'T' performs an equal comparison.
 template <class T>
 concept DoesEqual = llvm::is_one_of<T, IfACmpEq, IfICmpEq, IfEq, IfNull>::value;
 
-/// Satisfied when 'T' is performs a not-equal comparison.
+/// Satisfied when 'T' performs a not-equal comparison.
 template <class T>
 concept DoesNotEqual = llvm::is_one_of<T, IfACmpNe, IfICmpNe, IfNe, IfNonNull>::value;
 
-/// Satisfied when 'T' is performs a less-than comparison.
+/// Satisfied when 'T' performs a less-than comparison.
 template <class T>
 concept DoesLessThan = llvm::is_one_of<T, IfICmpLt, IfLt>::value;
 
-/// Satisfied when 'T' is performs a greater-equal comparison.
+/// Satisfied when 'T' performs a greater-equal comparison.
 template <class T>
 concept DoesGreaterEqual = llvm::is_one_of<T, IfICmpGe, IfGe>::value;
 
-/// Satisfied when 'T' is performs a greater-than comparison.
+/// Satisfied when 'T' performs a greater-than comparison.
 template <class T>
 concept DoesGreaterThan = llvm::is_one_of<T, IfICmpGt, IfGt>::value;
 
-/// Satisfied when 'T' is performs a less-equal comparison.
+/// Satisfied when 'T' performs a less-equal comparison.
 template <class T>
 concept DoesLessEqual = llvm::is_one_of<T, IfICmpLe, IfLe>::value;
 
