@@ -52,6 +52,18 @@ jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFil
     return &m_virtualMachine.getClassLoader().forName(ObjectType(className));
 }
 
+std::tuple<jllvm::ClassObject*, llvm::StringRef, jllvm::FieldType>
+    jllvm::Interpreter::getFieldInfo(const ClassFile& classFile, PoolIndex<FieldRefInfo> index)
+{
+    const FieldRefInfo* refInfo = index.resolve(classFile);
+    const NameAndTypeInfo* nameAndTypeInfo = refInfo->nameAndTypeIndex.resolve(classFile);
+    llvm::StringRef fieldName = nameAndTypeInfo->nameIndex.resolve(classFile)->text;
+    FieldType descriptor(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
+
+    ClassObject* classObject = getClassObject(classFile, refInfo->classIndex);
+    return {classObject, fieldName, descriptor};
+}
+
 void jllvm::Interpreter::escapeToJIT()
 {
     m_virtualMachine.unwindJavaStack(
@@ -345,6 +357,42 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value1);
                 return NextPC{};
             },
+            [&](GetField getField)
+            {
+                auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, getField.index);
+
+                const Field* field = classObject->getInstanceField(fieldName, descriptor);
+                auto* object = context.pop<ObjectInterface*>();
+                if (!object)
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+
+                std::uint64_t value{};
+                std::memcpy(&value, reinterpret_cast<char*>(object) + field->getOffset(), descriptor.sizeOf());
+                context.pushRaw(value, descriptor.isReference());
+                if (descriptor.isWide())
+                {
+                    context.pushRaw(0, descriptor.isReference());
+                }
+                return NextPC{};
+            },
+            [&](GetStatic getStatic)
+            {
+                auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, getStatic.index);
+
+                m_virtualMachine.initialize(*classObject);
+                const Field* field = classObject->getStaticField(fieldName, descriptor);
+
+                std::uint64_t value{};
+                std::memcpy(&value, field->getAddressOfStatic(), descriptor.sizeOf());
+                context.pushRaw(value, descriptor.isReference());
+                if (descriptor.isWide())
+                {
+                    context.pushRaw(0, descriptor.isReference());
+                }
+                return NextPC{};
+            },
             [&](IConst0)
             {
                 context.push<std::int32_t>(0);
@@ -415,6 +463,41 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             {
                 context.popRaw();
                 context.popRaw();
+                return NextPC{};
+            },
+            [&](PutField putField)
+            {
+                auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, putField.index);
+                const Field* field = classObject->getInstanceField(fieldName, descriptor);
+
+                std::uint64_t value = context.popRaw().first;
+                if (descriptor.isWide())
+                {
+                    context.popRaw();
+                }
+                auto* object = context.pop<ObjectInterface*>();
+                if (!object)
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+
+                std::memcpy(reinterpret_cast<char*>(object) + field->getOffset(), &value, descriptor.sizeOf());
+                return NextPC{};
+            },
+            [&](PutStatic getStatic)
+            {
+                auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, getStatic.index);
+
+                m_virtualMachine.initialize(*classObject);
+                Field* field = classObject->getStaticField(fieldName, descriptor);
+
+                std::uint64_t value = context.popRaw().first;
+                if (descriptor.isWide())
+                {
+                    context.popRaw();
+                }
+
+                std::memcpy(field->getAddressOfStatic(), &value, descriptor.sizeOf());
                 return NextPC{};
             },
             [&](Swap)

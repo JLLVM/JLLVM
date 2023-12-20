@@ -17,6 +17,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/iterator.h>
 
+#include <jllvm/support/Variant.hpp>
+
 #include <string_view>
 
 namespace jllvm
@@ -96,6 +98,9 @@ public:
 
     /// Returns true if this 'FieldType' is either a 'long' or 'double' type.
     constexpr bool isWide() const;
+
+    /// Returns the implementation defined size of the type of this 'FieldType' in bytes.
+    constexpr std::size_t sizeOf() const;
 
     /// Returns true if the given string is a valid 'FieldType' descriptor.
     constexpr static bool verify(std::string_view text);
@@ -460,6 +465,29 @@ constexpr bool FieldType::isWide() const
 {
     std::optional<BaseType> baseType = get_if<BaseType>(this);
     return baseType == BaseType::Long || baseType == BaseType::Double;
+}
+
+constexpr std::size_t FieldType::sizeOf() const
+{
+    return match(
+        *this,
+        [](BaseType baseType) -> std::size_t
+        {
+            switch (baseType.getValue())
+            {
+                case BaseType::Byte: return 1;
+                case BaseType::Char: return 2;
+                case BaseType::Double: return sizeof(double);
+                case BaseType::Float: return sizeof(float);
+                case BaseType::Int: return 4;
+                case BaseType::Long: return 8;
+                case BaseType::Short: return 2;
+                case BaseType::Boolean: return 1;
+                case BaseType::Void: break;
+            }
+            llvm_unreachable("Field can't be void");
+        },
+        [](const ObjectType&) { return sizeof(void*); }, [](const ArrayType&) { return sizeof(void*); });
 }
 
 constexpr bool FieldType::verify(std::string_view text)
