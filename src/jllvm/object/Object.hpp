@@ -88,10 +88,26 @@ template <class T>
 concept JavaCompatible =
     std::is_arithmetic_v<T> || std::is_void_v<T> || std::is_base_of_v<ObjectInterface, std::remove_pointer_t<T>>;
 
+/// Base class for all arrays allowing access to fields of the array common to all instances.
+class AbstractArray : public ObjectInterface
+{
+public:
+    /// Returns the length of the array.
+    std::uint32_t size() const
+    {
+        struct Layout
+        {
+            ObjectHeader header;
+            std::uint32_t length{};
+        };
+        return *reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const char*>(this) + offsetof(Layout, length));
+    }
+};
+
 /// In memory representation of Java array with component type 'T'.
 /// 'T' is always either a primitive or a pointer to Java objects.
 template <JavaCompatible T = ObjectInterface*>
-class Array : public ObjectInterface
+class Array : public AbstractArray
 {
     ObjectHeader m_header;
     std::uint32_t m_length;
@@ -117,12 +133,6 @@ public:
     constexpr static std::size_t arrayElementsOffset()
     {
         return offsetof(Array<T>, m_trailing);
-    }
-
-    /// Returns the length of the array.
-    std::uint32_t size() const
-    {
-        return m_length;
     }
 
     /// Returns the array element with the given index.

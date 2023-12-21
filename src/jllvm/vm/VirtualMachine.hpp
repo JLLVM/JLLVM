@@ -159,6 +159,14 @@ public:
         throwJavaException(exception);
     }
 
+    /// Construct and throws an 'ArrayIndexOutOfBoundsException' with a message created from the index that was accessed
+    /// and the length of the array.
+    [[noreturn]] void throwArrayIndexOutOfBoundsException(std::int32_t indexAccessed, std::int32_t arrayLength);
+
+    /// Construct and throws a 'NegativeArraySizeException' with a message created from the length that the array was
+    /// attempted to be constructed with.
+    [[noreturn]] void throwNegativeArraySizeException(std::int32_t arrayLength);
+
     /// Performs stack unwinding, calling 'f' for every Java frame encountered.
     /// 'f' may optionally return a 'UnwindAction' to control whether unwinding should continue.
     /// Returns true if 'UnwindAction::UnwindAction' was ever returned.

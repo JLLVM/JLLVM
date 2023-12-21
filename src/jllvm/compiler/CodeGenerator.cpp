@@ -583,12 +583,11 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                     m_builder.SetInsertPoint(throwBlock);
 
                     llvm::CallBase* exception = m_builder.CreateCall(
-                        m_function->getParent()->getOrInsertFunction("jllvm_build_class_cast_exception",
+                        m_function->getParent()->getOrInsertFunction("jllvm_throw_class_cast_exception",
                                                                      llvm::FunctionType::get(ty, {ty, ty}, false)),
                         {object, classObject});
                     addExceptionHandlingDeopts(getOffset(operation), exception);
-
-                    generateExceptionThrow(getOffset(operation), exception);
+                    m_builder.CreateUnreachable();
 
                     m_builder.SetInsertPoint(continueBlock);
                 });
@@ -1537,7 +1536,7 @@ void CodeGenerator::generateBuiltinExceptionThrow(std::uint16_t byteCodeOffset, 
                              builderArgs);
     addExceptionHandlingDeopts(byteCodeOffset, exception);
 
-    generateExceptionThrow(byteCodeOffset, exception);
+    m_builder.CreateUnreachable();
 
     m_builder.SetInsertPoint(continueBlock);
 }
@@ -1547,7 +1546,7 @@ void CodeGenerator::generateNullPointerCheck(std::uint16_t byteCodeOffset, llvm:
     llvm::Value* null = llvm::ConstantPointerNull::get(referenceType(m_builder.getContext()));
     llvm::Value* isNull = m_builder.CreateICmpEQ(object, null);
 
-    generateBuiltinExceptionThrow(byteCodeOffset, isNull, "jllvm_build_null_pointer_exception", {});
+    generateBuiltinExceptionThrow(byteCodeOffset, isNull, "jllvm_throw_null_pointer_exception", {});
 }
 
 void CodeGenerator::generateArrayIndexCheck(std::uint16_t byteCodeOffset, llvm::Value* array, llvm::Value* index)
@@ -1562,7 +1561,7 @@ void CodeGenerator::generateArrayIndexCheck(std::uint16_t byteCodeOffset, llvm::
     llvm::Value* isBigger = m_builder.CreateICmpSGE(index, size);
     llvm::Value* outOfBounds = m_builder.CreateOr(isNegative, isBigger);
 
-    generateBuiltinExceptionThrow(byteCodeOffset, outOfBounds, "jllvm_build_array_index_out_of_bounds_exception",
+    generateBuiltinExceptionThrow(byteCodeOffset, outOfBounds, "jllvm_throw_array_index_out_of_bounds_exception",
                                   {index, size});
 }
 
@@ -1570,7 +1569,7 @@ void CodeGenerator::generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset,
 {
     llvm::Value* isNegative = m_builder.CreateICmpSLT(size, m_builder.getInt32(0));
 
-    generateBuiltinExceptionThrow(byteCodeOffset, isNegative, "jllvm_build_negative_array_size_exception", {size});
+    generateBuiltinExceptionThrow(byteCodeOffset, isNegative, "jllvm_throw_negative_array_size_exception", {size});
 }
 
 void CodeGenerator::generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception)

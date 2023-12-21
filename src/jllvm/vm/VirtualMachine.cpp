@@ -200,8 +200,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       assert(!classObject->isInitialized());
                       initialize(*classObject);
                   }},
-        std::pair{"jllvm_build_class_cast_exception",
-                  [&](Object* object, ClassObject* classObject) -> Object*
+        std::pair{"jllvm_throw_class_cast_exception",
+                  [&](Object* object, ClassObject* classObject)
                   {
                       std::string className = object->getClass()->getDescriptor().pretty();
                       std::string name = classObject->getDescriptor().pretty();
@@ -209,46 +209,19 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
 
                       String* string = m_stringInterner.intern(
                           llvm::formatv("class {0} cannot be cast to {1}{2}", className, prefix, name).str());
-                      GCUniqueRoot root =
-                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/ClassCastException;")));
-                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
-                      return root;
+                      throwException("Ljava/lang/ClassCastException;", "(Ljava/lang/String;)V", string);
                   }},
-        std::pair{"jllvm_build_null_pointer_exception",
-                  [&]() -> Object*
-                  {
-                      GCUniqueRoot root =
-                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/NullPointerException;")));
-                      executeObjectConstructor(root, "()V");
-                      return root;
-                  }},
-        std::pair{"jllvm_build_array_index_out_of_bounds_exception",
-                  [&](std::int32_t index, std::int32_t size) -> Object*
-                  {
-                      String* string = m_stringInterner.intern(
-                          llvm::formatv("Index {0} out of bounds for length {1}", index, size).str());
-                      GCUniqueRoot root = m_gc.root(
-                          m_gc.allocate(&m_classLoader.forName("Ljava/lang/ArrayIndexOutOfBoundsException;")));
-                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
-                      return root;
-                  }},
-        std::pair{"jllvm_build_negative_array_size_exception",
-                  [&](std::int32_t size) -> Object*
-                  {
-                      String* string = m_stringInterner.intern(std::to_string(size));
-                      GCUniqueRoot root =
-                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/NegativeArraySizeException;")));
-                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
-                      return root;
-                  }},
-        std::pair{"jllvm_build_unsatisfied_link_error",
-                  [&](Method* method) -> Object*
+        std::pair{"jllvm_throw_null_pointer_exception",
+                  [&]() { throwException("Ljava/lang/NullPointerException;", "()V"); }},
+        std::pair{"jllvm_throw_array_index_out_of_bounds_exception",
+                  [&](std::int32_t index, std::int32_t size) { throwArrayIndexOutOfBoundsException(index, size); }},
+        std::pair{"jllvm_throw_negative_array_size_exception",
+                  [&](std::int32_t size) { throwNegativeArraySizeException(size); }},
+        std::pair{"jllvm_throw_unsatisfied_link_error",
+                  [&](Method* method)
                   {
                       String* string = m_stringInterner.intern(method->prettySignature());
-                      GCUniqueRoot root =
-                          m_gc.root(m_gc.allocate(&m_classLoader.forName("Ljava/lang/UnsatisfiedLinkError;")));
-                      executeObjectConstructor(root, "(Ljava/lang/String;)V", string);
-                      return root;
+                      throwException("Ljava/lang/UnsatisfiedLinkError;", "(Ljava/lang/String;)V", string);
                   }},
         std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
         std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }},
@@ -485,4 +458,17 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
     // If no Java frame is ready to handle the exception, unwind all of it completely.
     // The caller of Javas main or the start of a Java thread will catch this in C++ code.
     throw *exception;
+}
+
+void jllvm::VirtualMachine::throwArrayIndexOutOfBoundsException(std::int32_t indexAccessed, std::int32_t arrayLength)
+{
+    String* string = m_stringInterner.intern(
+        llvm::formatv("Index {0} out of bounds for length {1}", indexAccessed, arrayLength).str());
+    throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+}
+
+void jllvm::VirtualMachine::throwNegativeArraySizeException(std::int32_t arrayLength)
+{
+    String* string = m_stringInterner.intern(std::to_string(arrayLength));
+    throwException("Ljava/lang/NegativeArraySizeException;", "(Ljava/lang/String;)V", string);
 }
