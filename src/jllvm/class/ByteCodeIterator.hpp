@@ -186,6 +186,39 @@ concept IsNeg = llvm::is_one_of<T, INeg, FNeg, DNeg, LNeg>::value;
 template <class T>
 concept IsMul = llvm::is_one_of<T, IMul, FMul, DMul, LMul>::value;
 
+/// Satisfied when 'T' performs an equal comparison.
+template <class T>
+concept DoesEqual = llvm::is_one_of<T, IfACmpEq, IfICmpEq, IfEq, IfNull>::value;
+
+/// Satisfied when 'T' performs a not-equal comparison.
+template <class T>
+concept DoesNotEqual = llvm::is_one_of<T, IfACmpNe, IfICmpNe, IfNe, IfNonNull>::value;
+
+/// Satisfied when 'T' performs a less-than comparison.
+template <class T>
+concept DoesLessThan = llvm::is_one_of<T, IfICmpLt, IfLt>::value;
+
+/// Satisfied when 'T' performs a greater-equal comparison.
+template <class T>
+concept DoesGreaterEqual = llvm::is_one_of<T, IfICmpGe, IfGe>::value;
+
+/// Satisfied when 'T' performs a greater-than comparison.
+template <class T>
+concept DoesGreaterThan = llvm::is_one_of<T, IfICmpGt, IfGt>::value;
+
+/// Satisfied when 'T' performs a less-equal comparison.
+template <class T>
+concept DoesLessEqual = llvm::is_one_of<T, IfICmpLe, IfLe>::value;
+
+/// Satisfied when 'T' is a binary 'ifcmp' operation.
+template <class T>
+concept IsIfCmp =
+    llvm::is_one_of<T, IfACmpEq, IfICmpEq, IfACmpNe, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe>::value;
+
+/// Satisfied when 'T' is an unary 'if' operation.
+template <class T>
+concept IsIf = llvm::is_one_of<T, IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IfNull, IfNonNull>::value;
+
 /// Satisfied when 'T' is a load operation.
 template <class T>
 concept IsLoad = llvm::is_one_of<T, ILoad, ALoad, FLoad, DLoad, LLoad>::value;
@@ -234,12 +267,13 @@ concept IsReturnValue = llvm::is_one_of<T, AReturn, DReturn, FReturn, IReturn, L
 template <class T>
 concept OperatesOnIntegers =
     llvm::is_one_of<T, ILoad, ILoad0, ILoad1, ILoad2, ILoad3, IStore, IStore0, IStore1, IStore2, IStore3, IAdd, ISub,
-                    IMul, IDiv, IRem, IInc, INeg, IReturn>::value;
+                    IMul, IDiv, IRem, IInc, INeg, IReturn, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe, IfEq,
+                    IfNe, IfLt, IfGe, IfGt, IfLe>::value;
 
 /// Satisfied when 'T' operates on reference operands.
 template <class T>
 concept OperatesOnReferences = llvm::is_one_of<T, ALoad, ALoad0, ALoad1, ALoad2, ALoad3, AStore, AStore0, AStore1,
-                                               AStore2, AStore3, AReturn>::value;
+                                               AStore2, AStore3, AReturn, IfACmpEq, IfACmpNe, IfNull, IfNonNull>::value;
 
 /// Satisfied when 'T' operates on 'float' operands.
 template <class T>

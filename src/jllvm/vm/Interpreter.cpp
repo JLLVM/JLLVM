@@ -40,6 +40,9 @@ struct ReturnValue
     {
     }
 };
+
+using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
+
 } // namespace
 
 jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index)
@@ -85,6 +88,8 @@ template <OperatesOnReferences T>
 struct InstructionElementType<T>
 {
     using type = ObjectInterface*;
+    using unsigned_type = type;
+    using signed_type = type;
 };
 
 template <OperatesOnIntegers T>
@@ -117,6 +122,40 @@ struct InstructionElementType<T>
     using type = double;
     using unsigned_type = type;
     using signed_type = type;
+};
+
+/// Function object implementing the comparison operator performed by the instruction 'T'.
+template <class T>
+struct ComparisonOperator;
+
+template <DoesEqual T>
+struct ComparisonOperator<T> : std::equal_to<>
+{
+};
+
+template <DoesNotEqual T>
+struct ComparisonOperator<T> : std::not_equal_to<>
+{
+};
+
+template <DoesLessThan T>
+struct ComparisonOperator<T> : std::less<>
+{
+};
+
+template <DoesGreaterEqual T>
+struct ComparisonOperator<T> : std::greater_equal<>
+{
+};
+
+template <DoesGreaterThan T>
+struct ComparisonOperator<T> : std::greater<>
+{
+};
+
+template <DoesLessEqual T>
+struct ComparisonOperator<T> : std::less_equal<>
+{
 };
 
 /// Struct used to implement instructions with generic implementations parameterized on their operand types.
@@ -202,6 +241,30 @@ struct MultiTypeImpls
         }
         context.push(lhs % rhs);
         return {};
+    }
+
+    template <IsIfCmp T>
+    InstructionResult operator()(T instruction) const
+    {
+        auto value2 = context.pop<typename InstructionElementType<T>::signed_type>();
+        auto value1 = context.pop<typename InstructionElementType<T>::signed_type>();
+        if (ComparisonOperator<T>{}(value1, value2))
+        {
+            return SetPC{static_cast<std::uint16_t>(instruction.offset + instruction.target)};
+        }
+        return NextPC{};
+    }
+
+    template <IsIf T>
+    InstructionResult operator()(T instruction) const
+    {
+        auto value = context.pop<typename InstructionElementType<T>::signed_type>();
+        // NOLINTNEXTLINE(*-use-nullptr): clang-tidy warns the use of '0' rather than 'nullptr' despite being templated.
+        if (ComparisonOperator<T>{}(value, static_cast<decltype(value)>(0)))
+        {
+            return SetPC{static_cast<std::uint16_t>(instruction.offset + instruction.target)};
+        }
+        return NextPC{};
     }
 
     template <IsLoad T>
@@ -294,8 +357,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     llvm::ArrayRef<char> codeArray = code->getCode();
     auto curr = ByteCodeIterator(codeArray.data(), offset);
     MethodType methodType = method.getType();
-
-    using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
 
     while (true)
     {
@@ -402,6 +463,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return NextPC{};
             },
+            [&](Goto gotoInst) { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
+            [&](GotoW gotoInst) { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
             [&](IConst0)
             {
                 context.push<std::int32_t>(0);
@@ -472,6 +535,18 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     [&](const auto*) { escapeToJIT(); });
                 return NextPC{};
             },
+            [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+            {
+                auto index = context.pop<std::int32_t>();
+                auto result =
+                    llvm::lower_bound(switchOp.matchOffsetsPairs, index,
+                                      [](const auto& pair, std::int32_t value) { return pair.first < value; });
+                if (result == switchOp.matchOffsetsPairs.end() || result->first != index)
+                {
+                    return SetPC{static_cast<std::uint16_t>(switchOp.offset + switchOp.defaultOffset)};
+                }
+                return SetPC{static_cast<std::uint16_t>(switchOp.offset + result->second)};
+            },
             [&](New newInst)
             {
                 ClassObject* classObject = getClassObject(classFile, newInst.index);
@@ -539,7 +614,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value2);
                 return NextPC{};
             },
-            [&](ByteCodeBase) -> InstructionResult
+            [&](...) -> InstructionResult
             {
                 // While the interpreter is not fully implemented, we escaped to JIT code that implements the
                 // given bytecode instruction.
