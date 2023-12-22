@@ -41,6 +41,10 @@ public:
     /// Returns the dylib used for lookups when calling a given method with the JIT Calling Convention.
     /// All registered methods must be contained with the "direct-method-call" mangling.
     virtual llvm::orc::JITDylib& getJITCCDylib() = 0;
+
+    /// Returns the dylib used for lookups when calling a given method with the Interpreter Calling Convention.
+    /// All registered methods must be contained with the "direct-method-call" mangling.
+    virtual llvm::orc::JITDylib& getInterpreterCCDylib() = 0;
 };
 
 } // namespace jllvm

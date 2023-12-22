@@ -284,7 +284,7 @@ bool canOverride(const jllvm::ClassObject* derivedClass, const jllvm::Method& ba
 }
 } // namespace
 
-const jllvm::Method& jllvm::ClassObject::methodSelection(const Method& resolvedMethod)
+const jllvm::Method& jllvm::ClassObject::methodSelection(const Method& resolvedMethod) const
 {
     // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
     if (resolvedMethod.getVisibility() == jllvm::Visibility::Private)

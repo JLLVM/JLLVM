@@ -39,6 +39,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
           llvm::cantFail(virtualMachine.getRuntime().getCLibDylib().getExecutionSession().createJITDylib("<javaJIT>"))),
       m_javaJITImplDetails(
           llvm::cantFail(m_javaJITSymbols.getExecutionSession().createJITDylib("<javaJITImplDetails>"))),
+      m_interpreter2JITSymbols(
+          llvm::cantFail(m_javaJITSymbols.getExecutionSession().createJITDylib("<interpreter2jit>"))),
       m_byteCodeCompileLayer(virtualMachine.getRuntime().getLLVMIRLayer(), virtualMachine.getRuntime().getInterner(),
                              virtualMachine.getRuntime().getDataLayout()),
       m_byteCodeOSRCompileLayer(m_byteCodeCompileLayer.getBaseLayer(), m_byteCodeCompileLayer.getInterner(),
@@ -93,6 +95,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
 void jllvm::JIT::add(const Method& method)
 {
     llvm::cantFail(m_byteCodeCompileLayer.add(m_javaJITSymbols, &method));
+    llvm::cantFail(
+        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JITSymbols, method, getJITCCDylib()));
 }
 
 void* jllvm::JIT::getOSREntry(const jllvm::Method& method, std::uint16_t byteCodeOffset)
