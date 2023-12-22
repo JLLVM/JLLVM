@@ -141,10 +141,11 @@ auto coerceReturnType(GCRootRef<T> ref, VirtualMachine&)
 }
 
 // Static 'VirtualMachine&, Args...' method.
-template <class Model, class Ret, class... Args>
-auto createMethodBridge(typename Model::State&, Ret (*ptr)(VirtualMachine&, GCRootRef<ClassObject>, Args...))
+template <class Model, class Ret, class... Args, auto ptr>
+auto createMethodBridge(typename Model::State&,
+                        std::integral_constant<Ret (*)(VirtualMachine&, GCRootRef<ClassObject>, Args...), ptr>)
 {
-    return [ptr](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    return [](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
@@ -159,11 +160,11 @@ auto createMethodBridge(typename Model::State&, Ret (*ptr)(VirtualMachine&, GCRo
 }
 
 // Static 'State&, Args...' method.
-template <class Model, class Ret, class... Args>
+template <class Model, class Ret, class... Args, auto ptr>
 auto createMethodBridge(typename Model::State& state,
-                        Ret (*ptr)(typename Model::State&, GCRootRef<ClassObject>, Args...))
+                        std::integral_constant<Ret (*)(typename Model::State&, GCRootRef<ClassObject>, Args...), ptr>)
 {
-    return [ptr, &state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    return [&state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
         if constexpr (!std::is_void_v<Ret>)
         {
@@ -178,11 +179,11 @@ auto createMethodBridge(typename Model::State& state,
 }
 
 // Static 'State&, VirtualMachine&, Args...' method.
-template <class Model, class Ret, class... Args>
+template <class Model, class Ret, class... Args, auto ptr>
 auto createMethodBridge(typename Model::State& state,
-                        Ret (*ptr)(typename Model::State&, VirtualMachine&, GCRootRef<ClassObject>, Args...))
+    std::integral_constant<Ret (*)(typename Model::State&, VirtualMachine&, GCRootRef<ClassObject>, Args...), ptr>)
 {
-    return [ptr, &state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    return [&state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
@@ -197,10 +198,10 @@ auto createMethodBridge(typename Model::State& state,
 }
 
 // Static 'Args...' method.
-template <class Model, class Ret, class... Args>
-auto createMethodBridge(typename Model::State&, Ret (*ptr)(GCRootRef<ClassObject>, Args...))
+template <class Model, class Ret, class... Args, auto ptr>
+auto createMethodBridge(typename Model::State&, std::integral_constant<Ret (*)(GCRootRef<ClassObject>, Args...), ptr>)
 {
-    return [ptr](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
+    return [](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
     {
         if constexpr (!std::is_void_v<Ret>)
         {
@@ -215,10 +216,10 @@ auto createMethodBridge(typename Model::State&, Ret (*ptr)(GCRootRef<ClassObject
 }
 
 // Instance method.
-template <class Model, class Ret, class... Args>
-auto createMethodBridge(typename Model::State& state, Ret (Model::*ptr)(Args...))
+template <class Model, class Ret, class... Args, auto ptr>
+auto createMethodBridge(typename Model::State& state, std::integral_constant<Ret (Model::*)(Args...), ptr>)
 {
-    return [ptr, &state](JNIEnv* env, GCRootRef<typename Model::ThisType> javaThis, Args... args)
+    return [&state](JNIEnv* env, GCRootRef<typename Model::ThisType> javaThis, Args... args)
     {
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         if constexpr (!std::is_void_v<Ret>)
@@ -310,7 +311,8 @@ void addModel(VirtualMachine& virtualMachine)
                 constexpr auto fn = std::get<idxs>(methods);
                 constexpr std::string_view methodName = detail::functionName<fn>();
                 virtualMachine.getJIT().addJNISymbol(formJNIMethodName(Model::className, methodName),
-                                                     detail::createMethodBridge<Model>(state, fn));
+                    detail::createMethodBridge<Model>(state,
+                                                      std::integral_constant<std::remove_const_t<decltype(fn)>, fn>{}));
             }(),
             ...);
     }(std::make_index_sequence<std::tuple_size_v<decltype(methods)>>{});
