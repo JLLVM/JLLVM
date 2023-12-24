@@ -176,6 +176,30 @@ concept IsNeg = llvm::is_one_of<T, INeg, FNeg, DNeg, LNeg>::value;
 template <class T>
 concept IsMul = llvm::is_one_of<T, IMul, FMul, DMul, LMul>::value;
 
+/// Satisfied when 'T' is an or operation.
+template <class T>
+concept IsOr = llvm::is_one_of<T, IOr, LOr>::value;
+
+/// Satisfied when 'T' is an and operation.
+template <class T>
+concept IsAnd = llvm::is_one_of<T, IAnd, LAnd>::value;
+
+/// Satisfied when 'T' is a xor operation.
+template <class T>
+concept IsXor = llvm::is_one_of<T, IXor, LXor>::value;
+
+/// Satisfied when 'T' is a shift left operation.
+template <class T>
+concept IsShl = llvm::is_one_of<T, IShl, LShl>::value;
+
+/// Satisfied when 'T' is a shift right operation.
+template <class T>
+concept IsShr = llvm::is_one_of<T, IShr, LShr>::value;
+
+/// Satisfied when 'T' is an unsigned shift right operation.
+template <class T>
+concept IsUShr = llvm::is_one_of<T, IUShr, LUShr>::value;
+
 /// Satisfied when 'T' performs an equal comparison.
 template <class T>
 concept DoesEqual = llvm::is_one_of<T, IfACmpEq, IfICmpEq, IfEq, IfNull>::value;
@@ -290,7 +314,8 @@ template <class T>
 concept OperatesOnIntegers =
     llvm::is_one_of<T, ILoad, ILoad0, ILoad1, ILoad2, ILoad3, IStore, IStore0, IStore1, IStore2, IStore3, IAdd, ISub,
                     IMul, IDiv, IRem, IInc, INeg, IReturn, IfICmpEq, IfICmpNe, IfICmpLt, IfICmpGe, IfICmpGt, IfICmpLe,
-                    IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IALoad, IAStore, IConst0, IConst1, IConst2>::value;
+                    IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IALoad, IAStore, IConst0, IConst1, IConst2, IOr, IAnd, IXor,
+                    IShl, IShr, IUShr>::value;
 
 /// Satisfied when 'T' operates on reference operands.
 template <class T>
@@ -312,9 +337,9 @@ concept OperatesOnDouble =
 
 /// Satisfied when 'T' operates on 'long' operands.
 template <class T>
-concept OperatesOnLong =
-    llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2, LStore3, LAdd, LSub,
-                    LMul, LDiv, LRem, LNeg, LReturn, LALoad, LAStore, LConst0, LConst1>::value;
+concept OperatesOnLong = llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2,
+                                         LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg, LReturn, LALoad, LAStore, LConst0,
+                                         LConst1, LOr, LAnd, LXor, LShl, LShr, LUShr>::value;
 
 /// Satisfied when 'T' may throw an exception.
 template <class T>
