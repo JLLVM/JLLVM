@@ -186,6 +186,8 @@ class Interpreter
     /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
     ClassObject* getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index);
 
+    ClassObject* getClassObject(const ClassFile& classFile, ClassInfo classInfo);
+
     /// Returns the class object referred to by 'index' within 'classFile' if it has been loaded already.
     /// Returns null otherwise.
     ClassObject* getClassObjectLoaded(const ClassFile& classFile, PoolIndex<ClassInfo> index);

@@ -140,6 +140,7 @@ jllvm::JIT::JIT(std::unique_ptr<llvm::orc::ExecutionSession>&& session,
         {m_interner("memset"), llvm::JITEvaluatedSymbol::fromPointer(memset)},
         {m_interner("memcpy"), llvm::JITEvaluatedSymbol::fromPointer(memcpy)},
         {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)},
+        {m_interner("fmod"), llvm::JITEvaluatedSymbol::fromPointer(fmod)},
         {m_interner("__gxx_personality_v0"), llvm::JITEvaluatedSymbol::fromPointer(__gxx_personality_v0)},
         {m_interner("_Unwind_Resume"), llvm::JITEvaluatedSymbol::fromPointer(_Unwind_Resume)},
 #ifdef __APPLE__

@@ -47,7 +47,12 @@ using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
 
 jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index)
 {
-    llvm::StringRef className = index.resolve(classFile)->nameIndex.resolve(classFile)->text;
+    return getClassObject(classFile, *index.resolve(classFile));
+}
+
+jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFile, ClassInfo classInfo)
+{
+    llvm::StringRef className = classInfo.nameIndex.resolve(classFile)->text;
     return &m_virtualMachine.getClassLoader().forName(FieldType::fromMangled(className));
 }
 
@@ -463,6 +468,16 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::uint32_t>(array->size());
                 return NextPC{};
             },
+            [&](AConstNull)
+            {
+                context.push<ObjectInterface*>(nullptr);
+                return NextPC{};
+            },
+            [&](BIPush biPush)
+            {
+                context.push<std::int32_t>(biPush.value);
+                return NextPC{};
+            },
             [&](CheckCast checkCast)
             {
                 auto* object = context.pop<ObjectInterface*>();
@@ -479,6 +494,16 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
 
                 m_virtualMachine.throwClassCastException(object, classObject);
+            },
+            [&](DConst0)
+            {
+                context.push<double>(0);
+                return NextPC{};
+            },
+            [&](DConst1)
+            {
+                context.push<double>(1);
+                return NextPC{};
             },
             [&](Dup)
             {
@@ -541,6 +566,21 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value3);
                 context.pushRaw(value2);
                 context.pushRaw(value1);
+                return NextPC{};
+            },
+            [&](FConst0)
+            {
+                context.push<float>(0);
+                return NextPC{};
+            },
+            [&](FConst1)
+            {
+                context.push<float>(1);
+                return NextPC{};
+            },
+            [&](FConst2)
+            {
+                context.push<float>(2);
                 return NextPC{};
             },
             [&](GetField getField)
@@ -651,7 +691,17 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return NextPC{};
             },
-            [&](LDC ldc)
+            [&](LConst0)
+            {
+                context.push<std::int64_t>(0);
+                return NextPC{};
+            },
+            [&](LConst1)
+            {
+                context.push<std::int64_t>(1);
+                return NextPC{};
+            },
+            [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
                           InterfaceMethodRefInfo, MethodTypeInfo, DynamicInfo>
@@ -659,7 +709,10 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 match(
                     pool.resolve(classFile), [&](const IntegerInfo* integerInfo) { context.push(integerInfo->value); },
-                    [&](const auto*) { escapeToJIT(); });
+                    [&](const FloatInfo* floatInfo) { context.push(floatInfo->value); },
+                    [&](const LongInfo* longInfo) { context.push(longInfo->value); }, [&](const DoubleInfo* doubleInfo)
+                    { context.push(doubleInfo->value); }, [&](const ClassInfo* classInfo)
+                    { context.push(getClassObject(classFile, *classInfo)); }, [&](const auto*) { escapeToJIT(); });
                 return NextPC{};
             },
             [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
@@ -790,6 +843,11 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             {
                 // "Noop" return value for void methods.
                 return ReturnValue{0};
+            },
+            [&](SIPush siPush)
+            {
+                context.push<std::int32_t>(siPush.value);
+                return NextPC{};
             },
             [&](Swap)
             {
