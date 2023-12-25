@@ -193,7 +193,7 @@ struct ConversionOperator;
 template <ConvertsToFloat T>
 struct ConversionOperator<T>
 {
-    using source_type = InstructionElementType<T>::signed_type;
+    using source_type = typename InstructionElementType<T>::signed_type;
     using target_type = float;
     using stack_type = target_type;
 };
@@ -201,7 +201,7 @@ struct ConversionOperator<T>
 template <ConvertsToDouble T>
 struct ConversionOperator<T>
 {
-    using source_type = InstructionElementType<T>::signed_type;
+    using source_type = typename InstructionElementType<T>::signed_type;
     using target_type = double;
     using stack_type = target_type;
 };
@@ -209,7 +209,7 @@ struct ConversionOperator<T>
 template <ConvertsToInt T>
 struct ConversionOperator<T>
 {
-    using source_type = InstructionElementType<T>::signed_type;
+    using source_type = typename InstructionElementType<T>::signed_type;
     using target_type = std::int32_t;
     using stack_type = target_type;
 };
@@ -217,7 +217,7 @@ struct ConversionOperator<T>
 template <ConvertsToLong T>
 struct ConversionOperator<T>
 {
-    using source_type = InstructionElementType<T>::signed_type;
+    using source_type = typename InstructionElementType<T>::signed_type;
     using target_type = std::int64_t;
     using stack_type = target_type;
 };
@@ -421,9 +421,9 @@ struct MultiTypeImpls
     template <DoesConversion T>
     NextPC operator()(T) const
     {
-        using source_type = ConversionOperator<T>::source_type;
-        using target_type = ConversionOperator<T>::target_type;
-        using stack_type = ConversionOperator<T>::stack_type;
+        using source_type = typename ConversionOperator<T>::source_type;
+        using target_type = typename ConversionOperator<T>::target_type;
+        using stack_type = typename ConversionOperator<T>::stack_type;
 
         auto value = context.pop<source_type>();
         if constexpr (!std::is_floating_point_v<source_type> || !std::is_integral_v<target_type>)
