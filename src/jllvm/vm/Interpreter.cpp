@@ -185,6 +185,67 @@ struct ComparisonOperator<T> : std::less_equal<>
 {
 };
 
+/// Maps the conversion instruction 'T' to the source, target and target type on the stack that the instruction
+/// converts between.
+template <DoesConversion T>
+struct ConversionOperator;
+
+template <ConvertsToFloat T>
+struct ConversionOperator<T>
+{
+    using source_type = InstructionElementType<T>::signed_type;
+    using target_type = float;
+    using stack_type = target_type;
+};
+
+template <ConvertsToDouble T>
+struct ConversionOperator<T>
+{
+    using source_type = InstructionElementType<T>::signed_type;
+    using target_type = double;
+    using stack_type = target_type;
+};
+
+template <ConvertsToInt T>
+struct ConversionOperator<T>
+{
+    using source_type = InstructionElementType<T>::signed_type;
+    using target_type = std::int32_t;
+    using stack_type = target_type;
+};
+
+template <ConvertsToLong T>
+struct ConversionOperator<T>
+{
+    using source_type = InstructionElementType<T>::signed_type;
+    using target_type = std::int64_t;
+    using stack_type = target_type;
+};
+
+template <>
+struct ConversionOperator<I2B>
+{
+    using source_type = std::int32_t;
+    using target_type = std::int8_t;
+    using stack_type = source_type;
+};
+
+template <>
+struct ConversionOperator<I2C>
+{
+    using source_type = std::int32_t;
+    using target_type = std::uint16_t;
+    using stack_type = source_type;
+};
+
+template <>
+struct ConversionOperator<I2S>
+{
+    using source_type = std::int32_t;
+    using target_type = std::int16_t;
+    using stack_type = source_type;
+};
+
 /// Struct used to implement instructions with generic implementations parameterized on their operand types.
 struct MultiTypeImpls
 {
@@ -354,6 +415,47 @@ struct MultiTypeImpls
         {
             return SetPC{static_cast<std::uint16_t>(instruction.offset + instruction.target)};
         }
+        return NextPC{};
+    }
+
+    template <DoesConversion T>
+    NextPC operator()(T) const
+    {
+        using source_type = ConversionOperator<T>::source_type;
+        using target_type = ConversionOperator<T>::target_type;
+        using stack_type = ConversionOperator<T>::stack_type;
+
+        auto value = context.pop<source_type>();
+        if constexpr (!std::is_floating_point_v<source_type> || !std::is_integral_v<target_type>)
+        {
+            // C++s builtin conversions implement the semantics required if not converting from a float to an integer.
+            context.push<stack_type>(static_cast<target_type>(value));
+        }
+        else
+        {
+            auto trunc = std::trunc(value);
+            if (std::isnan(trunc))
+            {
+                // NaNs convert to 0.
+                context.push<stack_type>(0);
+            }
+            else if (trunc >= static_cast<source_type>(std::numeric_limits<target_type>::min())
+                     && trunc <= static_cast<source_type>(std::numeric_limits<target_type>::max()))
+            {
+                // If after rounding the value fits within the target type, use it as is.
+                context.push<stack_type>(static_cast<target_type>(trunc));
+            }
+            else if (trunc < 0)
+            {
+                // Otherwise, the float maps to either the largest or smallest integer value.
+                context.push<stack_type>(std::numeric_limits<target_type>::min());
+            }
+            else
+            {
+                context.push<stack_type>(std::numeric_limits<target_type>::max());
+            }
+        }
+
         return NextPC{};
     }
 
