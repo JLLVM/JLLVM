@@ -82,15 +82,9 @@ struct ModelState
 ///    being modelled
 /// *  'auto methods = std::make_tuple(&ModelClass::aNativeMethod, ...)' which is a tuple that should list ALL
 ///    implementations of 'native' methods that should be registered in the VM.
-template <class StateType = ModelState, class JavaObject = Object>
+template <std::derived_from<ModelState> StateType = ModelState, std::derived_from<ObjectInterface> JavaObject = Object>
 class ModelBase
 {
-    static_assert(std::is_base_of_v<ModelState, StateType>, "State must inherit from ModelState");
-
-    static_assert(
-        std::is_base_of_v<ObjectInterface, JavaObject>,
-        "JavaObject must be a valid Java object representation with an object header and inherits from ObjectInterface");
-
 protected:
     using Base = ModelBase<StateType, JavaObject>;
 

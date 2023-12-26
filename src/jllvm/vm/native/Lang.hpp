@@ -65,6 +65,80 @@ public:
         // Noop until (if?) we need some C++ initialization code.
     }
 
+    static ClassObject* forName0(VirtualMachine& virtualMachine, GCRootRef<ClassObject>, GCRootRef<String> name,
+                                 bool initialize, GCRootRef<ObjectInterface> /*loader*/,
+                                 GCRootRef<ClassObject> /*caller*/)
+    {
+        std::string text = name->toUTF8();
+        std::replace(text.begin(), text.end(), '.', '/');
+        ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(text));
+        if (initialize)
+        {
+            virtualMachine.initialize(classObject);
+        }
+        return &classObject;
+    }
+
+    // isInstance
+    // isAssignableFrom
+
+    bool isInterface()
+    {
+        return javaThis->isInterface();
+    }
+
+    bool isArray()
+    {
+        return javaThis->isArray();
+    }
+
+    bool isPrimitive()
+    {
+        return javaThis->isPrimitive();
+    }
+
+    String* initClassName()
+    {
+        std::string string = javaThis->getClassName().str();
+        std::replace(string.begin(), string.end(), '/', '.');
+        return virtualMachine.getStringInterner().intern(string);
+    }
+
+    // getSuperclass
+    // getInterfaces0
+    // getModifiers
+    // getSigners
+    // setSigners
+
+    Array<ObjectInterface*>* getEnclosingMethod0()
+    {
+        if (auto* enclosing = javaThis->getClassFile()->getAttributes().find<EnclosingMethod>())
+        {
+            const ClassFile& classFile = *javaThis->getClassFile();
+            ClassLoader& classLoader = virtualMachine.getClassLoader();
+            StringInterner& stringInterner = virtualMachine.getStringInterner();
+            auto* arr = virtualMachine.getGC().allocate<Array<ObjectInterface*>>(
+                &classLoader.forName("[Ljava/lang/Object;"), 3);
+
+            (*arr)[0] = &classLoader.forName(
+                FieldType::fromMangled(enclosing->class_index.resolve(classFile)->nameIndex.resolve(classFile)->text));
+
+            if (auto methodIndex = enclosing->method_index)
+            {
+                const NameAndTypeInfo* nameAndTypeInfo = methodIndex.resolve(classFile);
+                (*arr)[1] = stringInterner.intern(nameAndTypeInfo->nameIndex.resolve(classFile)->text);
+                (*arr)[2] = stringInterner.intern(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
+            }
+
+            return arr;
+        }
+        return nullptr;
+    }
+
+    // getDeclaringClass0
+    // getSimpleBinaryName0
+    // getProtectionDomain0
+
     static const ClassObject* getPrimitiveClass(VirtualMachine& vm, GCRootRef<ClassObject>, GCRootRef<String> string)
     {
         static llvm::DenseMap<llvm::StringRef, BaseType> mapping = {
@@ -81,15 +155,16 @@ public:
         return &vm.getClassLoader().forName(result->second);
     }
 
-    bool isArray()
-    {
-        return javaThis->isArray();
-    }
-
-    bool isPrimitive()
-    {
-        return javaThis->isPrimitive();
-    }
+    // getGenericSignature0
+    // getRawAnnotations
+    // getRawTypeAnnotations
+    // getConstantPool
+    // getDeclaredFields0
+    // getDeclaredMethods0
+    // getDeclaredConstructors0
+    // getDeclaredClasses0
+    // getRecordComponents0
+    // isRecord0
 
     static bool desiredAssertionStatus0(GCRootRef<ClassObject>)
     {
@@ -100,31 +175,16 @@ public:
 #endif
     }
 
-    String* initClassName()
-    {
-        std::string string = javaThis->getClassName().str();
-        std::replace(string.begin(), string.end(), '/', '.');
-        return virtualMachine.getStringInterner().intern(string);
-    }
-
-    static ClassObject* forName0(VirtualMachine& virtualMachine, GCRootRef<ClassObject>, GCRootRef<String> name,
-                                 bool initialize, GCRootRef<ObjectInterface> /*loader*/,
-                                 GCRootRef<ClassObject> /*caller*/)
-    {
-        std::string text = name->toUTF8();
-        std::replace(text.begin(), text.end(), '.', '/');
-        ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(text));
-        if (initialize)
-        {
-            virtualMachine.initialize(classObject);
-        }
-        return &classObject;
-    }
+    // getNestHost0
+    // getNestMembers0
+    // isHidden
+    // getPermittedSubclasses0
 
     constexpr static llvm::StringLiteral className = "java/lang/Class";
-    constexpr static auto methods = std::make_tuple(
-        &ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
-        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive, &ClassModel::initClassName, &ClassModel::forName0);
+    constexpr static auto methods =
+        std::make_tuple(&ClassModel::registerNatives, &ClassModel::isInterface, &ClassModel::isArray,
+                        &ClassModel::isPrimitive, &ClassModel::initClassName, &ClassModel::getEnclosingMethod0,
+                        &ClassModel::getPrimitiveClass, &ClassModel::desiredAssertionStatus0);
 };
 
 class ClassLoaderModel : public ModelBase<>
