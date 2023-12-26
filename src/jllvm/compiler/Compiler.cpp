@@ -28,10 +28,8 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
     addJavaMethodMetadata(function, &method, JavaMethodMetadata::Kind::JIT);
     applyABIAttributes(function);
 
-    auto* code = methodInfo.getAttributes().find<Code>();
-    assert(code && "method to compile must have a code attribute");
     compileMethodBody(
-        function, method, *code,
+        function, method,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack&, const ByteCodeTypeChecker::TypeInfo&)
         {
             // Arguments are put into the locals. According to the specification, i64s and doubles are
@@ -68,13 +66,10 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
     addJavaMethodMetadata(function, &method, JavaMethodMetadata::Kind::JIT);
     applyABIAttributes(function);
 
-    auto* code = methodInfo.getAttributes().find<Code>();
-    assert(code && "method to compile must have a code attribute");
-
     llvm::Value* osrState = function->getArg(0);
 
     compileMethodBody(
-        function, method, *code,
+        function, method,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
             const ByteCodeTypeChecker::TypeInfo& typeInfo)
         {

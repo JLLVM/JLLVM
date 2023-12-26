@@ -15,6 +15,7 @@
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/ADT/SetVector.h>
 
 #include <jllvm/class/ByteCodeIterator.hpp>
 #include <jllvm/object/ClassLoader.hpp>
@@ -58,8 +59,7 @@ private:
     llvm::LLVMContext& m_context;
     const ClassFile& m_classFile;
     const Code& m_code;
-    std::vector<std::uint16_t> m_offsetStack;
-    llvm::DenseMap<std::uint16_t, std::vector<std::uint16_t>> m_exceptionHandlerStarts;
+    llvm::SetVector<std::uint16_t> m_offsetStack;
     std::vector<JVMType> m_locals;
     std::vector<JVMType> m_typeStack;
     llvm::DenseMap<std::uint16_t, std::uint16_t> m_returnAddressToSubroutineMap;

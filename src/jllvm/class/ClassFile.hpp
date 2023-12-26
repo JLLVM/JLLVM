@@ -16,6 +16,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/BitmaskEnum.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/IntervalTree.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/StringSaver.h>
 
@@ -305,6 +306,12 @@ private:
     std::uint16_t m_maxLocals;
     llvm::ArrayRef<char> m_code;
 
+    using IntervalTree = llvm::IntervalTree<std::uint16_t, std::size_t>;
+    IntervalTree::Allocator m_allocator;
+    // IntervalTree used to find all active exception handlers at a given offset. Due to the value type needing to be a
+    // primitive type, an index into the exception table is used.
+    IntervalTree m_intervalTree{m_allocator};
+
     std::vector<ExceptionTable> m_exceptionTable;
 
     // Attributes follow, don't think we need those right now.
@@ -328,10 +335,25 @@ public:
         return m_code;
     }
 
-    /// Returns the exception table of the containing method.
-    llvm::ArrayRef<ExceptionTable> getExceptionTable() const
+    /// Get exception handlers in an unspecified order that are active at the given bytecode offset.
+    auto getHandlersAtUnordered(std::uint16_t offset) const
     {
-        return m_exceptionTable;
+        return llvm::map_range(llvm::make_range(m_intervalTree.find(offset), m_intervalTree.find_end()),
+                               [&](const IntervalTree::DataType& pointer)
+                               { return &m_exceptionTable[pointer.value()]; });
+    }
+
+    /// Get exception handlers in order of appearance in the class file that are active at the given bytecode offset.
+    llvm::SmallVector<const ExceptionTable*> getHandlersAt(std::uint16_t offset) const
+    {
+        llvm::SmallVector<const ExceptionTable*> result;
+        // Workaround for llvm::to_vector not working due to bugs in IntervalTree's iterator implementation.
+        llvm::transform(getHandlersAtUnordered(offset), std::back_inserter(result),
+                        llvm::identity<const ExceptionTable*>{});
+        // Since all exception handlers are within an array, sorting them by pointer addresses, sorts them by order of
+        // appearance.
+        llvm::sort(result);
+        return result;
     }
 };
 

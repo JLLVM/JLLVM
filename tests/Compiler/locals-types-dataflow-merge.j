@@ -1,5 +1,6 @@
 ; RUN: jasmin %s -d %t
 ; RUN: jllvm-jvmc --method "test:()V" %t/Test.class | FileCheck %s
+; RUN: jllvm-jvmc --method "test:()V" --osr 26 %t/Test.class | FileCheck --check-prefix=EXC %s
 
 .class public Test
 .super java/lang/Object
@@ -29,9 +30,9 @@
     istore_0
     fconst_1
     fstore_1
+start:
     invokestatic Test/random()I
     ifne handler
-start:
     aconst_null
     astore_1
     invokestatic Test/random()I
@@ -44,11 +45,17 @@ handler:
     ; CHECK: call void @"Static Call to Test.deopt:()V"
     ; CHECK-SAME: "deopt"(i16 {{[0-9]+}}, i16 2, i32 {{.*}}, i8 poison, i64 0)
     invokestatic Test/deopt()V
+    aconst_null
+    astore_0
     return
 endHandler:
     pop
+    ; EXC: call void @"Static Call to Test.deopt:()V"
+    ; EXC-SAME: "deopt"(i16 {{[0-9]+}}, i16 2, i8 poison, i8 poison, i64 0)
+    invokestatic Test/deopt()V
+endFunction:
     return
 
-.catch all from handler to endHandler using endHandler
+.catch all from start to endFunction using endHandler
 
 .end method

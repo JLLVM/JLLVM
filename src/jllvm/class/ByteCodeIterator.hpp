@@ -290,4 +290,13 @@ template <class T>
 concept OperatesOnLong = llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2,
                                          LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg, LReturn>::value;
 
+/// Satisfied when 'T' may throw an exception.
+template <class T>
+concept MayThrowException =
+    llvm::is_one_of<T, AALoad, AAStore, ANewArray, AReturn, ArrayLength, AThrow, BALoad, BAStore, CALoad, CAStore,
+                    CheckCast, DALoad, DAStore, DReturn, FALoad, FAStore, FReturn, GetField, GetStatic, IALoad, IAStore,
+                    IDiv, InstanceOf, InvokeDynamic, InvokeInterface, InvokeSpecial, InvokeStatic, InvokeVirtual, IRem,
+                    IReturn, LALoad, LAStore, LDC, LDCW, LDC2W, LDiv, LRem, LReturn, MonitorEnter, MonitorExit,
+                    MultiANewArray, New, NewArray, PutField, PutStatic, Return, SALoad, SAStore>::value;
+
 } // namespace jllvm

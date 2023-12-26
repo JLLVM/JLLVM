@@ -38,17 +38,13 @@ class CodeGenerator
     const Method& m_method;
     const ClassObject& m_classObject;
     const ClassFile& m_classFile;
+    const Code& m_code;
     llvm::IRBuilder<> m_builder;
     OperandStack m_operandStack;
     LocalVariables m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
     ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
     llvm::SmallSetVector<std::uint16_t, 8> m_workList;
-
-    using HandlerInfo = std::pair<std::uint16_t, PoolIndex<ClassInfo>>;
-
-    // std::list because we want the iterator stability when deleting handlers (requires random access).
-    std::list<HandlerInfo> m_activeHandlers;
 
     /// Returns the basic block corresponding to the given bytecode offset and schedules the basic block to be compiled.
     /// The offset must point to the start of a basic block.
@@ -60,7 +56,7 @@ class CodeGenerator
 
     void createBasicBlocks(const ByteCodeTypeChecker& checker);
 
-    void generateCodeBody(const Code& code, std::uint16_t startOffset);
+    void generateCodeBody(std::uint16_t startOffset);
 
     /// Generate LLVM IR instructions for a JVM bytecode instruction. Returns true if the instruction falls through or
     /// more formally, whether the next instruction is an immediate successor of this instruction.
@@ -125,14 +121,15 @@ class CodeGenerator
     llvm::Value* getClassObject(std::uint16_t offset, FieldType fieldDescriptor);
 
 public:
-    CodeGenerator(llvm::Function* function, const Method& method, std::uint16_t maxStack, std::uint16_t maxLocals)
+    CodeGenerator(llvm::Function* function, const Method& method)
         : m_function{function},
           m_method{method},
           m_classObject{*method.getClassObject()},
           m_classFile{*m_classObject.getClassFile()},
+          m_code{*m_method.getMethodInfo().getAttributes().find<Code>()},
           m_builder{llvm::BasicBlock::Create(function->getContext(), "entry", function)},
-          m_operandStack{m_builder, maxStack},
-          m_locals{m_builder, maxLocals}
+          m_operandStack{m_builder, m_code.getMaxStack()},
+          m_locals{m_builder, m_code.getMaxLocals()}
     {
     }
 
@@ -140,24 +137,22 @@ public:
         llvm::function_ref<void(llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
                                 const ByteCodeTypeChecker::TypeInfo& typeInfo)>;
 
-    /// This function must be only called once. 'code' must have at most a maximum stack depth of 'maxStack'
-    /// and have at most 'maxLocals' local variables. 'generatePrologue' is used to initialize the local variables and
+    /// This function must be only called once. 'generatePrologue' is used to initialize the local variables and
     /// operand stack at the start of the method. 'offset' is the bytecode offset at which compilation should start and
     /// must refer to a JVM instruction.
-    void generateBody(const Code& code, PrologueGenFn generatePrologue, std::uint16_t offset = 0);
+    void generateBody(PrologueGenFn generatePrologue, std::uint16_t offset = 0);
 };
 
-/// Generates new LLVM code at the back of 'function' from the JVM Bytecode given by 'code'. 'method' is the method
-/// object of the class file containing 'code'.
+/// Generates new LLVM code at the back of 'function' from the JVM Bytecode in 'method'.
 /// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
 /// the newly created code. 'offset' is the bytecode offset at which compilation should start and must refer to a JVM
 /// instruction.
-inline void compileMethodBody(llvm::Function* function, const Method& method, const Code& code,
+inline void compileMethodBody(llvm::Function* function, const Method& method,
                               CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
 {
-    CodeGenerator codeGenerator{function, method, code.getMaxStack(), code.getMaxLocals()};
+    CodeGenerator codeGenerator{function, method};
 
-    codeGenerator.generateBody(code, generatePrologue, offset);
+    codeGenerator.generateBody(generatePrologue, offset);
 }
 
 } // namespace jllvm
