@@ -318,7 +318,8 @@ void jllvm::Runtime::prepare(ClassObject& classObject)
 
 void jllvm::Runtime::doOnStackReplacement(JavaFrame frame, OSRState&& state)
 {
-    void* entry = state.getTarget().getOSREntry(*frame.getMethod(), state.getByteCodeOffset());
+    void* entry =
+        state.getTarget().getOSREntry(*frame.getMethod(), state.getByteCodeOffset(), frame.getCallingConvention());
     frame.getUnwindFrame().resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*)>(entry),
                                                      state.release());
 }

@@ -22,7 +22,7 @@
 #include "InterpreterEntry.hpp"
 
 void jllvm::InterpreterOSRLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                      const Method* method, std::uint16_t offset)
+                                      const Method* method, std::uint16_t offset, CallingConvention callingConvention)
 {
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module = std::make_unique<llvm::Module>("module", *context);
@@ -35,8 +35,8 @@ void jllvm::InterpreterOSRLayer::emit(std::unique_ptr<llvm::orc::Materialization
     debugBuilder.createCompileUnit(llvm::dwarf::DW_LANG_Java, file, "JLLVM", true, "", 0);
 
     auto* function =
-        llvm::Function::Create(osrMethodSignature(method->getType(), *context), llvm::GlobalValue::ExternalLinkage,
-                               mangleOSRMethod(method, offset), module.get());
+        llvm::Function::Create(osrMethodSignature(method->getType(), callingConvention, *context),
+                               llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(method, offset), module.get());
 
     llvm::DISubprogram* subprogram =
         debugBuilder.createFunction(file, function->getName(), function->getName(), file, 1,
@@ -46,7 +46,7 @@ void jllvm::InterpreterOSRLayer::emit(std::unique_ptr<llvm::orc::Materialization
 
     applyABIAttributes(function);
     function->clearGC();
-    addJavaMethodMetadata(function, method, JavaMethodMetadata::Kind::Interpreter);
+    addJavaInterpreterMethodMetadata(function, callingConvention);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
@@ -105,14 +105,7 @@ void jllvm::InterpreterOSRLayer::emit(std::unique_ptr<llvm::orc::Materialization
             llvm::cast<llvm::Function>(callee.getCallee())->addFnAttr("gc-leaf-function");
             builder.CreateCall(callee, osrState);
         });
-    if (returnValue)
-    {
-        builder.CreateRet(returnValue);
-    }
-    else
-    {
-        builder.CreateRetVoid();
-    }
+    emitReturn(builder, returnValue, callingConvention);
 
     debugBuilder.finalizeSubprogram(subprogram);
     debugBuilder.finalize();

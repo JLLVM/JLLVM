@@ -43,7 +43,161 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
                                                  localVariablesGCMask);
                       return executeMethod(*method, *byteCodeOffset, context);
                   }},
+        std::pair{"jllvm_interpreter_frame_sizes",
+                  [](const Method* method, std::uint16_t* numLocals, std::uint16_t* numOperands)
+                  {
+                      Code* code = method->getMethodInfo().getAttributes().find<Code>();
+                      *numLocals = code->getMaxLocals();
+                      *numOperands = code->getMaxStack();
+                  }},
+        std::pair{
+            "jllvm_interpreter_init_locals",
+            [](const Method* method, const std::uint64_t* arguments, std::uint64_t* locals, std::uint64_t* localsGCMask)
+            {
+                std::size_t argumentIndex = 0;
+                if (!method->isStatic())
+                {
+                    locals[argumentIndex] = arguments[argumentIndex];
+                    MutableBitArrayRef<>(localsGCMask, argumentIndex + 1)[argumentIndex] = true;
+                    argumentIndex++;
+                }
+
+                for (FieldType fieldType : method->getType().parameters())
+                {
+                    locals[argumentIndex] = arguments[argumentIndex];
+                    if (fieldType.isReference())
+                    {
+                        MutableBitArrayRef<>(localsGCMask, argumentIndex + 1)[argumentIndex] = true;
+                    }
+                    argumentIndex++;
+                    if (fieldType.isWide())
+                    {
+                        argumentIndex++;
+                    }
+                }
+            }},
         std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }});
+
+    // Reuse the linking order of the JIT CC interpreter entries for now.
+    m_jit2InterpreterSymbols.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& linkOrder)
+                                             { m_interpreterCCSymbols.setLinkOrder(linkOrder); });
+    generateInterpreterEntry();
+}
+
+void jllvm::Interpreter::generateInterpreterEntry()
+{
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("module", *context);
+    module->setDataLayout(m_compiled2InterpreterLayer.getDataLayout());
+    module->setTargetTriple(LLVM_HOST_TRIPLE);
+
+    llvm::StringRef functionName = "Interpreter Entry";
+    auto* pointer = llvm::PointerType::get(*context, 0);
+    auto* function = llvm::Function::Create(
+        llvm::FunctionType::get(llvm::Type::getInt64Ty(*context), {pointer, pointer}, /*isVarArg=*/false),
+        llvm::GlobalValue::ExternalLinkage, functionName, module.get());
+
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
+
+    applyABIAttributes(function);
+    function->clearGC();
+    addJavaInterpreterMethodMetadata(function, CallingConvention::Interpreter);
+
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
+
+    llvm::Value* methodRef = function->getArg(0);
+    llvm::Value* callerArguments = function->getArg(1);
+
+    llvm::AllocaInst* byteCodeOffset = builder.CreateAlloca(builder.getInt16Ty());
+    llvm::AllocaInst* topOfStack = builder.CreateAlloca(builder.getInt16Ty());
+
+    // Get the number local variable and operand stack slots from the runtime.
+    // The method uses two out parameters rather than a struct of two as the latter does not automatically adhere to the
+    // C ABI in LLVM.
+    llvm::AllocaInst* numLocalsPtr = builder.CreateAlloca(builder.getInt16Ty());
+    llvm::AllocaInst* numOperandsPtr = builder.CreateAlloca(builder.getInt16Ty());
+    builder.CreateCall(
+        module->getOrInsertFunction(
+            "jllvm_interpreter_frame_sizes",
+            llvm::FunctionType::get(builder.getVoidTy(),
+                                    {methodRef->getType(), numLocalsPtr->getType(), numOperandsPtr->getType()},
+                                    /*isVarArg=*/false)),
+        {methodRef, numLocalsPtr, numOperandsPtr});
+
+    llvm::Value* numLocals =
+        builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numLocalsPtr), builder.getInt32Ty());
+    llvm::Value* numOperands =
+        builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numOperandsPtr), builder.getInt32Ty());
+
+    auto divideCeil = [&](llvm::Value* value, llvm::Value* rhs)
+    {
+        // This is a 'ceil(value / rhs)' operation implemented in IR as "value / rhs + ((value % rhs) != 0)".
+        llvm::Value* remainder = builder.CreateURem(value, rhs);
+        value = builder.CreateUDiv(value, rhs);
+        return builder.CreateAdd(
+            value, builder.CreateZExt(builder.CreateICmpNE(remainder, llvm::ConstantInt::get(value->getType(), 0)),
+                                      value->getType()));
+    };
+
+    // Allocate the stack variables now that we know their sizes.
+    llvm::AllocaInst* operandStack = builder.CreateAlloca(builder.getInt64Ty(), numOperands);
+    llvm::AllocaInst* operandGCMask =
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(numOperands, builder.getInt32(64)));
+    llvm::AllocaInst* localVariables = builder.CreateAlloca(builder.getInt64Ty(), numLocals);
+    llvm::AllocaInst* localVariablesGCMask =
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(numLocals, builder.getInt32(64)));
+
+    builder.CreateMemSet(byteCodeOffset, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
+    builder.CreateMemSet(topOfStack, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
+
+    // These three technically do not have to be zeroed, but we do so anyway for ease of debugging and security.
+    // Can be changed in the future for performance.
+    builder.CreateMemSet(operandStack, builder.getInt8(0),
+                         builder.CreateMul(numOperands, builder.getInt32(sizeof(std::uint64_t))), std::nullopt);
+    builder.CreateMemSet(operandGCMask, builder.getInt8(0),
+                         builder.CreateMul(operandGCMask->getArraySize(), builder.getInt32(sizeof(std::uint64_t))),
+                         std::nullopt);
+    builder.CreateMemSet(localVariables, builder.getInt8(0),
+                         builder.CreateMul(numLocals, builder.getInt32(sizeof(std::uint64_t))), std::nullopt);
+
+    builder.CreateMemSet(
+        localVariablesGCMask, builder.getInt8(0),
+        builder.CreateMul(localVariablesGCMask->getArraySize(), builder.getInt32(sizeof(std::uint64_t))), std::nullopt);
+
+    // Initialize the local variables from the argument array.
+    builder.CreateCall(module->getOrInsertFunction(
+                           "jllvm_interpreter_init_locals",
+                           llvm::FunctionType::get(builder.getVoidTy(),
+                                                   {methodRef->getType(), callerArguments->getType(),
+                                                    localVariables->getType(), localVariablesGCMask->getType()},
+                                                   /*isVarArg=*/false)),
+                       {methodRef, callerArguments, localVariables, localVariablesGCMask});
+
+    std::array<llvm::Value*, 7> arguments = {methodRef,     byteCodeOffset, topOfStack,          operandStack,
+                                             operandGCMask, localVariables, localVariablesGCMask};
+    std::array<llvm::Type*, 7> types{};
+    llvm::transform(arguments, types.begin(), std::mem_fn(&llvm::Value::getType));
+
+    // Deopt all values used as context during interpretation. This makes it possible for the unwinder to read the
+    // method, local variables, the operand stack, the bytecode offset and where GC pointers are contained during
+    // unwinding.
+    llvm::CallInst* callInst = builder.CreateCall(
+        module->getOrInsertFunction("jllvm_interpreter",
+                                    llvm::FunctionType::get(builder.getInt64Ty(), types, /*isVarArg=*/false)),
+        arguments, llvm::OperandBundleDef("deopt", arguments));
+    builder.CreateRet(callInst);
+
+    debugInfoBuilder.finalize();
+
+    Runtime& runtime = m_virtualMachine.getRuntime();
+    llvm::cantFail(runtime.getLLVMIRLayer().add(m_interpreterCCSymbols,
+                                                llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+    m_interpreterEntry = reinterpret_cast<decltype(m_interpreterEntry)>(
+        llvm::cantFail(runtime.getSession().lookup({&m_interpreterCCSymbols}, runtime.getInterner()(functionName)))
+            .getAddress());
 }
 
 namespace
@@ -1244,11 +1398,12 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     }
 }
 
-void* Interpreter::getOSREntry(const Method& method, std::uint16_t byteCodeOffset)
+void* Interpreter::getOSREntry(const Method& method, std::uint16_t byteCodeOffset, CallingConvention callingConvention)
 {
     llvm::orc::SymbolStringPtr mangledName =
         m_interpreterOSRLayer.getInterner()(mangleOSRMethod(&method, byteCodeOffset));
-    allowDuplicateDefinitions(m_interpreterOSRLayer.add(m_jit2InterpreterSymbols, &method, byteCodeOffset));
+    allowDuplicateDefinitions(
+        m_interpreterOSRLayer.add(m_jit2InterpreterSymbols, &method, byteCodeOffset, callingConvention));
 
     llvm::JITEvaluatedSymbol osrMethod =
         llvm::cantFail(m_virtualMachine.getRuntime().getSession().lookup({&m_jit2InterpreterSymbols}, mangledName));
@@ -1299,8 +1454,8 @@ std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(std::uint16_t byte
 void Interpreter::add(const Method& method)
 {
     llvm::cantFail(m_compiled2InterpreterLayer.add(m_jit2InterpreterSymbols, &method));
-    // TODO: Forego Interpreter -> JIT -> Interpreter conversion by implementing an interpreter calling convention
-    //       entry.
-    llvm::cantFail(
-        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreterCCSymbols, method, getJITCCDylib()));
+    // All methods in the interpreter calling convention simply reuse the single entry.
+    llvm::cantFail(m_interpreterCCSymbols.define(
+        llvm::orc::absoluteSymbols({{m_compiled2InterpreterLayer.getInterner()(mangleDirectMethodCall(&method)),
+                                     llvm::JITEvaluatedSymbol::fromPointer(m_interpreterEntry)}})));
 }

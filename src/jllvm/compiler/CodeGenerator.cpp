@@ -163,7 +163,7 @@ ArrayInfo resolveNewArrayInfo(BaseType::Values componentType, llvm::IRBuilder<>&
 
 } // namespace
 
-void CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t offset)
+llvm::Value* CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t offset)
 {
     TrivialDebugInfoBuilder debugInfoBuilder(m_function);
 
@@ -196,6 +196,20 @@ void CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t o
                                                     iter->second.variableState.begin());
     }
 
+    // Create the return block regardless of return type to allow running any epilogue code.
+    m_returnBlock = llvm::BasicBlock::Create(m_builder.getContext(), "", m_function);
+    FieldType returnType = m_method.getType().returnType();
+    if (returnType != BaseType(BaseType::Void))
+    {
+        // If we do have a return value, a phi collecting all the incoming return value is used and returned by this
+        // method.
+        llvm::IRBuilder<>::InsertPointGuard guard{m_builder};
+        m_builder.SetInsertPoint(m_returnBlock);
+
+        m_returnValue = m_builder.CreatePHI(descriptorToType(returnType, m_builder.getContext()),
+                                            /*NumReservedValues=*/1);
+    }
+
     generateCodeBody(offset);
 
     // 'createBasicBlocks' conservatively creates all basic blocks of the code even if some are not reachable if
@@ -207,6 +221,10 @@ void CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t o
             basicBlockData.block->eraseFromParent();
         }
     }
+
+    // Move the return block to the very back, purely to improve the readability of textual IR.
+    m_returnBlock->moveAfter(&m_function->back());
+    return m_returnValue ? static_cast<llvm::Value*>(m_returnValue) : static_cast<llvm::Value*>(m_returnBlock);
 }
 
 void CodeGenerator::createBasicBlocks(const ByteCodeTypeChecker& checker)
@@ -439,13 +457,14 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                     {
                         value = m_builder.CreateAnd(value, m_builder.getInt32(1));
                     }
-                    if (m_function->getReturnType() != value->getType())
+                    if (m_returnValue->getType() != value->getType())
                     {
-                        value = m_builder.CreateTrunc(value, m_function->getReturnType());
+                        value = m_builder.CreateTrunc(value, m_returnValue->getType());
                     }
                 });
 
-            m_builder.CreateRet(value);
+            m_returnValue->addIncoming(value, m_builder.GetInsertBlock());
+            m_builder.CreateBr(m_returnBlock);
             fallsThrough = false;
         },
         [&](ArrayLength)
@@ -1350,7 +1369,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         [&](Ret ret) { generateRet(ret); },
         [&](Return)
         {
-            m_builder.CreateRetVoid();
+            m_builder.CreateBr(m_returnBlock);
             fallsThrough = false;
         },
         [&](SIPush siPush) { m_operandStack.push_back(m_builder.getInt32(siPush.value)); },

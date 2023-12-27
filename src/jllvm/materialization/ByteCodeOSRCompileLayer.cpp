@@ -16,7 +16,8 @@
 #include "jllvm/compiler/Compiler.hpp"
 
 void jllvm::ByteCodeOSRCompileLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                          const jllvm::Method* method, std::uint16_t offset)
+                                          const jllvm::Method* method, std::uint16_t offset,
+                                          CallingConvention callingConvention)
 {
     auto context = std::make_unique<llvm::LLVMContext>();
     auto module = std::make_unique<llvm::Module>("name", *context);
@@ -24,7 +25,7 @@ void jllvm::ByteCodeOSRCompileLayer::emit(std::unique_ptr<llvm::orc::Materializa
     module->setDataLayout(m_dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    compileOSRMethod(*module, offset, *method);
+    compileOSRMethod(*module, offset, *method, callingConvention);
 
     m_baseLayer.emit(std::move(mr), llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
 }

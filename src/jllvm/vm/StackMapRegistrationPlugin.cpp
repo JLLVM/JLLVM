@@ -72,17 +72,18 @@ void jllvm::StackMapRegistrationPlugin::parseInterpreterEntry(JavaMethodMetadata
                                                               StackMapParser::RecordAccessor& record,
                                                               StackMapParser& parser)
 {
-    assert(record.getLocation(2).getSmallConstant() == 6 && "interpreter frames must have 6 deopt values");
+    assert(record.getLocation(2).getSmallConstant() == 7 && "interpreter frames must have 6 deopt values");
 
     constexpr std::size_t deoptValuesStart = 3;
 
-    interpreterData.byteCodeOffset = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart), parser);
-    interpreterData.topOfStack = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart + 1), parser);
-    interpreterData.operandStack = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 2), parser);
-    interpreterData.operandGCMask = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 3), parser);
-    interpreterData.localVariables = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 4), parser);
+    interpreterData.method = toFrameValue<const Method*>(record.getLocation(deoptValuesStart), parser);
+    interpreterData.byteCodeOffset = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart + 1), parser);
+    interpreterData.topOfStack = toFrameValue<std::uint16_t*>(record.getLocation(deoptValuesStart + 2), parser);
+    interpreterData.operandStack = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 3), parser);
+    interpreterData.operandGCMask = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 4), parser);
+    interpreterData.localVariables = toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 5), parser);
     interpreterData.localVariablesGCMask =
-        toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 5), parser);
+        toFrameValue<std::uint64_t*>(record.getLocation(deoptValuesStart + 6), parser);
 }
 
 void jllvm::StackMapRegistrationPlugin::parseJITEntry(JavaMethodMetadata::JITData& jitData,
@@ -223,7 +224,7 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                         case JavaMethodMetadata::Kind::JIT:
                             if (!jitData)
                             {
-                                jitData = &metadata.emplaceJITData();
+                                jitData = &metadata.getJITData();
                                 m_needsCleanup[resourceKey].push_back(jitData);
                             }
                             parseJITEntry(*jitData, record, parser, functionAddress);
@@ -231,11 +232,13 @@ void jllvm::StackMapRegistrationPlugin::modifyPassConfig(llvm::orc::Materializat
                         case JavaMethodMetadata::Kind::Interpreter:
                             if (!interpreterData)
                             {
-                                interpreterData = &metadata.emplaceInterpreterData();
+                                interpreterData = &metadata.getInterpreterData();
                             }
                             parseInterpreterEntry(*interpreterData, record, parser);
                             break;
-                        case JavaMethodMetadata::Kind::Native: break;
+                        case JavaMethodMetadata::Kind::Native:
+                            // Already initialized in LLVM IR.
+                            break;
                     }
                 }
 

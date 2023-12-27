@@ -15,6 +15,8 @@
 
 #include <llvm/ExecutionEngine/Orc/Layer.h>
 
+#include <jllvm/compiler/Compiler.hpp>
+
 #include "ByteCodeOSRLayer.hpp"
 
 namespace jllvm
@@ -32,7 +34,7 @@ public:
     {
     }
 
-    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method,
-              std::uint16_t offset) override;
+    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method, std::uint16_t offset,
+              CallingConvention callingConvention) override;
 };
 } // namespace jllvm
