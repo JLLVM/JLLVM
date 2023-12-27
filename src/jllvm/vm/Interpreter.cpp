@@ -90,6 +90,7 @@ struct InstructionElementType<T>
     using type = ObjectInterface*;
     using unsigned_type = type;
     using signed_type = type;
+    using field_type = type;
 };
 
 template <OperatesOnIntegers T>
@@ -98,6 +99,7 @@ struct InstructionElementType<T>
     using type = std::uint32_t;
     using unsigned_type = type;
     using signed_type = std::int32_t;
+    using field_type = signed_type;
 };
 
 template <OperatesOnFloat T>
@@ -106,6 +108,7 @@ struct InstructionElementType<T>
     using type = float;
     using unsigned_type = type;
     using signed_type = type;
+    using field_type = signed_type;
 };
 
 template <OperatesOnLong T>
@@ -114,6 +117,7 @@ struct InstructionElementType<T>
     using type = std::uint64_t;
     using unsigned_type = type;
     using signed_type = std::int64_t;
+    using field_type = signed_type;
 };
 
 template <OperatesOnDouble T>
@@ -122,6 +126,28 @@ struct InstructionElementType<T>
     using type = double;
     using unsigned_type = type;
     using signed_type = type;
+    using field_type = signed_type;
+};
+
+template <OperatesOnByte T>
+struct InstructionElementType<T>
+{
+    using type = std::int32_t;
+    using field_type = std::uint8_t;
+};
+
+template <OperatesOnShort T>
+struct InstructionElementType<T>
+{
+    using type = std::int32_t;
+    using field_type = std::int16_t;
+};
+
+template <OperatesOnChar T>
+struct InstructionElementType<T>
+{
+    using type = std::int32_t;
+    using field_type = std::uint16_t;
 };
 
 /// Function object implementing the comparison operator performed by the instruction 'T'.
@@ -161,6 +187,7 @@ struct ComparisonOperator<T> : std::less_equal<>
 /// Struct used to implement instructions with generic implementations parameterized on their operand types.
 struct MultiTypeImpls
 {
+    VirtualMachine& virtualMachine;
     InterpreterContext& context;
 
     template <IsAdd T>
@@ -302,6 +329,23 @@ struct MultiTypeImpls
         return {};
     }
 
+    template <IsALoad T>
+    InstructionResult operator()(T) const
+    {
+        auto index = context.pop<std::int32_t>();
+        auto* array = context.pop<Array<typename InstructionElementType<T>::field_type>*>();
+        if (!array)
+        {
+            virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+        }
+        if (index < 0 || index >= array->size())
+        {
+            virtualMachine.throwArrayIndexOutOfBoundsException(index, array->size());
+        }
+        context.push<typename InstructionElementType<T>::type>((*array)[index]);
+        return NextPC{};
+    }
+
     template <IsStore T>
     NextPC operator()(T store) const
     {
@@ -344,6 +388,24 @@ struct MultiTypeImpls
     {
         return ReturnValue(context.pop<typename InstructionElementType<T>::type>());
     }
+
+    template <IsAStore T>
+    NextPC operator()(T) const
+    {
+        auto value = context.pop<typename InstructionElementType<T>::type>();
+        auto index = context.pop<std::int32_t>();
+        auto* array = context.pop<Array<typename InstructionElementType<T>::field_type>*>();
+        if (!array)
+        {
+            virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+        }
+        if (index < 0 || index >= array->size())
+        {
+            virtualMachine.throwArrayIndexOutOfBoundsException(index, array->size());
+        }
+        (*array)[index] = value;
+        return {};
+    }
 };
 
 } // namespace
@@ -363,7 +425,31 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
         // Update the current offset to the new instruction.
         offset = curr.getOffset();
         InstructionResult result = match(
-            *curr, MultiTypeImpls{context},
+            *curr, MultiTypeImpls{m_virtualMachine, context},
+            [&](ANewArray aNewArray)
+            {
+                auto count = context.pop<std::int32_t>();
+                if (count < 0)
+                {
+                    m_virtualMachine.throwNegativeArraySizeException(count);
+                }
+                ClassObject* componentType = getClassObject(classFile, aNewArray.index);
+                ClassObject& arrayType =
+                    m_virtualMachine.getClassLoader().forName(ArrayType(componentType->getDescriptor()));
+                auto* array = m_virtualMachine.getGC().allocate<AbstractArray>(&arrayType, count);
+                context.push(array);
+                return NextPC{};
+            },
+            [&](ArrayLength)
+            {
+                auto* array = context.pop<AbstractArray*>();
+                if (!array)
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+                context.push<std::uint32_t>(array->size());
+                return NextPC{};
+            },
             [&](Dup)
             {
                 InterpreterContext::RawValue value = context.popRaw();

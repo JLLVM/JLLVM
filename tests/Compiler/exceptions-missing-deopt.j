@@ -19,18 +19,17 @@
 .method public static test()V
     .limit stack 2
     iconst_1
-    ; CHECK: call {{.*}} @jllvm_build_negative_array_size_exception(
+    ; CHECK: call {{.*}} @jllvm_throw_negative_array_size_exception(
     ; CHECK-SAME: "deopt"(i16 {{.*}}
-    ; CHECK: call {{.*}} @jllvm_throw(
-    ; CHECK-SAME: "deopt"(i16 {{.*}}
+    ; CHECK-NEXT: unreachable
     anewarray Ljava/lang/Object;
     iconst_0
-    ; CHECK: call {{.*}} @jllvm_build_null_pointer_exception(
+    ; CHECK: call {{.*}} @jllvm_throw_null_pointer_exception(
     ; CHECK-SAME: "deopt"(i16 [[AALOAD_OFFSET:[0-9]+]]
-    ; CHECK: call {{.*}} @jllvm_build_array_index_out_of_bounds_exception(
+    ; CHECK: call {{.*}} @jllvm_throw_array_index_out_of_bounds_exception(
     ; CHECK-SAME: "deopt"(i16 [[AALOAD_OFFSET]]
     aaload
-    ; CHECK: call {{.*}} @jllvm_build_class_cast_exception(
+    ; CHECK: call {{.*}} @jllvm_throw_class_cast_exception(
     ; CHECK-SAME: "deopt"(i16 {{.*}}
     checkcast Ljava/lang/Object;
     return

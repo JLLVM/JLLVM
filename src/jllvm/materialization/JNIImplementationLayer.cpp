@@ -117,10 +117,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
     builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
-    llvm::Type* returnType = descriptorToType(methodType.returnType(), *context);
     llvm::Type* referenceType = jllvm::referenceType(*context);
-    llvm::Value* returnValue;
-
     if (lookup)
     {
         // For exception handling, we reuse the exception handler from our C++ implementation. We currently only
@@ -171,6 +168,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         }
 
         llvm::Value* callee = builder.CreateIntToPtr(builder.getInt64(lookup->getAddress()), builder.getPtrTy());
+        llvm::Type* returnType = descriptorToType(methodType.returnType(), *context);
 
         auto* normalDest = llvm::BasicBlock::Create(*context, "", function);
         auto* exceptionDest = llvm::BasicBlock::Create(*context, "", function);
@@ -202,7 +200,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         builder.CreateResume(landingPadInst);
 
         builder.SetInsertPoint(normalDest);
-        returnValue = result;
+        llvm::Value* returnValue = result;
         if (result->getType() == referenceType)
         {
             // JNI methods can only ever return a root as well. Unpack it.
@@ -210,6 +208,15 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         }
 
         builder.CreateCall(popLocalFrame);
+
+        if (returnType->isVoidTy())
+        {
+            builder.CreateRetVoid();
+        }
+        else
+        {
+            builder.CreateRet(returnValue);
+        }
     }
     else
     {
@@ -221,22 +228,10 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
         llvm::Value* methodPtr = methodGlobal(*module, method);
 
         llvm::Value* exception =
-            builder.CreateCall(module->getOrInsertFunction("jllvm_build_unsatisfied_link_error",
+            builder.CreateCall(module->getOrInsertFunction("jllvm_throw_unsatisfied_link_error",
                                                            llvm::FunctionType::get(referenceType, {ptrType}, false)),
                                {methodPtr});
-
-        builder.CreateCall(module->getOrInsertFunction("jllvm_throw", builder.getVoidTy(), referenceType),
-                                       exception);
-        returnValue = llvm::UndefValue::get(referenceType);
-    }
-
-    if (returnType->isVoidTy())
-    {
-        builder.CreateRetVoid();
-    }
-    else
-    {
-        builder.CreateRet(returnValue);
+        builder.CreateUnreachable();
     }
 
     debugInfoBuilder.finalize();
