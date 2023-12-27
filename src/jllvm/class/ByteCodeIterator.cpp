@@ -90,7 +90,7 @@ template <std::same_as<NewArray>>
 ByteCodeOp parseNewArray(const char* bytes, std::size_t offset)
 {
     consume<OpCodes>(bytes);
-    return NewArray{offset, consume<ArrayOp::ArrayType>(bytes)};
+    return NewArray{offset, consume<BaseType::Values>(bytes)};
 }
 
 template <std::same_as<IInc>>

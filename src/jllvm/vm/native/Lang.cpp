@@ -21,7 +21,7 @@ jllvm::ObjectInterface* jllvm::lang::ObjectModel::clone()
     ClassLoader& classLoader = virtualMachine.getClassLoader();
     GarbageCollector& garbageCollector = virtualMachine.getGC();
 
-    auto arrayClone = [&]<class T = Object*>(T = {})->ObjectInterface*
+    auto arrayClone = [&]<class T>(T) -> ObjectInterface*
     {
         auto original = static_cast<GCRootRef<Array<T>>>(javaThis);
         auto* clone = garbageCollector.allocate<Array<T>>(original->getClass(), original->size());
@@ -32,25 +32,7 @@ jllvm::ObjectInterface* jllvm::lang::ObjectModel::clone()
 
     if (thisClass->isArray())
     {
-        return match(
-            thisClass->getComponentType()->getDescriptor(),
-            [&](BaseType baseType)
-            {
-                switch (baseType.getValue())
-                {
-                    case BaseType::Boolean:
-                    case BaseType::Char:
-                    case BaseType::Byte:
-                    case BaseType::Short:
-                    case BaseType::Int: return arrayClone(std::int32_t{});
-                    case BaseType::Float: return arrayClone(float{});
-                    case BaseType::Double: return arrayClone(double{});
-                    case BaseType::Long: return arrayClone(std::int64_t{});
-                    case BaseType::Void: break;
-                }
-                llvm_unreachable("void parameter is not possible");
-            },
-            [&](auto) { return arrayClone(); });
+        return selectForJVMType(thisClass->getComponentType()->getDescriptor(), arrayClone);
     }
 
     if (thisClass->wouldBeInstanceOf(&classLoader.forName("Ljava/lang/Cloneable;")))
@@ -127,9 +109,10 @@ void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObje
     if (destPos < 0)
     {
         std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
-        String* string = vm.getStringInterner().intern(
-            llvm::formatv("arraycopy: destination index {0} out of bounds for {1}[{2}]", destPos, elemName, destArr->size())
-                .str());
+        String* string =
+            vm.getStringInterner().intern(llvm::formatv("arraycopy: destination index {0} out of bounds for {1}[{2}]",
+                                                        destPos, elemName, destArr->size())
+                                              .str());
         vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
     if (length < 0)
@@ -151,10 +134,10 @@ void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObje
     if (destPos + length > destArr->size())
     {
         std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: last destination index {0} out of bounds for {1}[{2}]",
-                                                        destPos + length, elemName, destArr->size())
-                                              .str());
+        String* string = vm.getStringInterner().intern(
+            llvm::formatv("arraycopy: last destination index {0} out of bounds for {1}[{2}]", destPos + length,
+                          elemName, destArr->size())
+                .str());
         vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
     }
 

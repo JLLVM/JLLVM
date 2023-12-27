@@ -265,30 +265,8 @@ public:
     AbstractArray* allocate(const ClassObject* classObject, std::uint32_t length)
     {
         assert(classObject->isArray());
-        std::size_t sizeOf = classObject->getComponentType()->getDescriptor().sizeOf();
-        void* allocation = allocate(classObject->getInstanceSize() + sizeOf * length);
-        // Try really hard to adhere to C++ type aliasing rules. All of these are technically identical in semantics
-        // except the type being returned. TODO: Figure out in the future whether there is a smarter way to do this
-        //  type aliasing wise.
-        return match(
-            classObject->getComponentType()->getDescriptor(),
-            [&](BaseType baseType) -> AbstractArray*
-            {
-                switch (baseType.getValue())
-                {
-                    case BaseType::Boolean: return new (allocation) Array<bool>(classObject, length);
-                    case BaseType::Char: return new (allocation) Array<std::uint16_t>(classObject, length);
-                    case BaseType::Float: return new (allocation) Array<float>(classObject, length);
-                    case BaseType::Double: return new (allocation) Array<double>(classObject, length);
-                    case BaseType::Byte: return new (allocation) Array<std::int8_t>(classObject, length);
-                    case BaseType::Short: return new (allocation) Array<std::int16_t>(classObject, length);
-                    case BaseType::Int: return new (allocation) Array<std::int32_t>(classObject, length);
-                    case BaseType::Long: return new (allocation) Array<std::int64_t>(classObject, length);
-                    case BaseType::Void: break;
-                }
-                llvm_unreachable("not possible");
-            },
-            [&](...) -> AbstractArray* { return new (allocation) Array<ObjectInterface*>(classObject, length); });
+        return selectForJVMType(classObject->getComponentType()->getDescriptor(),
+                                [&]<class C>(C) -> AbstractArray* { return allocate<Array<C>>(classObject, length); });
     }
 
     /// Pushes a new local frame onto the internal stack, making it the currently active frame.

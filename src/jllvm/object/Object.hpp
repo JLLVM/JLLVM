@@ -92,15 +92,16 @@ concept JavaCompatible =
 class AbstractArray : public ObjectInterface
 {
 public:
+    struct ArrayHeader
+    {
+        ObjectHeader header;
+        std::uint32_t length{};
+    };
+
     /// Returns the length of the array.
     std::uint32_t size() const
     {
-        struct Layout
-        {
-            ObjectHeader header;
-            std::uint32_t length{};
-        };
-        return *reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const char*>(this) + offsetof(Layout, length));
+        return reinterpret_cast<const ArrayHeader*>(this)->length;
     }
 };
 
@@ -109,14 +110,13 @@ public:
 template <JavaCompatible T = ObjectInterface*>
 class Array : public AbstractArray
 {
-    ObjectHeader m_header;
-    std::uint32_t m_length;
+    AbstractArray::ArrayHeader m_header;
     // GCC and Clang extension allowing to place and index into an array placed right after the object
     // without introducing any padding inbetween.
     T m_trailing[];
 
 public:
-    Array(const ClassObject* classObject, std::uint32_t length) : m_header{classObject}, m_length{length} {}
+    Array(const ClassObject* classObject, std::uint32_t length) : m_header{ObjectHeader{classObject}, length} {}
 
     using value_type = T;
 
@@ -138,13 +138,13 @@ public:
     /// Returns the array element with the given index.
     T& operator[](std::uint32_t index)
     {
-        assert(index < m_length);
+        assert(index < m_header.length);
         return m_trailing[index];
     }
 
     T operator[](std::uint32_t index) const
     {
-        assert(index < m_length);
+        assert(index < m_header.length);
         return m_trailing[index];
     }
 
@@ -173,12 +173,12 @@ public:
     /// Returns the end iterator of the array.
     T* end()
     {
-        return m_trailing + m_length;
+        return m_trailing + m_header.length;
     }
 
     const T* end() const
     {
-        return m_trailing + m_length;
+        return m_trailing + m_header.length;
     }
 };
 

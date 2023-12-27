@@ -134,33 +134,29 @@ void prepareArgumentsForCall(llvm::IRBuilder<>& builder, llvm::MutableArrayRef<l
 
 struct ArrayInfo
 {
-    std::string_view descriptor;
     llvm::Type* type{};
     std::size_t size{};
     std::size_t elementOffset{};
 };
 
-ArrayInfo resolveNewArrayInfo(ArrayOp::ArrayType arrayType, llvm::IRBuilder<>& builder)
+ArrayInfo resolveNewArrayInfo(BaseType::Values componentType, llvm::IRBuilder<>& builder)
 {
-    switch (arrayType)
+    using Type = BaseType::Values;
+
+    switch (componentType)
     {
-        case ArrayOp::ArrayType::TBoolean:
-            return {"Z", builder.getInt8Ty(), sizeof(std::uint8_t), jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TChar:
-            return {"C", builder.getInt16Ty(), sizeof(std::uint16_t),
-                    jllvm::Array<std::uint16_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TFloat:
-            return {"F", builder.getFloatTy(), sizeof(float), jllvm::Array<float>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TDouble:
-            return {"D", builder.getDoubleTy(), sizeof(double), jllvm::Array<double>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TByte:
-            return {"B", builder.getInt8Ty(), sizeof(std::uint8_t), jllvm::Array<std::uint8_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TShort:
-            return {"S", builder.getInt16Ty(), sizeof(std::int16_t), jllvm::Array<std::int16_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TInt:
-            return {"I", builder.getInt32Ty(), sizeof(std::int32_t), jllvm::Array<std::int32_t>::arrayElementsOffset()};
-        case ArrayOp::ArrayType::TLong:
-            return {"J", builder.getInt64Ty(), sizeof(std::int64_t), jllvm::Array<std::int64_t>::arrayElementsOffset()};
+        case Type::Boolean:
+            return {builder.getInt8Ty(), sizeof(std::uint8_t), Array<std::uint8_t>::arrayElementsOffset()};
+        case Type::Char:
+            return {builder.getInt16Ty(), sizeof(std::uint16_t), jllvm::Array<std::uint16_t>::arrayElementsOffset()};
+        case Type::Float: return {builder.getFloatTy(), sizeof(float), Array<float>::arrayElementsOffset()};
+        case Type::Double: return {builder.getDoubleTy(), sizeof(double), Array<double>::arrayElementsOffset()};
+        case Type::Byte: return {builder.getInt8Ty(), sizeof(std::uint8_t), Array<std::uint8_t>::arrayElementsOffset()};
+        case Type::Short:
+            return {builder.getInt16Ty(), sizeof(std::int16_t), Array<std::int16_t>::arrayElementsOffset()};
+        case Type::Int: return {builder.getInt32Ty(), sizeof(std::int32_t), Array<std::int32_t>::arrayElementsOffset()};
+        case Type::Long:
+            return {builder.getInt64Ty(), sizeof(std::int64_t), Array<std::int64_t>::arrayElementsOffset()};
         default: llvm_unreachable("Invalid array type");
     }
 }
@@ -476,7 +472,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
             llvm::Value* exception = m_operandStack.pop_back();
 
             generateNullPointerCheck(getOffset(operation), exception);
-            generateExceptionThrow(getOffset(operation), exception);
+
+            llvm::CallBase* call = m_builder.CreateCall(throwFunction(m_function->getParent()), exception);
+            addExceptionHandlingDeopts(getOffset(operation), call);
+            m_builder.CreateUnreachable();
             fallsThrough = false;
         },
         [&](BIPush biPush)
@@ -1249,10 +1248,11 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         },
         [&](NewArray newArray)
         {
-            auto [descriptor, type, size, elementOffset] = resolveNewArrayInfo(newArray.atype, m_builder);
+            auto [type, size, elementOffset] = resolveNewArrayInfo(newArray.componentType, m_builder);
             llvm::Value* count = m_operandStack.pop_back();
 
-            llvm::Value* classObject = getClassObject(getOffset(operation), ArrayType(descriptor));
+            llvm::Value* classObject =
+                getClassObject(getOffset(operation), ArrayType{BaseType{newArray.componentType}});
 
             generateNegativeArraySizeCheck(getOffset(operation), count);
 
@@ -1516,13 +1516,6 @@ void CodeGenerator::generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset,
     generateBuiltinExceptionThrow(byteCodeOffset, isNegative, "jllvm_throw_negative_array_size_exception", {size});
 }
 
-void CodeGenerator::generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception)
-{
-    llvm::CallBase* call = m_builder.CreateCall(throwFunction(m_function->getParent()), exception);
-    addExceptionHandlingDeopts(byteCodeOffset, call);
-    m_builder.CreateUnreachable();
-}
-
 llvm::Value* CodeGenerator::loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index)
 {
     llvm::StringRef className = index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
@@ -1541,13 +1534,8 @@ llvm::Value* CodeGenerator::generateAllocArray(std::uint16_t offset, ArrayType d
 {
     auto [elementType, elementSize, elementOffset] = match(
         descriptor.getComponentType(),
-        [&](BaseType baseType) -> std::tuple<llvm::Type*, std::size_t, std::size_t>
-        {
-            auto [_, eType, eSize, eOffset] =
-                resolveNewArrayInfo(static_cast<ArrayOp::ArrayType>(baseType.getValue()), m_builder);
-            return {eType, eSize, eOffset};
-        },
-        [&](auto) -> std::tuple<llvm::Type*, std::size_t, std::size_t> {
+        [&](BaseType baseType) { return resolveNewArrayInfo(baseType.getValue(), m_builder); },
+        [&](auto) -> ArrayInfo {
             return {referenceType(m_builder.getContext()), sizeof(Object*), Array<>::arrayElementsOffset()};
         });
 

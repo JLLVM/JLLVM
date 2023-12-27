@@ -871,6 +871,31 @@ struct ClassGraph
     const ClassObject* root;
 };
 
+// TODO: name
+template <class F>
+inline auto selectForJVMType(jllvm::FieldType type, F&& f)
+{
+    return match(
+        type,
+        [&](BaseType baseType)
+        {
+            switch (baseType.getValue())
+            {
+                case BaseType::Boolean: return f(std::uint8_t{});
+                case BaseType::Char: return f(std::uint16_t{});
+                case BaseType::Byte: return f(std::uint8_t{});
+                case BaseType::Short: return f(std::int16_t{});
+                case BaseType::Int: return f(std::int32_t{});
+                case BaseType::Float: return f(float{});
+                case BaseType::Double: return f(double{});
+                case BaseType::Long: return f(std::int64_t{});
+                case BaseType::Void: break;
+            }
+            llvm_unreachable("void parameter is not possible");
+        },
+        [&](auto) { return f((ObjectInterface*){}); });
+}
+
 } // namespace jllvm
 
 template <>

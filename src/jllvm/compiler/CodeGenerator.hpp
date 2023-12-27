@@ -85,8 +85,6 @@ class CodeGenerator
 
     void generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset, llvm::Value* size);
 
-    void generateExceptionThrow(std::uint16_t byteCodeOffset, llvm::Value* exception);
-
     llvm::Value* loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index);
 
     llvm::Value* generateAllocArray(std::uint16_t offset, ArrayType descriptor, llvm::Value* classObject,
