@@ -16,6 +16,7 @@
 #include <llvm/ExecutionEngine/Orc/Mangling.h>
 
 #include <jllvm/class/ClassFile.hpp>
+#include <jllvm/compiler/Compiler.hpp>
 #include <jllvm/object/ClassObject.hpp>
 
 namespace jllvm
@@ -42,10 +43,11 @@ public:
 
     /// Method called by the JIT to emit the requested symbols.
     virtual void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method,
-                      std::uint16_t byteCodeOffset) = 0;
+                      std::uint16_t byteCodeOffset, CallingConvention callingConvention) = 0;
 
     /// Adds a materialization unit for the given method at the given bytecode offset to 'dylib'.
-    llvm::Error add(llvm::orc::JITDylib& dylib, const Method* method, std::uint16_t byteCodeOffset);
+    llvm::Error add(llvm::orc::JITDylib& dylib, const Method* method, std::uint16_t byteCodeOffset,
+                    CallingConvention callingConvention);
 };
 
 } // namespace jllvm

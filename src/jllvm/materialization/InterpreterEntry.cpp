@@ -51,7 +51,7 @@ llvm::Value* jllvm::generateInterpreterEntry(
     llvm::CallInst* callInst = builder.CreateCall(
         module.getOrInsertFunction("jllvm_interpreter",
                                    llvm::FunctionType::get(builder.getInt64Ty(), types, /*isVarArg=*/false)),
-        arguments, llvm::OperandBundleDef("deopt", llvm::ArrayRef(arguments).drop_front()));
+        arguments, llvm::OperandBundleDef("deopt", arguments));
 
     llvm::Type* returnType = descriptorToType(method.getType().returnType(), builder.getContext());
     if (returnType->isVoidTy())

@@ -55,11 +55,22 @@ llvm::Type* descriptorToType(FieldType type, llvm::LLVMContext& context);
 /// Returns the corresponding LLVM function type for a given, possible static, Java method descriptor.
 llvm::FunctionType* descriptorToType(MethodType type, bool isStatic, llvm::LLVMContext& context);
 
+/// Calling convention used by a Java method.
+enum class CallingConvention : std::uint8_t
+{
+    /// uint64_t(const Method*, const std::uint64_t).
+    Interpreter,
+    /// Return type and parameters matching the 'MethodType' of the method with an explicit pointer argument for 'this'
+    /// if a non-static method.
+    JIT,
+};
+
 /// Returns the LLVM function type for an OSR method for a given Java method descriptor.
-/// An OSR frame currently uses as calling convention (ptr, ptr) where the first pointer refers to an array as large as
-/// the operand stack at entry and the second to an array as large as the local variables at entry. These are used to
-/// initialize the operand stack and local variables respectively.
-llvm::FunctionType* osrMethodSignature(MethodType methodType, llvm::LLVMContext& context);
+/// The calling convention used is suitable to replace a frame with the given 'callingConvention' by using the same
+/// return type. The parameter list contains of a single pointer to an internal array built by 'OSRState' used to
+/// initialize the abstract machine state.
+llvm::FunctionType* osrMethodSignature(MethodType methodType, CallingConvention callingConvention,
+                                       llvm::LLVMContext& context);
 
 /// Generates code using 'builder' to convert 'value', which is of the corresponding LLVM type of 'type', to the
 /// corresponding LLVM type as is used on the JVM operand stack.
@@ -69,15 +80,11 @@ llvm::Value* extendToStackType(llvm::IRBuilder<>& builder, FieldType type, llvm:
 /// Metadata attached to Java methods produced by any 'ByteCodeLayer' implementation.
 class JavaMethodMetadata
 {
-    // CAUTION: While the members below are private from a C++ API user perspective, their precise layouts and values
-    // are relied upon by LLVM-generated code and therefore not private from an implementation perspective.
-
-    const Method* m_method{};
-
 public:
     /// Metadata contained within any Interpreter Java frame.
     struct InterpreterData
     {
+        FrameValue<const Method*> method;
         FrameValue<std::uint16_t*> byteCodeOffset;
         FrameValue<std::uint16_t*> topOfStack;
         FrameValue<std::uint64_t*> operandStack;
@@ -89,6 +96,8 @@ public:
     /// Metadata contained within any JITted Java frame.
     class JITData
     {
+        const Method* m_method{};
+
         struct PerPCData
         {
             std::uint16_t byteCodeOffset{};
@@ -102,10 +111,6 @@ public:
         llvm::DenseMap<std::uintptr_t, PerPCData>* m_perPcData = nullptr;
 
     public:
-        JITData()
-        {
-            m_perPcData = new std::decay_t<decltype(*m_perPcData)>;
-        }
 
         ~JITData()
         {
@@ -115,6 +120,10 @@ public:
         /// Inserts new metadata for the given program counter.
         void insert(std::uintptr_t programCounter, PerPCData&& pcData)
         {
+            if (!m_perPcData)
+            {
+                m_perPcData = new std::decay_t<decltype(*m_perPcData)>;
+            }
             m_perPcData->insert({programCounter, std::move(pcData)});
         }
 
@@ -128,10 +137,22 @@ public:
             return iter->second;
         }
 
+        /// Returns the method object of this JITted method.
+        const Method* getMethod() const
+        {
+            return m_method;
+        }
+
         JITData(const JITData&) = delete;
         JITData& operator=(const JITData&) = delete;
         JITData(JITData&&) = delete;
         JITData& operator=(JITData&&) = delete;
+    };
+
+    /// Metadata contained within any JNI Java frame.
+    struct NativeData
+    {
+        const Method* method{};
     };
 
     /// Possible kinds of Java frames.
@@ -146,36 +167,12 @@ public:
     };
 
 private:
-    union
-    {
-        // Default active union member.
-        char dummy{};
-        JITData m_jitData;
-        InterpreterData m_interpreterData;
-    };
     Kind m_kind{};
+    CallingConvention m_callingConvention{};
 
 public:
     /// 'JavaMethodMetadata' is only ever created by LLVM-IR.
     JavaMethodMetadata() = delete;
-
-    /// Returns the number of bytes required to store the union including any padding prior or after the union.
-    constexpr static std::size_t unionSize()
-    {
-        return offsetof(JavaMethodMetadata, m_kind) - (offsetof(JavaMethodMetadata, m_method) + sizeof(const Method*));
-    }
-
-    /// Returns the class object of the enclosing class of the method.
-    const ClassObject* getClassObject() const
-    {
-        return getMethod()->getClassObject();
-    }
-
-    /// Returns the method meta-object of the method.
-    const Method* getMethod() const
-    {
-        return m_method;
-    }
 
     /// Returns true if this is metadata for a JITted method.
     bool isJIT() const
@@ -201,12 +198,14 @@ public:
         return m_kind;
     }
 
-    /// Initializes and returns the Interpreter metadata field.
-    /// It is undefined behaviour to call this method if the metadata is not for an interpreted method.
-    InterpreterData& emplaceInterpreterData()
+    /// Returns the calling convention used by this method.
+    /// Note that the calling convention is orthogonal to the tier it is running in.
+    /// A method may be JIT compiled and have JIT metadata but nevertheless use the interpreter calling convention.
+    /// This commonly happens during OSR where the replacing method has to use the same calling convention as the method
+    /// being replaced.
+    CallingConvention getCallingConvention() const
     {
-        assert(isInterpreter());
-        return *new (&m_interpreterData) InterpreterData;
+        return m_callingConvention;
     }
 
     /// Returns the Interpreter metadata field.
@@ -214,15 +213,12 @@ public:
     const InterpreterData& getInterpreterData() const
     {
         assert(isInterpreter());
-        return m_interpreterData;
+        return reinterpret_cast<const InterpreterData*>(this)[-1];
     }
 
-    /// Initializes and returns the JIT metadata field.
-    /// It is undefined behaviour to call this method if the metadata is not for a JITted method.
-    JITData& emplaceJITData()
+    InterpreterData& getInterpreterData()
     {
-        assert(isJIT());
-        return *new (&m_jitData) JITData;
+        return const_cast<InterpreterData&>(std::as_const(*this).getInterpreterData());
     }
 
     /// Returns the JIT metadata field.
@@ -230,14 +226,33 @@ public:
     const JITData& getJITData() const
     {
         assert(isJIT());
-        return m_jitData;
+        return reinterpret_cast<const JITData*>(this)[-1];
+    }
+
+    JITData& getJITData()
+    {
+        return const_cast<JITData&>(std::as_const(*this).getJITData());
+    }
+
+    /// Returns the Native metadata field.
+    /// It is undefined behaviour to call this method if the metadata is not for a native method.
+    const NativeData& getNativeData() const
+    {
+        assert(isNative());
+        return reinterpret_cast<const NativeData*>(this)[-1];
     }
 };
 
 static_assert(std::is_standard_layout_v<JavaMethodMetadata>);
 
-/// Adds Java method metadata to the function.
-void addJavaMethodMetadata(llvm::Function* function, const Method* method, JavaMethodMetadata::Kind kind);
+/// Adds Java JIT method metadata to the function.
+void addJavaJITMethodMetadata(llvm::Function* function, const Method* method, CallingConvention callingConvention);
+
+/// Adds Java JNI method metadata to the function.
+void addJavaNativeMethodMetadata(llvm::Function* function, const Method* method);
+
+/// Adds Java Interpreter method metadata to the function.
+void addJavaInterpreterMethodMetadata(llvm::Function* function, CallingConvention callingConvention);
 
 /// Applies all ABI relevant attributes to the function which must have a signature matching the output of
 /// 'descriptorToType' when called with the given 'methodType' and 'isStatic'.
@@ -254,4 +269,10 @@ void applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool isStat
 /// Initializes 'classObject' if it is still uninitialized. If 'addDeopt' is true, an empty deopt operand bundle is added.
 /// Returns a pointer to the call instruction of the initializer.
 llvm::CallBase* initializeClassObject(llvm::IRBuilder<>& builder, llvm::Value* classObject, bool addDeopt = true);
+
+/// Emits a suitable sequence of instructions for returning from a method with the given calling convention.
+/// 'builder' is used to create any new instructions. 'value' is expected to be null if the method has a void return
+/// type.
+void emitReturn(llvm::IRBuilder<>& builder, llvm::Value* value, CallingConvention callingConvention);
+
 } // namespace jllvm

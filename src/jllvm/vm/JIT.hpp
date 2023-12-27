@@ -83,7 +83,7 @@ public:
         return m_interpreter2JITSymbols;
     }
 
-    void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) override;
+    void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset, CallingConvention callingConvention) override;
 
     OSRState createOSRStateFromInterpreterFrame(InterpreterFrame frame) override;
 

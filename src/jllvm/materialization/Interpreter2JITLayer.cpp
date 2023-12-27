@@ -116,7 +116,7 @@ void jllvm::Interpreter2JITLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     // JIT CC symbol to the adaptor.
     llvm::cantFail(mr->replace(createLambdaMaterializationUnit(
         symbol, m_baseLayer,
-        [=](const std::uint64_t* arguments) -> std::uint64_t
+        [=](const Method*, const std::uint64_t* arguments) -> std::uint64_t
         {
             return reinterpret_cast<std::uint64_t (*)(void*, const std::uint64_t*)>(adaptor)(
                 reinterpret_cast<void*>(jitCCSymbol), arguments);

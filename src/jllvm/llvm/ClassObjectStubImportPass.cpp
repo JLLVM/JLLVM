@@ -21,7 +21,10 @@
 llvm::PreservedAnalyses jllvm::ClassObjectStubImportPass::run(llvm::Module& module, llvm::ModuleAnalysisManager&)
 {
     ClassObject* objectClass = m_classLoader.forNameLoaded(ObjectType("java/lang/Object"));
-    assert(objectClass && "java/lang/Object must have been loaded prior to any code ever executing");
+    if (!objectClass)
+    {
+        return llvm::PreservedAnalyses::all();
+    }
 
     // Early increment range as 'function' is potentially deleted.
     for (llvm::Function& function : llvm::make_early_inc_range(module.functions()))

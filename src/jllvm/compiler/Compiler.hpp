@@ -18,6 +18,8 @@
 #include <jllvm/class/ClassFile.hpp>
 #include <jllvm/object/ClassObject.hpp>
 
+#include "ByteCodeCompileUtils.hpp"
+
 namespace jllvm
 {
 
@@ -25,6 +27,8 @@ namespace jllvm
 llvm::Function* compileMethod(llvm::Module& module, const Method& method);
 
 /// Compiles 'method' to a LLVM function suitable for OSR entry at the bytecode offset 'offset'. The function is placed
-/// into 'module' and returned.
-llvm::Function* compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method);
+/// into 'module' and returned. The return type of the function is suitable for replacing the method with the given
+/// calling convention.
+llvm::Function* compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
+                                 CallingConvention callingConvention);
 } // namespace jllvm

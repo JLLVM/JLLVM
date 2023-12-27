@@ -112,7 +112,7 @@ void jllvm::JNIImplementationLayer::emit(std::unique_ptr<llvm::orc::Materializat
 
     applyABIAttributes(function, methodType, method->isStatic());
     function->clearGC();
-    addJavaMethodMetadata(function, method, JavaMethodMetadata::Kind::Native);
+    addJavaNativeMethodMetadata(function, method);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
     builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());

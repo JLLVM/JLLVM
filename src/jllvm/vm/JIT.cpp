@@ -99,11 +99,13 @@ void jllvm::JIT::add(const Method& method)
         m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JITSymbols, method, getJITCCDylib()));
 }
 
-void* jllvm::JIT::getOSREntry(const jllvm::Method& method, std::uint16_t byteCodeOffset)
+void* jllvm::JIT::getOSREntry(const jllvm::Method& method, std::uint16_t byteCodeOffset,
+                              CallingConvention callingConvention)
 {
     llvm::orc::SymbolStringPtr mangledName =
         m_byteCodeOSRCompileLayer.getInterner()(mangleOSRMethod(&method, byteCodeOffset));
-    allowDuplicateDefinitions(m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, byteCodeOffset));
+    allowDuplicateDefinitions(
+        m_byteCodeOSRCompileLayer.add(m_javaJITSymbols, &method, byteCodeOffset, callingConvention));
 
     llvm::JITEvaluatedSymbol osrMethod =
         llvm::cantFail(m_virtualMachine.getRuntime().getSession().lookup({&m_javaJITSymbols}, mangledName));

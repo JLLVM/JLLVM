@@ -17,14 +17,18 @@
 
 namespace
 {
+using namespace jllvm;
+
 class ByteCodeOSRMaterializationUnit : public llvm::orc::MaterializationUnit
 {
-    jllvm::ByteCodeOSRLayer& m_layer;
+    ByteCodeOSRLayer& m_layer;
     const jllvm::Method* m_method;
     std::uint16_t m_offset;
+    CallingConvention m_callingConvention;
 
 public:
-    ByteCodeOSRMaterializationUnit(jllvm::ByteCodeOSRLayer& layer, const jllvm::Method* method, std::uint16_t offset)
+    ByteCodeOSRMaterializationUnit(ByteCodeOSRLayer& layer, const jllvm::Method* method, std::uint16_t offset,
+                                   CallingConvention callingConvention)
         : llvm::orc::MaterializationUnit(
               [&]
               {
@@ -35,7 +39,8 @@ public:
               }()),
           m_layer(layer),
           m_method(method),
-          m_offset(offset)
+          m_offset(offset),
+          m_callingConvention(callingConvention)
     {
     }
 
@@ -46,7 +51,7 @@ public:
 
     void materialize(std::unique_ptr<llvm::orc::MaterializationResponsibility> r) override
     {
-        m_layer.emit(std::move(r), m_method, m_offset);
+        m_layer.emit(std::move(r), m_method, m_offset, m_callingConvention);
     }
 
 private:
@@ -59,7 +64,8 @@ private:
 } // namespace
 
 llvm::Error jllvm::ByteCodeOSRLayer::add(llvm::orc::JITDylib& dylib, const jllvm::Method* method,
-                                         std::uint16_t byteCodeOffset)
+                                         std::uint16_t byteCodeOffset, CallingConvention callingConvention)
 {
-    return dylib.define(std::make_unique<ByteCodeOSRMaterializationUnit>(*this, method, byteCodeOffset));
+    return dylib.define(
+        std::make_unique<ByteCodeOSRMaterializationUnit>(*this, method, byteCodeOffset, callingConvention));
 }

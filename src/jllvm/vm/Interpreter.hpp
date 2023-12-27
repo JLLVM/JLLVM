@@ -210,6 +210,9 @@ class Interpreter : public OSRTarget
     /// Enable OSR from the interpreter into the JIT if the method is hot enough.
     bool m_enableOSR;
 
+    /// Single entry for use in 'm_interpreterCCSymbols' as an implementation for ALL methods.
+    std::uint64_t (*m_interpreterEntry)(const Method*, const std::uint64_t*){};
+
     llvm::orc::JITDylib& m_jit2InterpreterSymbols;
     llvm::orc::JITDylib& m_interpreterCCSymbols;
 
@@ -241,6 +244,9 @@ class Interpreter : public OSRTarget
     /// Returns the result of the method bitcast to an uint64_t.
     std::uint64_t executeMethod(const Method& method, std::uint16_t& offset, InterpreterContext& context);
 
+    /// Initializes 'm_interpreterEntry' by generating LLVM IR.
+    void generateInterpreterEntry();
+
 public:
     explicit Interpreter(VirtualMachine& virtualMachine, bool enableOSR);
 
@@ -261,7 +267,7 @@ public:
         return !(method.isNative() || method.isAbstract());
     }
 
-    void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) override;
+    void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset, CallingConvention callingConvention) override;
 
     OSRState createOSRStateFromInterpreterFrame(InterpreterFrame frame) override;
 

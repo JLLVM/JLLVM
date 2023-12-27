@@ -38,7 +38,7 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
 
     applyABIAttributes(function, method->getType(), method->isStatic());
     function->clearGC();
-    addJavaMethodMetadata(function, method, JavaMethodMetadata::Kind::Interpreter);
+    addJavaInterpreterMethodMetadata(function, CallingConvention::JIT);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
 
