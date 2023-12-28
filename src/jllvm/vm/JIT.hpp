@@ -124,8 +124,7 @@ public:
     template <class F>
     void addJNISymbol(std::string symbol, const F& f)
     {
-        m_jniLayer.define(
-            createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner));
+        m_jniLayer.define(createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout));
     }
 
     /// Add all symbol-implementation pairs to the implementation library.
@@ -142,25 +141,8 @@ public:
     void addImplementationSymbol(std::string symbol, const F& f)
         requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
     {
-        llvm::cantFail(m_implDetails.define(
-            createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner)));
-    }
-
-    /// Add function pointer 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class Ret, class... Args>
-    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
-    {
-        llvm::cantFail(m_implDetails.define(llvm::orc::absoluteSymbols(
-            {{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(f, llvm::JITSymbolFlags::Exported
-                                                                               | llvm::JITSymbolFlags::Callable)}})));
-    }
-
-    /// Add 'ptr' as implementation of global 'symbol' to the implementation library.
-    template <class T>
-    void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
-    {
-        llvm::cantFail(m_implDetails.define(
-            llvm::orc::absoluteSymbols({{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
+        llvm::cantFail(
+            m_implDetails.define(createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout)));
     }
 
     /// Adds and registers a class in the JIT. This has to be done prior to being able to lookup and execute

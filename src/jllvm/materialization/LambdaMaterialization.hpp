@@ -111,7 +111,6 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
         return {CppToLLVMType<typename llvm::function_traits<F>::template arg_t<is>>::get(context)...};
     }
 
-    /// Free function that is 'noexcept(false)' as a lambda converted to a function pointer is implicitly 'noexcept'.
     template <class Ret, class... Args>
     static Ret trampolineFunction(Args... args, F* f) noexcept(false)
     {
@@ -128,14 +127,15 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
 
 public:
     LambdaMaterializationUnit(std::string&& symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                              const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
+                              const llvm::DataLayout& dataLayout)
         : llvm::orc::MaterializationUnit(
-            [&]
-            {
-                llvm::orc::SymbolFlagsMap result;
-                result[interner(symbol)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
-                return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
-            }()),
+              [&]
+              {
+                  llvm::orc::SymbolFlagsMap result;
+                  result[baseLayer.getExecutionSession().intern(symbol)] =
+                      llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
+                  return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
+              }()),
           m_symbol(std::move(symbol)),
           m_baseLayer(baseLayer),
           m_f(f),
@@ -220,11 +220,28 @@ private:
 /// Note that this requires a known mapping between the argument types in C++ and LLVM. You can provide these via
 /// specializing 'CppToLLVMType'.
 template <class F>
-std::unique_ptr<LambdaMaterializationUnit<F>>
+std::unique_ptr<llvm::orc::MaterializationUnit>
     createLambdaMaterializationUnit(std::string symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                                    const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
+                                    const llvm::DataLayout& dataLayout)
 {
-    return std::make_unique<LambdaMaterializationUnit<F>>(std::move(symbol), baseLayer, f, dataLayout, interner);
+    auto functionPointerType = []<std::size_t... is>(std::index_sequence<is...>) ->
+        typename llvm::function_traits<F>::result_t (*)(typename llvm::function_traits<F>::template arg_t<is>...)
+    { return nullptr; };
+    using FnType = decltype(functionPointerType(std::make_index_sequence<llvm::function_traits<F>::num_args>{}));
+
+    // Optimize trivial capture-less lambdas by converting them to function pointers and defining them as absolute
+    // symbols instead. This avoids creating the lambda object stub leading to better code being generated.
+    if constexpr (std::is_convertible_v<F, FnType>)
+    {
+        return llvm::orc::absoluteSymbols(
+            {{baseLayer.getExecutionSession().intern(symbol),
+              llvm::JITEvaluatedSymbol::fromPointer(static_cast<FnType>(f),
+                                                    llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}});
+    }
+    else
+    {
+        return std::make_unique<LambdaMaterializationUnit<F>>(std::move(symbol), baseLayer, f, dataLayout);
+    }
 }
 
 } // namespace jllvm
