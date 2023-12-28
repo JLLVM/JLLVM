@@ -526,11 +526,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 std::uint64_t value{};
                 std::memcpy(&value, reinterpret_cast<char*>(object) + field->getOffset(), descriptor.sizeOf());
-                context.pushRaw(value, descriptor.isReference());
-                if (descriptor.isWide())
-                {
-                    context.pushRaw(0, descriptor.isReference());
-                }
+                context.push(value, descriptor);
                 return NextPC{};
             },
             [&](GetStatic getStatic)
@@ -542,11 +538,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 std::uint64_t value{};
                 std::memcpy(&value, field->getAddressOfStatic(), descriptor.sizeOf());
-                context.pushRaw(value, descriptor.isReference());
-                if (descriptor.isWide())
-                {
-                    context.pushRaw(0, descriptor.isReference());
-                }
+                context.push(value, descriptor);
                 return NextPC{};
             },
             [&](Goto gotoInst) { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
@@ -657,11 +649,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, putField.index);
                 const Field* field = classObject->getInstanceField(fieldName, descriptor);
 
-                std::uint64_t value = context.popRaw().first;
-                if (descriptor.isWide())
-                {
-                    context.popRaw();
-                }
+                std::uint64_t value = context.pop(descriptor);
                 auto* object = context.pop<ObjectInterface*>();
                 if (!object)
                 {
@@ -678,12 +666,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 m_virtualMachine.initialize(*classObject);
                 Field* field = classObject->getStaticField(fieldName, descriptor);
 
-                std::uint64_t value = context.popRaw().first;
-                if (descriptor.isWide())
-                {
-                    context.popRaw();
-                }
-
+                std::uint64_t value = context.pop(descriptor);
                 std::memcpy(field->getAddressOfStatic(), &value, descriptor.sizeOf());
                 return NextPC{};
             },

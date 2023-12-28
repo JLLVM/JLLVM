@@ -95,6 +95,16 @@ public:
         }
     }
 
+    /// Pushes a value of the type give by 'descriptor' to the operand stack.
+    void push(std::uint64_t value, FieldType descriptor)
+    {
+        pushRaw(value, descriptor.isReference());
+        if (descriptor.isWide())
+        {
+            pushRaw(0, descriptor.isReference());
+        }
+    }
+
     /// Pushes the value into the top operand stack slot.
     /// This method operates on operand slots rather than 'InterpreterValue' as 'push' does.
     /// This notably has different behaviour for types such as 'long' or 'double'.
@@ -122,6 +132,16 @@ public:
             popRaw();
         }
         return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(popRaw().first));
+    }
+
+    /// Pops the top value of the type given by 'descriptor' from the operand stack.
+    std::uint64_t pop(FieldType descriptor)
+    {
+        if (descriptor.isWide())
+        {
+            popRaw();
+        }
+        return popRaw().first;
     }
 
     /// Pops the top-most operand stack slot from the stack.
