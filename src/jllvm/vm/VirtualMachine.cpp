@@ -200,17 +200,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
                       assert(!classObject->isInitialized());
                       initialize(*classObject);
                   }},
-        std::pair{"jllvm_throw_class_cast_exception",
-                  [&](Object* object, ClassObject* classObject)
-                  {
-                      std::string className = object->getClass()->getDescriptor().pretty();
-                      std::string name = classObject->getDescriptor().pretty();
-                      llvm::StringRef prefix = classObject->isClass() || classObject->isInterface() ? "class " : "";
-
-                      String* string = m_stringInterner.intern(
-                          llvm::formatv("class {0} cannot be cast to {1}{2}", className, prefix, name).str());
-                      throwException("Ljava/lang/ClassCastException;", "(Ljava/lang/String;)V", string);
-                  }},
+        std::pair{"jllvm_throw_class_cast_exception", [&](ObjectInterface* object, ClassObject* classObject)
+                  { throwClassCastException(object, classObject); }},
         std::pair{"jllvm_throw_null_pointer_exception",
                   [&]() { throwException("Ljava/lang/NullPointerException;", "()V"); }},
         std::pair{"jllvm_throw_array_index_out_of_bounds_exception",
@@ -460,6 +451,17 @@ void jllvm::VirtualMachine::throwArrayIndexOutOfBoundsException(std::int32_t ind
     String* string = m_stringInterner.intern(
         llvm::formatv("Index {0} out of bounds for length {1}", indexAccessed, arrayLength).str());
     throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+}
+
+void jllvm::VirtualMachine::throwClassCastException(ObjectInterface* object, ClassObject* classObject)
+{
+    std::string className = object->getClass()->getDescriptor().pretty();
+    std::string name = classObject->getDescriptor().pretty();
+    llvm::StringRef prefix = classObject->isClass() || classObject->isInterface() ? "class " : "";
+
+    String* string =
+        m_stringInterner.intern(llvm::formatv("class {0} cannot be cast to {1}{2}", className, prefix, name).str());
+    throwException("Ljava/lang/ClassCastException;", "(Ljava/lang/String;)V", string);
 }
 
 void jllvm::VirtualMachine::throwNegativeArraySizeException(std::int32_t arrayLength)

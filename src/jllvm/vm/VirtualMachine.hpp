@@ -163,6 +163,10 @@ public:
     /// and the length of the array.
     [[noreturn]] void throwArrayIndexOutOfBoundsException(std::int32_t indexAccessed, std::int32_t arrayLength);
 
+    /// Construct and throws an 'ClassCastException' with a message created from the object being cast and the class
+    /// object of the type that was attempted to be cast to.
+    [[noreturn]] void throwClassCastException(ObjectInterface* object, ClassObject* classObject);
+
     /// Construct and throws a 'NegativeArraySizeException' with a message created from the length that the array was
     /// attempted to be constructed with.
     [[noreturn]] void throwNegativeArraySizeException(std::int32_t arrayLength);
