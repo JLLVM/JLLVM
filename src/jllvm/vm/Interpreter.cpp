@@ -656,8 +656,13 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     {
                         auto outerArray = static_cast<GCRootRef<Array<>>>(array);
                         auto componentType = get<ArrayType>(currentType.getComponentType());
-                        std::generate(outerArray->begin(), outerArray->end(),
-                                      [&]() { return generator(counts, componentType, generator); });
+                        // necessary, because iterator for Arrays is not gc safe
+                        for (std::uint32_t i : llvm::seq(0u, outerArray->size()))
+                        {
+                            // allocation must happen before indexing
+                            ObjectInterface* innerArray = generator(counts, componentType, generator);
+                            (*outerArray)[i] = innerArray;
+                        }
                     }
                     return array;
                 };

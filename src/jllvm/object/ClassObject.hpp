@@ -871,7 +871,8 @@ struct ClassGraph
     const ClassObject* root;
 };
 
-// TODO: name
+/// Calls the relevant overload of 'f' based on which C++ type the FieldType 'type' corresponds to
+/// The argument to 'f' is a default constructed value of the relevant type
 template <class F>
 inline auto selectForJVMType(jllvm::FieldType type, F&& f)
 {
