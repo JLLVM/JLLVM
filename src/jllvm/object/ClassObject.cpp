@@ -219,11 +219,11 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
 
     if (isArray())
     {
-        if (!other->isArray())
+        if (other->isInterface())
         {
-            // classObject has to be Object if not an array type.
-            // Object is easy to identify as it is a normal class with no super class.
-            return other->isClass() && !other->getSuperClass();
+            // If T is an interface type, then T must be one of the interfaces implemented by arrays.
+            // TODO: add interface to array class object
+            return other->getClassName() == "java/lang/Cloneable" || other->getClassName() == "java/io/Serializable";
         }
 
         // Strip array types and check that the component types are compatible.
@@ -233,8 +233,15 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
             curr = curr->getComponentType();
             other = other->getComponentType();
         }
-        if (curr->isArray() || other->isArray())
+        if (curr->isArray())
         {
+            if (other->isClass())
+            {
+                // If T is a class type, then T must be Object.
+                // Object is easy to identify as it is a normal class with no super class.
+                return !other->getSuperClass();
+            }
+
             // Not the same depth of array types.
             return false;
         }
@@ -243,8 +250,10 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
 
     if (other->isInterface())
     {
+        // If T is an interface type, then S must implement interface T.
         return llvm::is_contained(getAllInterfaces(), other);
     }
+    // If T is a class type, then S must be a subclass of T.
     return llvm::is_contained(getSuperClasses(), other);
 }
 

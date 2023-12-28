@@ -24,6 +24,9 @@ class Test
         // CHECK: 1
         print(pArray instanceof Object);
 
+        // CHECK: 1
+        print(pArray instanceof Cloneable);
+
         // CHECK: 0
         print(((Object)pArray) instanceof int[][]);
 
@@ -54,6 +57,11 @@ class Test
 
         // CHECK: 1
         print(c instanceof Object);
+
+        var mpArray = new int[1][1];
+
+        // CHECK: 1
+        print(mpArray instanceof Object[]);
     }
 }
 
