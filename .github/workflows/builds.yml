@@ -77,8 +77,10 @@ jobs:
             $sanitizer_arg = '-DCMAKE_CXX_FLAGS="-g1 -fsanitize=${{matrix.sanitizer}} -fno-sanitize-recover=all"'
           }
           
+          # Don't use LLD in a fully optimized build as it currently contains bugs related to exception handling.
+          # See https://github.com/llvm/llvm-project/issues/61434
           $use_lld = ''
-          if (!$IsMacOs) {
+          if (!$IsMacOs -and '${{matrix.sanitizer}}') {
             $use_lld = '-DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld"'
           }
           

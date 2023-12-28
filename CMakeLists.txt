@@ -78,6 +78,13 @@ if (JLLVM_ENABLE_ASSERTIONS)
     endif()
 endif ()
 
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    if (CMAKE_EXE_LINKER_FLAGS MATCHES "-fuse-ld=lld")
+        message(WARNING "LLD does not currently handle exception handling correctly in optimized code. Use LD instead."
+                "See https://github.com/llvm/llvm-project/issues/61434")
+    endif ()
+endif ()
+
 set(JLLVM_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(JLLVM_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(JLLVM_TOOLS_DIR ${CMAKE_BINARY_DIR}/bin)
