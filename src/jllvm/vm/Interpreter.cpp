@@ -710,9 +710,15 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 match(
                     pool.resolve(classFile), [&](const IntegerInfo* integerInfo) { context.push(integerInfo->value); },
                     [&](const FloatInfo* floatInfo) { context.push(floatInfo->value); },
-                    [&](const LongInfo* longInfo) { context.push(longInfo->value); }, [&](const DoubleInfo* doubleInfo)
-                    { context.push(doubleInfo->value); }, [&](const ClassInfo* classInfo)
-                    { context.push(getClassObject(classFile, *classInfo)); }, [&](const auto*) { escapeToJIT(); });
+                    [&](const LongInfo* longInfo) { context.push(longInfo->value); },
+                    [&](const DoubleInfo* doubleInfo) { context.push(doubleInfo->value); },
+                    [&](const ClassInfo* classInfo) { context.push(getClassObject(classFile, *classInfo)); },
+                    [&](const StringInfo* stringInfo)
+                    {
+                        llvm::StringRef utf8String = stringInfo->stringValue.resolve(classFile)->text;
+                        context.push(m_virtualMachine.getStringInterner().intern(utf8String));
+                    },
+                    [&](const auto*) { escapeToJIT(); });
                 return NextPC{};
             },
             [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
