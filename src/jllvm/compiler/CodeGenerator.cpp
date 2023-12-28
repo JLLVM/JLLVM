@@ -148,7 +148,7 @@ ArrayInfo resolveNewArrayInfo(BaseType::Values componentType, llvm::IRBuilder<>&
         case Type::Boolean:
             return {builder.getInt8Ty(), sizeof(std::uint8_t), Array<std::uint8_t>::arrayElementsOffset()};
         case Type::Char:
-            return {builder.getInt16Ty(), sizeof(std::uint16_t), jllvm::Array<std::uint16_t>::arrayElementsOffset()};
+            return {builder.getInt16Ty(), sizeof(std::uint16_t), Array<std::uint16_t>::arrayElementsOffset()};
         case Type::Float: return {builder.getFloatTy(), sizeof(float), Array<float>::arrayElementsOffset()};
         case Type::Double: return {builder.getDoubleTy(), sizeof(double), Array<double>::arrayElementsOffset()};
         case Type::Byte: return {builder.getInt8Ty(), sizeof(std::uint8_t), Array<std::uint8_t>::arrayElementsOffset()};

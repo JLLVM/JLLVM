@@ -631,6 +631,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             },
             [&](MultiANewArray multiANewArray)
             {
+                GarbageCollector& gc = m_virtualMachine.getGC();
                 ClassObject* classObject = getClassObject(classFile, multiANewArray.index);
                 std::vector<std::int32_t> counts(multiANewArray.dimensions);
 
@@ -650,10 +651,10 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     std::int32_t count = counts.front();
                     counts = counts.drop_front();
                     ClassObject& arrayType = m_virtualMachine.getClassLoader().forName(currentType);
-                    auto* array = m_virtualMachine.getGC().allocate<AbstractArray>(&arrayType, count);
+                    GCUniqueRoot array = gc.root(gc.allocate<AbstractArray>(&arrayType, count));
                     if (!counts.empty())
                     {
-                        auto* outerArray = static_cast<Array<>*>(array);
+                        auto outerArray = static_cast<GCRootRef<Array<>>>(array);
                         auto componentType = get<ArrayType>(currentType.getComponentType());
                         std::generate(outerArray->begin(), outerArray->end(),
                                       [&]() { return generator(counts, componentType, generator); });
