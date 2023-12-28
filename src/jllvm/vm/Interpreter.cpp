@@ -436,6 +436,17 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push(array);
                 return NextPC{};
             },
+            [&](AThrow) -> InstructionResult
+            {
+                auto* exception = context.pop<ObjectInterface*>();
+                if (!exception)
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+                // Verifier checks that the exception is an instance of 'Throwable' rather than performing it at
+                // runtime.
+                m_virtualMachine.throwJavaException(static_cast<Throwable*>(exception));
+            },
             [&](ArrayLength)
             {
                 auto* array = context.pop<AbstractArray*>();
