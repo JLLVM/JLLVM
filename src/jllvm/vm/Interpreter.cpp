@@ -621,6 +621,17 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return SetPC{static_cast<std::uint16_t>(switchOp.offset + result->second)};
             },
+            [&](OneOf<MonitorEnter, MonitorExit>)
+            {
+                // Pop object as is required by the instruction.
+                // TODO: If we ever care about multi threading, this would require lazily creating a mutex and
+                //  (un)locking it.
+                if (!context.pop<ObjectInterface*>())
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+                return NextPC{};
+            },
             [&](MultiANewArray multiANewArray)
             {
                 GarbageCollector& gc = m_virtualMachine.getGC();
