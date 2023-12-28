@@ -254,6 +254,10 @@ concept IsIfCmp =
 template <class T>
 concept IsIf = llvm::is_one_of<T, IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IfNull, IfNonNull>::value;
 
+/// Satisfied when 'T' performs a floating point comparison.
+template <class T>
+concept IsFPCmp = llvm::is_one_of<T, DCmpG, DCmpL, FCmpG, FCmpL>::value;
+
 /// Satisfied when 'T' is a load operation.
 template <class T>
 concept IsLoad = llvm::is_one_of<T, ILoad, ALoad, FLoad, DLoad, LLoad>::value;
@@ -346,15 +350,15 @@ concept OperatesOnReferences =
 
 /// Satisfied when 'T' operates on 'float' operands.
 template <class T>
-concept OperatesOnFloat =
-    llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2, FStore3, FAdd, FSub,
-                    FMul, FDiv, FRem, FNeg, FReturn, FALoad, FAStore, FConst0, FConst1, FConst2, F2D, F2I, F2L>::value;
+concept OperatesOnFloat = llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2,
+                                          FStore3, FAdd, FSub, FMul, FDiv, FRem, FNeg, FReturn, FALoad, FAStore,
+                                          FConst0, FConst1, FConst2, F2D, F2I, F2L, FCmpG, FCmpL>::value;
 
 /// Satisfied when 'T' operates on 'double' operands.
 template <class T>
-concept OperatesOnDouble =
-    llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2, DStore3, DAdd, DSub,
-                    DMul, DDiv, DRem, DNeg, DReturn, DALoad, DAStore, DConst0, DConst1, D2F, D2I, D2L>::value;
+concept OperatesOnDouble = llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2,
+                                           DStore3, DAdd, DSub, DMul, DDiv, DRem, DNeg, DReturn, DALoad, DAStore,
+                                           DConst0, DConst1, D2F, D2I, D2L, DCmpG, DCmpL>::value;
 
 /// Satisfied when 'T' operates on 'long' operands.
 template <class T>

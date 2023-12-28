@@ -497,6 +497,39 @@ struct MultiTypeImpls
         return NextPC{};
     }
 
+    template <IsFPCmp T>
+    NextPC operator()(T) const
+    {
+        auto value2 = context.pop<typename InstructionElementType<T>::type>();
+        auto value1 = context.pop<typename InstructionElementType<T>::type>();
+        if (value1 > value2)
+        {
+            context.push<std::int32_t>(1);
+        }
+        else if (value1 == value2)
+        {
+            context.push<std::int32_t>(0);
+        }
+        else if (value1 < value2)
+        {
+            context.push<std::int32_t>(-1);
+        }
+        else
+        {
+            // At least one of the operands is a NaN leading to all comparisons to yield false. Depending on the
+            // instruction, either 1 or -1 is pushed.
+            if constexpr (llvm::is_one_of<T, FCmpG, DCmpG>{})
+            {
+                context.push<std::int32_t>(1);
+            }
+            else
+            {
+                context.push<std::int32_t>(-1);
+            }
+        }
+        return {};
+    }
+
     template <IsLoad T>
     NextPC operator()(T load) const
     {
@@ -860,6 +893,34 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 ClassObject* classObject = getClassObject(classFile, instanceOf.index);
                 context.push<std::int32_t>(object->instanceOf(classObject));
+                return NextPC{};
+            },
+            [&](LCmp)
+            {
+                auto value2 = context.pop<std::int64_t>();
+                auto value1 = context.pop<std::int64_t>();
+                if (value1 > value2)
+                {
+                    context.push<std::int32_t>(1);
+                }
+                else if (value1 == value2)
+                {
+                    context.push<std::int32_t>(0);
+                }
+                else
+                {
+                    context.push<std::int32_t>(-1);
+                }
+                return NextPC{};
+            },
+            [&](LConst0)
+            {
+                context.push<std::int64_t>(0);
+                return NextPC{};
+            },
+            [&](LConst1)
+            {
+                context.push<std::int64_t>(1);
                 return NextPC{};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
