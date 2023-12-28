@@ -207,7 +207,7 @@ struct MultiTypeImpls
     template <IsNeg T>
     NextPC operator()(T) const
     {
-        context.push(-context.pop<typename InstructionElementType<T>::signed_type>());
+        context.push(-context.pop<typename InstructionElementType<T>::unsigned_type>());
         return {};
     }
 
