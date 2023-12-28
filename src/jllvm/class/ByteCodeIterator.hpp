@@ -364,7 +364,7 @@ concept OperatesOnDouble = llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLo
 template <class T>
 concept OperatesOnLong = llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2,
                                          LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg, LReturn, LALoad, LAStore, LConst0,
-                                         LConst1, LOr, LAnd, LXor, LShl, LShr, LUShr, L2D, L2F, L2I>::value;
+                                         LConst1, LOr, LAnd, LXor, LShl, LShr, LUShr>::value;
 
 /// Satisfied when 'T' may throw an exception.
 template <class T>
