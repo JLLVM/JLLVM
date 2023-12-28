@@ -127,13 +127,12 @@ class LambdaMaterializationUnit : public llvm::orc::MaterializationUnit
 
 public:
     LambdaMaterializationUnit(std::string&& symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                              const llvm::DataLayout& dataLayout)
+                              const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
         : llvm::orc::MaterializationUnit(
               [&]
               {
                   llvm::orc::SymbolFlagsMap result;
-                  result[baseLayer.getExecutionSession().intern(symbol)] =
-                      llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
+                  result[interner(symbol)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
                   return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
               }()),
           m_symbol(std::move(symbol)),
@@ -222,7 +221,7 @@ private:
 template <class F>
 std::unique_ptr<llvm::orc::MaterializationUnit>
     createLambdaMaterializationUnit(std::string symbol, llvm::orc::IRLayer& baseLayer, const F& f,
-                                    const llvm::DataLayout& dataLayout)
+                                    const llvm::DataLayout& dataLayout, llvm::orc::MangleAndInterner& interner)
 {
     auto functionPointerType = []<std::size_t... is>(std::index_sequence<is...>) ->
         typename llvm::function_traits<F>::result_t (*)(typename llvm::function_traits<F>::template arg_t<is>...)
@@ -234,13 +233,13 @@ std::unique_ptr<llvm::orc::MaterializationUnit>
     if constexpr (std::is_convertible_v<F, FnType>)
     {
         return llvm::orc::absoluteSymbols(
-            {{baseLayer.getExecutionSession().intern(symbol),
+            {{interner(symbol),
               llvm::JITEvaluatedSymbol::fromPointer(static_cast<FnType>(f),
                                                     llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}});
     }
     else
     {
-        return std::make_unique<LambdaMaterializationUnit<F>>(std::move(symbol), baseLayer, f, dataLayout);
+        return std::make_unique<LambdaMaterializationUnit<F>>(std::move(symbol), baseLayer, f, dataLayout, interner);
     }
 }
 
