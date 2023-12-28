@@ -38,24 +38,23 @@ class JNIBridge : public Executor
         (addImplementationSymbol(std::move(args.first), std::move(args.second)), ...);
     }
 
+    template <class F>
+    struct IsVarArg : std::false_type
+    {
+    };
+
+    template <class Ret, class... Args>
+    struct IsVarArg<Ret (*)(Args..., ...)> : std::true_type
+    {
+    };
+
     /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
     template <class F>
-    void addImplementationSymbol(std::string symbol, const F& f)
-        requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
+    void addImplementationSymbol(std::string symbol, const F& f) requires(!IsVarArg<std::decay_t<F>>::value)
     {
         llvm::cantFail(m_jniSymbols.define(createLambdaMaterializationUnit(
             std::move(symbol), m_jniImplementationLayer.getBaseLayer(), f, m_jniImplementationLayer.getDataLayout(),
             m_jniImplementationLayer.getInterner())));
-    }
-
-    /// Add function pointer 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class Ret, class... Args>
-    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
-    {
-        llvm::cantFail(m_jniSymbols.define(
-            llvm::orc::absoluteSymbols({{m_jniImplementationLayer.getInterner()(symbol),
-                                         llvm::JITEvaluatedSymbol::fromPointer(
-                                             f, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}})));
     }
 
     template <class Ret, class... Args>
@@ -65,14 +64,6 @@ class JNIBridge : public Executor
             llvm::orc::absoluteSymbols({{m_jniImplementationLayer.getInterner()(symbol),
                                          llvm::JITEvaluatedSymbol::fromPointer(
                                              f, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}})));
-    }
-
-    /// Add 'ptr' as implementation of global 'symbol' to the implementation library.
-    template <class T>
-    void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
-    {
-        llvm::cantFail(m_jniSymbols.define(llvm::orc::absoluteSymbols(
-            {{m_jniImplementationLayer.getInterner()(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
 public:

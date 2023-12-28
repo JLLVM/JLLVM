@@ -71,29 +71,10 @@ class JIT : public OSRTarget
     /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
     template <class F>
     void addImplementationSymbol(std::string symbol, const F& f)
-        requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
     {
         llvm::cantFail(m_javaJITImplDetails.define(createLambdaMaterializationUnit(
             std::move(symbol), m_byteCodeCompileLayer.getBaseLayer(), f, m_byteCodeCompileLayer.getDataLayout(),
             m_byteCodeCompileLayer.getInterner())));
-    }
-
-    /// Add function pointer 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class Ret, class... Args>
-    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
-    {
-        llvm::cantFail(m_javaJITImplDetails.define(
-            llvm::orc::absoluteSymbols({{m_byteCodeCompileLayer.getInterner()(symbol),
-                                         llvm::JITEvaluatedSymbol::fromPointer(
-                                             f, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}})));
-    }
-
-    /// Add 'ptr' as implementation of global 'symbol' to the implementation library.
-    template <class T>
-    void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
-    {
-        llvm::cantFail(m_javaJITImplDetails.define(llvm::orc::absoluteSymbols(
-            {{m_byteCodeCompileLayer.getInterner()(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
     static std::unique_ptr<std::uint64_t[]> createOSRBuffer(llvm::ArrayRef<std::uint64_t> locals,

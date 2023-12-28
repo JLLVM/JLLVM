@@ -205,29 +205,10 @@ class Interpreter : public OSRTarget
     /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
     template <class F>
     void addImplementationSymbol(std::string symbol, const F& f)
-        requires(!std::is_pointer_v<F> && !std::is_function_v<F>)
     {
         llvm::cantFail(m_jit2InterpreterSymbols.define(createLambdaMaterializationUnit(
             std::move(symbol), m_compiled2InterpreterLayer.getBaseLayer(), f,
             m_compiled2InterpreterLayer.getDataLayout(), m_compiled2InterpreterLayer.getInterner())));
-    }
-
-    /// Add function pointer 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class Ret, class... Args>
-    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args...))
-    {
-        llvm::cantFail(m_jit2InterpreterSymbols.define(
-            llvm::orc::absoluteSymbols({{m_compiled2InterpreterLayer.getInterner()(symbol),
-                                         llvm::JITEvaluatedSymbol::fromPointer(
-                                             f, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}})));
-    }
-
-    /// Add 'ptr' as implementation of global 'symbol' to the implementation library.
-    template <class T>
-    void addImplementationSymbol(llvm::StringRef symbol, T* ptr) requires(!std::is_function_v<T>)
-    {
-        llvm::cantFail(m_jit2InterpreterSymbols.define(llvm::orc::absoluteSymbols(
-            {{m_compiled2InterpreterLayer.getInterner()(symbol), llvm::JITEvaluatedSymbol::fromPointer(ptr)}})));
     }
 
     /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
