@@ -48,11 +48,7 @@ using InstructionResult = swl::variant<SetPC, NextPC, ReturnValue>;
 jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index)
 {
     llvm::StringRef className = index.resolve(classFile)->nameIndex.resolve(classFile)->text;
-    if (className.front() == '[')
-    {
-        return &m_virtualMachine.getClassLoader().forName(FieldType(className));
-    }
-    return &m_virtualMachine.getClassLoader().forName(ObjectType(className));
+    return &m_virtualMachine.getClassLoader().forName(FieldType::fromMangled(className));
 }
 
 std::tuple<jllvm::ClassObject*, llvm::StringRef, jllvm::FieldType>
@@ -625,11 +621,67 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return SetPC{static_cast<std::uint16_t>(switchOp.offset + result->second)};
             },
+            [&](MultiANewArray multiANewArray)
+            {
+                GarbageCollector& gc = m_virtualMachine.getGC();
+                ClassObject* classObject = getClassObject(classFile, multiANewArray.index);
+                std::vector<std::int32_t> counts(multiANewArray.dimensions);
+
+                std::generate(counts.rbegin(), counts.rend(), [&] { return context.pop<std::int32_t>(); });
+
+                for (std::int32_t count : counts)
+                {
+                    if (count < 0)
+                    {
+                        m_virtualMachine.throwNegativeArraySizeException(count);
+                    }
+                };
+
+                auto generateArray = [&](llvm::ArrayRef<std::int32_t> counts, ArrayType currentType,
+                                         const auto generator) -> ObjectInterface*
+                {
+                    std::int32_t count = counts.front();
+                    counts = counts.drop_front();
+                    ClassObject& arrayType = m_virtualMachine.getClassLoader().forName(currentType);
+                    GCUniqueRoot array = gc.root(gc.allocate<AbstractArray>(&arrayType, count));
+                    if (!counts.empty())
+                    {
+                        auto outerArray = static_cast<GCRootRef<Array<>>>(array);
+                        auto componentType = get<ArrayType>(currentType.getComponentType());
+                        // necessary, because iterator for Arrays is not gc safe
+                        for (std::uint32_t i : llvm::seq(0u, outerArray->size()))
+                        {
+                            // allocation must happen before indexing
+                            ObjectInterface* innerArray = generator(counts, componentType, generator);
+                            (*outerArray)[i] = innerArray;
+                        }
+                    }
+                    return array;
+                };
+
+                context.push(generateArray(counts, get<ArrayType>(classObject->getDescriptor()), generateArray));
+
+                return NextPC{};
+            },
             [&](New newInst)
             {
                 ClassObject* classObject = getClassObject(classFile, newInst.index);
                 m_virtualMachine.initialize(*classObject);
                 context.push(m_virtualMachine.getGC().allocate(classObject));
+                return NextPC{};
+            },
+            [&](NewArray newArray)
+            {
+                auto count = context.pop<std::int32_t>();
+                if (count < 0)
+                {
+                    m_virtualMachine.throwNegativeArraySizeException(count);
+                }
+
+                ClassObject& arrayType =
+                    m_virtualMachine.getClassLoader().forName(ArrayType{BaseType{newArray.componentType}});
+                auto* array = m_virtualMachine.getGC().allocate<AbstractArray>(&arrayType, count);
+                context.push(array);
                 return NextPC{};
             },
             [&](Nop) { return NextPC{}; },

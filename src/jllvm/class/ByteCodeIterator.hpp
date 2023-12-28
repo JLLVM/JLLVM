@@ -22,6 +22,8 @@
 
 #include <swl/variant.hpp>
 
+#include "Descriptors.hpp"
+
 namespace jllvm
 {
 /// All JVM OpCodes that exist in version 17 with their identifying byte values.
@@ -59,19 +61,7 @@ struct BranchOffsetOp : ByteCodeBase
 
 struct ArrayOp : ByteCodeBase
 {
-    enum class ArrayType : std::uint8_t
-    {
-        TBoolean = 4,
-        TChar = 5,
-        TFloat = 6,
-        TDouble = 7,
-        TByte = 8,
-        TShort = 9,
-        TInt = 10,
-        TLong = 11
-    };
-
-    ArrayType atype{};
+    BaseType::Values componentType{};
 };
 
 struct SwitchOp : ByteCodeBase

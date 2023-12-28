@@ -95,12 +95,12 @@ public:
     /// Returns the length of the array.
     std::uint32_t size() const
     {
-        struct Layout
+        struct ArrayHeader
         {
             ObjectHeader header;
             std::uint32_t length{};
         };
-        return *reinterpret_cast<const std::uint32_t*>(reinterpret_cast<const char*>(this) + offsetof(Layout, length));
+        return reinterpret_cast<const ArrayHeader*>(this)->length;
     }
 };
 
