@@ -457,6 +457,23 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::uint32_t>(array->size());
                 return NextPC{};
             },
+            [&](CheckCast checkCast)
+            {
+                auto* object = context.pop<ObjectInterface*>();
+                context.push(object);
+                if (!object)
+                {
+                    return NextPC{};
+                }
+
+                ClassObject* classObject = getClassObject(classFile, checkCast.index);
+                if (object->instanceOf(classObject))
+                {
+                    return NextPC{};
+                }
+
+                m_virtualMachine.throwClassCastException(object, classObject);
+            },
             [&](Dup)
             {
                 InterpreterContext::RawValue value = context.popRaw();
@@ -608,6 +625,19 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     default: llvm_unreachable("not possible");
                 }
                 return ReturnValue(value);
+            },
+            [&](InstanceOf instanceOf)
+            {
+                auto* object = context.pop<ObjectInterface*>();
+                if (!object)
+                {
+                    context.push<std::int32_t>(0);
+                    return NextPC{};
+                }
+
+                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
+                context.push<std::int32_t>(object->instanceOf(classObject));
+                return NextPC{};
             },
             [&](LDC ldc)
             {
