@@ -271,6 +271,68 @@ struct MultiTypeImpls
         return {};
     }
 
+    template <IsOr T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs | rhs);
+        return {};
+    }
+
+    template <IsAnd T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs & rhs);
+        return {};
+    }
+
+    template <IsXor T>
+    NextPC operator()(T) const
+    {
+        auto rhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        auto lhs = context.pop<typename InstructionElementType<T>::unsigned_type>();
+        context.push(lhs ^ rhs);
+        return {};
+    }
+
+    template <IsShl T>
+    NextPC operator()(T) const
+    {
+        using type = typename InstructionElementType<T>::unsigned_type;
+        auto rhs = context.pop<std::uint32_t>();
+        auto lhs = context.pop<type>();
+        constexpr auto mask = std::numeric_limits<type>::digits - 1;
+        context.push(lhs << (rhs & mask));
+        return {};
+    }
+
+    template <IsShr T>
+    NextPC operator()(T) const
+    {
+        using type = typename InstructionElementType<T>::signed_type;
+
+        auto rhs = context.pop<std::uint32_t>();
+        auto lhs = context.pop<type>();
+        constexpr auto mask = std::numeric_limits<typename InstructionElementType<T>::unsigned_type>::digits - 1;
+        context.push(lhs >> (rhs & mask));
+        return {};
+    }
+
+    template <IsUShr T>
+    NextPC operator()(T) const
+    {
+        using type = typename InstructionElementType<T>::unsigned_type;
+
+        auto rhs = context.pop<std::uint32_t>();
+        auto lhs = context.pop<type>();
+        constexpr auto mask = std::numeric_limits<type>::digits - 1;
+        context.push(lhs >> (rhs & mask));
+        return {};
+    }
+
     template <IsIfCmp T>
     InstructionResult operator()(T instruction) const
     {
