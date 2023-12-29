@@ -107,10 +107,38 @@ public:
         return virtualMachine.getStringInterner().intern(string);
     }
 
+    static ClassObject* forName0(VirtualMachine& virtualMachine, GCRootRef<ClassObject>, GCRootRef<String> name,
+                                 bool initialize, GCRootRef<ObjectInterface> /*loader*/,
+                                 GCRootRef<ClassObject> /*caller*/)
+    {
+        std::string text = name->toUTF8();
+        std::replace(text.begin(), text.end(), '.', '/');
+        ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(text));
+        if (initialize)
+        {
+            virtualMachine.initialize(classObject);
+        }
+        return &classObject;
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/Class";
     constexpr static auto methods =
         std::make_tuple(&ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
-                        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive, &ClassModel::initClassName);
+        &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive, &ClassModel::initClassName, &ClassModel::forName0);
+};
+
+class ClassLoaderModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static void registerNatives(GCRootRef<ClassObject>)
+    {
+        // Noop until (if?) we need some C++ initialization code.
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/ClassLoader";
+    constexpr static auto methods = std::make_tuple(&ClassLoaderModel::registerNatives);
 };
 
 class FloatModel : public ModelBase<>
