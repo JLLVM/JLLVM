@@ -388,6 +388,27 @@ struct MultiTypeImpls
         return {};
     }
 
+    template <IsConst0 T>
+    NextPC operator()(T) const
+    {
+        context.push<typename InstructionElementType<T>::type>(0);
+        return {};
+    }
+
+    template <IsConst1 T>
+    NextPC operator()(T) const
+    {
+        context.push<typename InstructionElementType<T>::type>(1);
+        return {};
+    }
+
+    template <IsConst2 T>
+    NextPC operator()(T) const
+    {
+        context.push<typename InstructionElementType<T>::type>(2);
+        return {};
+    }
+
     /// Implementation for all return instructions that return a value with the exception of 'ireturn'.
     /// 'ireturn' has special semantics if the return type of the method is an integer type other than 'int'.
     template <IsReturnValue T>
@@ -495,16 +516,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 m_virtualMachine.throwClassCastException(object, classObject);
             },
-            [&](DConst0)
-            {
-                context.push<double>(0);
-                return NextPC{};
-            },
-            [&](DConst1)
-            {
-                context.push<double>(1);
-                return NextPC{};
-            },
             [&](Dup)
             {
                 InterpreterContext::RawValue value = context.popRaw();
@@ -568,21 +579,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value1);
                 return NextPC{};
             },
-            [&](FConst0)
-            {
-                context.push<float>(0);
-                return NextPC{};
-            },
-            [&](FConst1)
-            {
-                context.push<float>(1);
-                return NextPC{};
-            },
-            [&](FConst2)
-            {
-                context.push<float>(2);
-                return NextPC{};
-            },
             [&](GetField getField)
             {
                 auto [classObject, fieldName, descriptor] = getFieldInfo(classFile, getField.index);
@@ -611,23 +607,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push(value, descriptor);
                 return NextPC{};
             },
-            [&](Goto gotoInst) { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
-            [&](GotoW gotoInst) { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
-            [&](IConst0)
-            {
-                context.push<std::int32_t>(0);
-                return NextPC{};
-            },
-            [&](IConst1)
-            {
-                context.push<std::int32_t>(1);
-                return NextPC{};
-            },
-            [&](IConst2)
-            {
-                context.push<std::int32_t>(2);
-                return NextPC{};
-            },
+            [&](OneOf<Goto, GotoW> gotoInst)
+            { return SetPC{static_cast<std::uint16_t>(gotoInst.offset + gotoInst.target)}; },
             [&](IConst3)
             {
                 context.push<std::int32_t>(3);
@@ -689,16 +670,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 {
                     context.push<std::int32_t>(0);
                 }
-                return NextPC{};
-            },
-            [&](LConst0)
-            {
-                context.push<std::int64_t>(0);
-                return NextPC{};
-            },
-            [&](LConst1)
-            {
-                context.push<std::int64_t>(1);
                 return NextPC{};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
@@ -861,6 +832,51 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 InterpreterContext::RawValue value2 = context.popRaw();
                 context.pushRaw(value1);
                 context.pushRaw(value2);
+                return NextPC{};
+            },
+            [&](Wide wide)
+            {
+#define WIDE_LOAD_CASE(op)                                                            \
+    case OpCodes::op:                                                                 \
+    {                                                                                 \
+        context.push(context.getLocal<InstructionElementType<op>::type>(wide.index)); \
+        break;                                                                        \
+    }
+
+#define WIDE_STORE_CASE(op)                                                            \
+    case OpCodes::op:                                                                  \
+    {                                                                                  \
+        context.setLocal(wide.index, context.pop<InstructionElementType<op>::type>()); \
+        break;                                                                         \
+    }
+                switch (wide.opCode)
+                {
+                    WIDE_LOAD_CASE(ALoad)
+                    WIDE_LOAD_CASE(DLoad)
+                    WIDE_LOAD_CASE(FLoad)
+                    WIDE_LOAD_CASE(ILoad)
+                    WIDE_LOAD_CASE(LLoad)
+                    WIDE_STORE_CASE(AStore)
+                    WIDE_STORE_CASE(DStore)
+                    WIDE_STORE_CASE(FStore)
+                    WIDE_STORE_CASE(IStore)
+                    WIDE_STORE_CASE(LStore)
+                    case OpCodes::Ret:
+                    {
+                        // TODO: implement later
+                        escapeToJIT();
+                    }
+                    case OpCodes::IInc:
+                    {
+                        context.setLocal(wide.index, static_cast<std::int32_t>(*wide.value)
+                                                         + context.getLocal<std::uint32_t>(wide.index));
+                        break;
+                    }
+                    default: llvm_unreachable("Invalid wide operation");
+                }
+#undef WIDE_LOAD_CASE
+#undef WIDE_STORE_CASE
+
                 return NextPC{};
             },
             [&](...) -> InstructionResult
