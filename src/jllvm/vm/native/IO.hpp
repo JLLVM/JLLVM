@@ -85,4 +85,18 @@ public:
         std::make_tuple(&FileOutputStreamModel::initIDs, &FileOutputStreamModel::writeBytes);
 };
 
+class FileInputStreamModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static void initIDs(GCRootRef<ClassObject>)
+    {
+        // Noop at this point in time.
+    }
+
+    constexpr static llvm::StringLiteral className = "java/io/FileInputStream";
+    constexpr static auto methods = std::make_tuple(&FileInputStreamModel::initIDs);
+};
+
 } // namespace jllvm::io
