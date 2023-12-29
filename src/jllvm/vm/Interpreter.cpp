@@ -56,12 +56,6 @@ jllvm::ClassObject* jllvm::Interpreter::getClassObject(const ClassFile& classFil
     return &m_virtualMachine.getClassLoader().forName(FieldType::fromMangled(className));
 }
 
-jllvm::ClassObject* jllvm::Interpreter::getClassObjectLoaded(const ClassFile& classFile, PoolIndex<ClassInfo> index)
-{
-    llvm::StringRef className = index.resolve(classFile)->nameIndex.resolve(classFile)->text;
-    return m_virtualMachine.getClassLoader().forNameLoaded(FieldType::fromMangled(className));
-}
-
 std::tuple<jllvm::ClassObject*, llvm::StringRef, jllvm::FieldType>
     jllvm::Interpreter::getFieldInfo(const ClassFile& classFile, PoolIndex<FieldRefInfo> index)
 {
@@ -487,8 +481,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     return NextPC{};
                 }
 
-                ClassObject* classObject = getClassObjectLoaded(classFile, checkCast.index);
-                if (classObject && object->instanceOf(classObject))
+                ClassObject* classObject = getClassObject(classFile, checkCast.index);
+                if (object->instanceOf(classObject))
                 {
                     return NextPC{};
                 }
@@ -681,14 +675,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     return NextPC{};
                 }
 
-                if (ClassObject* classObject = getClassObjectLoaded(classFile, instanceOf.index))
-                {
-                    context.push<std::int32_t>(object->instanceOf(classObject));
-                }
-                else
-                {
-                    context.push<std::int32_t>(0);
-                }
+                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
+                context.push<std::int32_t>(object->instanceOf(classObject));
                 return NextPC{};
             },
             [&](LConst0)

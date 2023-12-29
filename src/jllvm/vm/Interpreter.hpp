@@ -188,10 +188,6 @@ class Interpreter
 
     ClassObject* getClassObject(const ClassFile& classFile, ClassInfo classInfo);
 
-    /// Returns the class object referred to by 'index' within 'classFile' if it has been loaded already.
-    /// Returns null otherwise.
-    ClassObject* getClassObjectLoaded(const ClassFile& classFile, PoolIndex<ClassInfo> index);
-
     /// Returns the class object, field name and type referred to by 'index' within 'classFile'.
     std::tuple<ClassObject*, llvm::StringRef, FieldType> getFieldInfo(const ClassFile& classFile,
                                                                       PoolIndex<FieldRefInfo> index);
