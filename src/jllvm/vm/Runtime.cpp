@@ -112,6 +112,7 @@ jllvm::Runtime::Runtime(VirtualMachine& virtualMachine, llvm::ArrayRef<Executor*
         {m_interner("memset"), llvm::JITEvaluatedSymbol::fromPointer(memset)},
         {m_interner("memcpy"), llvm::JITEvaluatedSymbol::fromPointer(memcpy)},
         {m_interner("fmodf"), llvm::JITEvaluatedSymbol::fromPointer(fmodf)},
+        {m_interner("fmod"), llvm::JITEvaluatedSymbol::fromPointer(static_cast<double (*)(double, double)>(fmod))},
 #ifdef __APPLE__
         {m_interner("__bzero"), llvm::JITEvaluatedSymbol::fromPointer(::__bzero)},
 #endif

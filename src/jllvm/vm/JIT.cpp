@@ -81,18 +81,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
                       assert(!classObject->isInitialized());
                       m_virtualMachine.initialize(*classObject);
                   }},
-        std::pair{"jllvm_throw_class_cast_exception",
-                  [&](Object* object, ClassObject* classObject)
-                  {
-                      std::string className = object->getClass()->getDescriptor().pretty();
-                      std::string name = classObject->getDescriptor().pretty();
-                      llvm::StringRef prefix = classObject->isClass() || classObject->isInterface() ? "class " : "";
-
-                      String* string = m_virtualMachine.getStringInterner().intern(
-                          llvm::formatv("class {0} cannot be cast to {1}{2}", className, prefix, name).str());
-                      m_virtualMachine.throwException("Ljava/lang/ClassCastException;", "(Ljava/lang/String;)V",
-                                                      string);
-                  }},
+        std::pair{"jllvm_throw_class_cast_exception", [&](ObjectInterface* object, ClassObject* classObject)
+                  { m_virtualMachine.throwClassCastException(object, classObject); }},
         std::pair{"jllvm_throw_null_pointer_exception",
                   [&]() { m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V"); }},
         std::pair{"jllvm_throw_array_index_out_of_bounds_exception",
