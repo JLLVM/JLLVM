@@ -254,6 +254,10 @@ concept IsIfCmp =
 template <class T>
 concept IsIf = llvm::is_one_of<T, IfEq, IfNe, IfLt, IfGe, IfGt, IfLe, IfNull, IfNonNull>::value;
 
+/// Satisfied when 'T' performs a comparison.
+template <class T>
+concept IsCmp = llvm::is_one_of<T, DCmpG, DCmpL, FCmpG, FCmpL, LCmp>::value;
+
 /// Satisfied when 'T' is a load operation.
 template <class T>
 concept IsLoad = llvm::is_one_of<T, ILoad, ALoad, FLoad, DLoad, LLoad>::value;
@@ -346,21 +350,21 @@ concept OperatesOnReferences =
 
 /// Satisfied when 'T' operates on 'float' operands.
 template <class T>
-concept OperatesOnFloat =
-    llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2, FStore3, FAdd, FSub,
-                    FMul, FDiv, FRem, FNeg, FReturn, FALoad, FAStore, FConst0, FConst1, FConst2, F2D, F2I, F2L>::value;
+concept OperatesOnFloat = llvm::is_one_of<T, FLoad, FLoad0, FLoad1, FLoad2, FLoad3, FStore, FStore0, FStore1, FStore2,
+                                          FStore3, FAdd, FSub, FMul, FDiv, FRem, FNeg, FReturn, FALoad, FAStore,
+                                          FConst0, FConst1, FConst2, F2D, F2I, F2L, FCmpG, FCmpL>::value;
 
 /// Satisfied when 'T' operates on 'double' operands.
 template <class T>
-concept OperatesOnDouble =
-    llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2, DStore3, DAdd, DSub,
-                    DMul, DDiv, DRem, DNeg, DReturn, DALoad, DAStore, DConst0, DConst1, D2F, D2I, D2L>::value;
+concept OperatesOnDouble = llvm::is_one_of<T, DLoad, DLoad0, DLoad1, DLoad2, DLoad3, DStore, DStore0, DStore1, DStore2,
+                                           DStore3, DAdd, DSub, DMul, DDiv, DRem, DNeg, DReturn, DALoad, DAStore,
+                                           DConst0, DConst1, D2F, D2I, D2L, DCmpG, DCmpL>::value;
 
 /// Satisfied when 'T' operates on 'long' operands.
 template <class T>
 concept OperatesOnLong = llvm::is_one_of<T, LLoad, LLoad0, LLoad1, LLoad2, LLoad3, LStore, LStore0, LStore1, LStore2,
                                          LStore3, LAdd, LSub, LMul, LDiv, LRem, LNeg, LReturn, LALoad, LAStore, LConst0,
-                                         LConst1, LOr, LAnd, LXor, LShl, LShr, LUShr, L2D, L2F, L2I>::value;
+                                         LConst1, LOr, LAnd, LXor, LShl, LShr, LUShr, L2D, L2F, L2I, LCmp>::value;
 
 /// Satisfied when 'T' may throw an exception.
 template <class T>

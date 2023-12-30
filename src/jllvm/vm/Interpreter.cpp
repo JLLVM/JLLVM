@@ -497,6 +497,39 @@ struct MultiTypeImpls
         return NextPC{};
     }
 
+    template <IsCmp T>
+    NextPC operator()(T) const
+    {
+        auto value2 = context.pop<typename InstructionElementType<T>::type>();
+        auto value1 = context.pop<typename InstructionElementType<T>::type>();
+        if (value1 > value2)
+        {
+            context.push<std::int32_t>(1);
+        }
+        else if (value1 == value2)
+        {
+            context.push<std::int32_t>(0);
+        }
+        else if (value1 < value2)
+        {
+            context.push<std::int32_t>(-1);
+        }
+        else
+        {
+            // At least one of the operands is a NaN leading to all comparisons to yield false. Depending on the
+            // instruction, either 1 or -1 is pushed.
+            if constexpr (llvm::is_one_of<T, FCmpG, DCmpG>{})
+            {
+                context.push<std::int32_t>(1);
+            }
+            else
+            {
+                context.push<std::int32_t>(-1);
+            }
+        }
+        return {};
+    }
+
     template <IsLoad T>
     NextPC operator()(T load) const
     {
