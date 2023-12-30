@@ -913,16 +913,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return NextPC{};
             },
-            [&](LConst0)
-            {
-                context.push<std::int64_t>(0);
-                return NextPC{};
-            },
-            [&](LConst1)
-            {
-                context.push<std::int64_t>(1);
-                return NextPC{};
-            },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
                 PoolIndex<IntegerInfo, FloatInfo, LongInfo, DoubleInfo, StringInfo, ClassInfo, MethodRefInfo,
