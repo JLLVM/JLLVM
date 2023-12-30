@@ -26,9 +26,9 @@ namespace jllvm
 /// 'ClassObjectStubMangling.hpp' mangling functions.
 /// Both the class object loading and the definition generation is performed lazily on-demand when a stub is first
 /// called.
-class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerator
+class InvokeStubsDefinitionsGenerator : public llvm::orc::DefinitionGenerator
 {
-    llvm::orc::IndirectStubsManager& m_stubsManager;
+    std::unique_ptr<llvm::orc::IndirectStubsManager> m_stubsManager;
     std::unique_ptr<llvm::orc::JITCompileCallbackManager> m_callbackManager;
     llvm::orc::IRLayer& m_baseLayer;
     llvm::orc::JITDylib& m_impl;
@@ -37,11 +37,10 @@ class ClassObjectStubDefinitionsGenerator : public llvm::orc::DefinitionGenerato
     ClassObject* m_objectClassCache = nullptr;
 
 public:
-    explicit ClassObjectStubDefinitionsGenerator(llvm::orc::IndirectStubsManager& stubsManager,
-                                                 llvm::orc::IRLayer& baseLayer, const llvm::DataLayout& dataLayout,
-                                                 const llvm::orc::JITDylibSearchOrder& linkOrder,
-                                                 ClassLoader& classLoader)
-        : m_stubsManager{stubsManager},
+    explicit InvokeStubsDefinitionsGenerator(std::unique_ptr<llvm::orc::IndirectStubsManager>&& stubsManager,
+                                             llvm::orc::IRLayer& baseLayer, const llvm::DataLayout& dataLayout,
+                                             const llvm::orc::JITDylibSearchOrder& linkOrder, ClassLoader& classLoader)
+        : m_stubsManager(std::move(stubsManager)),
           m_callbackManager{llvm::cantFail(llvm::orc::createLocalCompileCallbackManager(
               llvm::Triple(LLVM_HOST_TRIPLE), baseLayer.getExecutionSession(),
               llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Callback failed"); })))},

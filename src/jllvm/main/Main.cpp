@@ -15,6 +15,7 @@
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Path.h>
+#include <llvm/Support/TargetSelect.h>
 
 #include <jllvm/vm/VirtualMachine.hpp>
 
@@ -58,6 +59,10 @@ struct TrivialPrinter<jllvm::String>
 
 int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+
     llvm::SmallVector<const char*> llvmArgs{"jllvm"};
     CommandLine commandLine(args);
 
@@ -127,16 +132,16 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 
     if (argList.hasArg(OPT_Xenable_test_utils))
     {
-        JIT& jit = vm.getJIT();
-        jit.addJNISymbol("Java_Test_print__B", TrivialPrinter<std::int8_t>{});
-        jit.addJNISymbol("Java_Test_print__D", TrivialPrinter<double>{});
-        jit.addJNISymbol("Java_Test_print__F", TrivialPrinter<float>{});
-        jit.addJNISymbol("Java_Test_print__I", TrivialPrinter<std::int32_t>{});
-        jit.addJNISymbol("Java_Test_print__J", TrivialPrinter<std::int64_t>{});
-        jit.addJNISymbol("Java_Test_print__S", TrivialPrinter<std::int16_t>{});
-        jit.addJNISymbol("Java_Test_print__C", TrivialPrinter<std::uint16_t>{});
-        jit.addJNISymbol("Java_Test_print__Z", TrivialPrinter<bool>{});
-        jit.addJNISymbol("Java_Test_print__Ljava/lang/String;", TrivialPrinter<String>{});
+        JNIBridge& jni = vm.getJNI();
+        jni.addJNISymbol("Java_Test_print__B", TrivialPrinter<std::int8_t>{});
+        jni.addJNISymbol("Java_Test_print__D", TrivialPrinter<double>{});
+        jni.addJNISymbol("Java_Test_print__F", TrivialPrinter<float>{});
+        jni.addJNISymbol("Java_Test_print__I", TrivialPrinter<std::int32_t>{});
+        jni.addJNISymbol("Java_Test_print__J", TrivialPrinter<std::int64_t>{});
+        jni.addJNISymbol("Java_Test_print__S", TrivialPrinter<std::int16_t>{});
+        jni.addJNISymbol("Java_Test_print__C", TrivialPrinter<std::uint16_t>{});
+        jni.addJNISymbol("Java_Test_print__Z", TrivialPrinter<bool>{});
+        jni.addJNISymbol("Java_Test_print__Ljava/lang/String;", TrivialPrinter<String>{});
     }
 
     return vm.executeMain(inputFiles.front(), llvm::to_vector_of<llvm::StringRef>(llvm::drop_begin(inputFiles)));

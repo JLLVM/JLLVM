@@ -14,11 +14,16 @@
 #pragma once
 
 #include <jllvm/class/ByteCodeIterator.hpp>
+#include <jllvm/materialization/InterpreterOSRLayer.hpp>
+#include <jllvm/materialization/JIT2InterpreterLayer.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/support/BitArrayRef.hpp>
 #include <jllvm/support/Bytes.hpp>
 
 #include <cstdint>
+
+#include "OSRState.hpp"
+#include "Runtime.hpp"
 
 namespace jllvm
 {
@@ -177,11 +182,16 @@ public:
 };
 
 /// Interpreter instance containing all global state of the interpreter.
-class Interpreter
+class Interpreter : public OSRTarget
 {
     VirtualMachine& m_virtualMachine;
     /// Enable OSR from the interpreter into the JIT if the method is hot enough.
     bool m_enableOSR;
+
+    llvm::orc::JITDylib& m_jit2InterpreterSymbols;
+
+    JIT2InterpreterLayer m_compiled2InterpreterLayer;
+    InterpreterOSRLayer m_interpreterOSRLayer;
 
     /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
     ClassObject* getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index);
@@ -196,16 +206,41 @@ class Interpreter
     /// 'executeMethod' when called from the 'jllvm_interpreter' implementation in 'VirtualMachine'.
     [[noreturn]] void escapeToJIT();
 
-public:
-    explicit Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
-        : m_virtualMachine(virtualMachine), m_enableOSR(enableOSR)
-    {
-    }
+    static std::unique_ptr<std::uint64_t[]> createOSRBuffer(std::uint16_t byteCodeOffset,
+                                                            llvm::ArrayRef<std::uint64_t> locals,
+                                                            llvm::ArrayRef<std::uint64_t> operandStack,
+                                                            BitArrayRef<> localsGCMask,
+                                                            BitArrayRef<> operandStackGCMask);
 
     /// Method called to start executing 'method' at the given 'offset' with the given 'context'. Both the context and
     /// offset are kept up-to-date during execution with the current local variables, operand stack and offset being
     /// executed.
     /// Returns the result of the method bitcast to an uint64_t.
     std::uint64_t executeMethod(const Method& method, std::uint16_t& offset, InterpreterContext& context);
+
+public:
+    explicit Interpreter(VirtualMachine& virtualMachine, bool enableOSR);
+
+    void add(const Method& method) override
+    {
+        llvm::cantFail(m_compiled2InterpreterLayer.add(m_jit2InterpreterSymbols, &method));
+    }
+
+    llvm::orc::JITDylib& getJITCCDylib() override
+    {
+        return m_jit2InterpreterSymbols;
+    }
+
+    bool canExecute(const Method& method) const override
+    {
+        return !(method.isNative() || method.isAbstract());
+    }
+
+    void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) override;
+
+    OSRState createOSRStateFromInterpreterFrame(InterpreterFrame frame) override;
+
+    OSRState createOSRStateForExceptionHandler(JavaFrame frame, std::uint16_t handlerOffset,
+                                               Throwable* throwable) override;
 };
 } // namespace jllvm

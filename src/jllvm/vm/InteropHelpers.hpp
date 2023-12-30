@@ -47,9 +47,9 @@ concept JavaConvertible = !std::is_void_v<T> && JavaCompatible<JavaConvertedType
 /// Helper function to call 'fnPtr', which is known to be a Java function, with the given 'args'.
 /// Does implicit conversion of 'args' their 'JavaCompatible' type.
 template <JavaCompatible Ret, JavaConvertible... Args>
-Ret invokeJava(llvm::JITEvaluatedSymbol fnPtr, Args... args)
+Ret invokeJava(void* fnPtr, Args... args)
 {
-    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr.getAddress())(args...);
+    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr)(args...);
 }
 
 } // namespace jllvm

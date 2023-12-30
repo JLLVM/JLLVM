@@ -11,16 +11,15 @@
 # You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 # see <http://www.gnu.org/licenses/>.
 
-llvm_map_components_to_libnames(llvm_native_libs ${LLVM_NATIVE_ARCH})
-
 add_library(JLLVMVirtualMachine VirtualMachine.cpp JIT.cpp StackMapRegistrationPlugin.cpp
         JNIImplementation.cpp NativeImplementation.cpp JavaFrame.cpp native/IO.cpp
         native/Lang.cpp native/JDK.cpp native/Security.cpp
         Interpreter.cpp
-        OSRState.cpp
+        Runtime.cpp
+        JNIBridge.cpp
 )
 target_link_libraries(JLLVMVirtualMachine
-        PRIVATE JLLVMLLVMPasses ${llvm_native_libs} LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
+        PRIVATE JLLVMLLVMPasses LLVMTargetParser LLVMOrcTargetProcess LLVMScalarOpts LLVMAnalysis
         PUBLIC JLLVMClassParser JLLVMObject JLLVMGC JLLVMMaterialization JLLVMUnwinder LLVMExecutionEngine LLVMOrcJIT
         LLVMJITLink LLVMOrcShared
         )

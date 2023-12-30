@@ -24,208 +24,23 @@
 
 #define DEBUG_TYPE "jvm"
 
-namespace
-{
-bool canOverride(const jllvm::Method& derived, const jllvm::ClassObject* derivedClass, const jllvm::Method& base,
-                 const jllvm::ClassObject* baseClass)
-{
-    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.5
-    if (derived.getName() != base.getName() || derived.getType() != base.getType())
-    {
-        return false;
-    }
-
-    switch (base.getVisibility())
-    {
-        case jllvm::Visibility::Private: return false;
-        case jllvm::Visibility::Public:
-        case jllvm::Visibility::Protected: return true;
-        case jllvm::Visibility::Package:
-            // 5.4.5 mA is marked neither ACC_PUBLIC nor ACC_PROTECTED nor ACC_PRIVATE, and either (a) the declaration
-            // of mA appears in the same run-time package as the declaration of mC.
-            // TODO: I am pretty sure this is not how the spec defines packages, but it'll do for now.
-            if (derivedClass->getPackageName() == baseClass->getPackageName())
-            {
-                return true;
-            }
-
-            // TODO: 5.4.5 b)
-            llvm_unreachable("NOT YET IMPLEMENTED");
-    }
-    llvm_unreachable("All visibilities handled");
-}
-
-jllvm::VTableSlot methodSelection(jllvm::JIT& jit, const jllvm::ClassObject* classObject,
-                                  const jllvm::Method& resolvedMethod, const jllvm::ClassObject* resolvedMethodClass)
-{
-    auto doLookup = [&](llvm::StringRef className) -> jllvm::VTableSlot
-    {
-        return reinterpret_cast<jllvm::VTableSlot>(
-            llvm::cantFail(jit.lookup(className, resolvedMethod.getName(), resolvedMethod.getType())).getAddress());
-    };
-
-    // https://docs.oracle.com/javase/specs/jvms/se17/html/jvms-5.html#jvms-5.4.6 Step 1
-
-    if (resolvedMethod.getVisibility() == jllvm::Visibility::Private)
-    {
-        return doLookup(resolvedMethodClass->getClassName());
-    }
-
-    // Step 2
-
-    // If C contains a declaration of an instance method m that can override mR (§5.4.5), then m is the selected method.
-
-    // Otherwise, if C has a superclass, a search for a declaration of an instance method that can override mR is
-    // performed, starting with the direct superclass of C and continuing with the direct superclass of that class, and
-    // so forth, until a method is found or no further superclasses exist. If a method is found, it is the selected
-    // method.
-    for (const jllvm::ClassObject* curr : classObject->getSuperClasses())
-    {
-        const auto* result = llvm::find_if(
-            curr->getMethods(), [&](const jllvm::Method& method)
-            { return !method.isStatic() && canOverride(method, curr, resolvedMethod, resolvedMethodClass); });
-        if (result == curr->getMethods().end())
-        {
-            continue;
-        }
-        if (result->isAbstract())
-        {
-            return nullptr;
-        }
-        return doLookup(curr->getClassName());
-    }
-
-    // Otherwise, the maximally-specific superinterface methods of C are determined (§5.4.3.3). If exactly one matches
-    // mR's name and descriptor and is not abstract, then it is the selected method.
-
-    // A maximally-specific superinterface method of a class or interface C for a particular method name and descriptor
-    // is any method for which all of the following are true:
-    //
-    // The method is declared in a superinterface (direct or indirect) of C.
-    //
-    // The method is declared with the specified name and descriptor.
-    //
-    // The method has neither its ACC_PRIVATE flag nor its ACC_STATIC flag set.
-    //
-    // Where the method is declared in interface I, there exists no other maximally-specific superinterface method of C
-    // with the specified name and descriptor that is declared in a subinterface of I.
-
-    for (const jllvm::ClassObject* interface : classObject->maximallySpecificInterfaces())
-    {
-        if (llvm::any_of(interface->getMethods(),
-                         [&](const jllvm::Method& method)
-                         {
-                             return !method.isStatic() && method.getVisibility() != jllvm::Visibility::Private
-                                    && !method.isAbstract()
-                                    && canOverride(method, interface, resolvedMethod, resolvedMethodClass);
-                         }))
-        {
-            return doLookup(interface->getClassName());
-        }
-    }
-
-    llvm_unreachable("Method resolution unexpectedly failed");
-}
-
-} // namespace
-
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-        m_stringInterner, std::move(bootOptions.classPath),
-        [this](ClassObject& classObject)
-        {
-            m_jit.add(&classObject);
-            if (classObject.isInterface() || classObject.isAbstract())
-            {
-                return;
-            }
-
-            for (const ClassObject* curr : classObject.getSuperClasses())
-            {
-                for (const Method& iter : curr->getMethods())
-                {
-                    auto slot = iter.getTableSlot();
-                    if (!slot)
-                    {
-                        continue;
-                    }
-                    classObject.getVTable()[*slot] = methodSelection(m_jit, &classObject, iter, curr);
-                }
-            }
-
-            llvm::DenseMap<std::size_t, const jllvm::ClassObject*> idToInterface;
-            for (const ClassObject* interface : classObject.getAllInterfaces())
-            {
-                idToInterface[interface->getInterfaceId()] = interface;
-            }
-
-            for (ITable* iTable : classObject.getITables())
-            {
-                const ClassObject* interface = idToInterface[iTable->getId()];
-                for (const Method& iter : interface->getMethods())
-                {
-                    auto slot = iter.getTableSlot();
-                    if (!slot)
-                    {
-                        continue;
-                    }
-                    iTable->getMethods()[*slot] = methodSelection(m_jit, &classObject, iter, interface);
-                }
-            }
-        },
-        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
-      m_jit(JIT::create(m_classLoader, m_gc, m_jniEnv.get(), bootOptions.executionMode)),
+          m_stringInterner, std::move(bootOptions.classPath),
+          [this, bootOptions](ClassObject& classObject) { m_runtime.add(&classObject, getDefaultExecutor()); },
+          [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
+      m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
+      m_jit(*this),
       m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
+      m_jni(*this, m_jniEnv.get()),
       m_gc(/*random value for now*/ 1 << 20),
       // Seed from the C++ implementations entropy source.
       m_pseudoGen(std::random_device{}()),
       // Exclude 0 from the output as that is our sentinel value for "not yet calculated".
       m_hashIntDistrib(1, std::numeric_limits<std::uint32_t>::max()),
-      m_javaHome(bootOptions.javaHome)
+      m_javaHome(bootOptions.javaHome),
+      m_executionMode(bootOptions.executionMode)
 {
-    m_jit.addImplementationSymbols(
-        std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return m_gc.allocate(size); }},
-        std::pair{"jllvm_for_name_loaded",
-                  [&](const char* name) { return m_classLoader.forNameLoaded(FieldType(name)); }},
-        std::pair{"jllvm_instance_of",
-                  [](const Object* object, const ClassObject* classObject) -> std::int32_t
-                  { return object->instanceOf(classObject); }},
-        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
-        std::pair{"jllvm_new_local_root", [&](Object* object) { return m_gc.root(object).release(); }},
-        std::pair{"jllvm_throw", [&](Throwable* object) { throwJavaException(object); }},
-        std::pair{"jllvm_initialize_class_object",
-                  [&](ClassObject* classObject)
-                  {
-                      // This should have been checked inline in LLVM IR.
-                      assert(!classObject->isInitialized());
-                      initialize(*classObject);
-                  }},
-        std::pair{"jllvm_throw_class_cast_exception", [&](ObjectInterface* object, ClassObject* classObject)
-                  { throwClassCastException(object, classObject); }},
-        std::pair{"jllvm_throw_null_pointer_exception",
-                  [&]() { throwException("Ljava/lang/NullPointerException;", "()V"); }},
-        std::pair{"jllvm_throw_array_index_out_of_bounds_exception",
-                  [&](std::int32_t index, std::int32_t size) { throwArrayIndexOutOfBoundsException(index, size); }},
-        std::pair{"jllvm_throw_negative_array_size_exception",
-                  [&](std::int32_t size) { throwNegativeArraySizeException(size); }},
-        std::pair{"jllvm_throw_unsatisfied_link_error",
-                  [&](Method* method)
-                  {
-                      String* string = m_stringInterner.intern(method->prettySignature());
-                      throwException("Ljava/lang/UnsatisfiedLinkError;", "(Ljava/lang/String;)V", string);
-                  }},
-        std::pair{"jllvm_push_local_frame", [&] { m_gc.pushLocalFrame(); }},
-        std::pair{"jllvm_pop_local_frame", [&] { m_gc.popLocalFrame(); }},
-        std::pair{"jllvm_interpreter",
-                  [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
-                      std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,
-                      std::uint64_t* localVariablesGCMask)
-                  {
-                      InterpreterContext context(*topOfStack, operandStack, operandGCMask, localVariables,
-                                                 localVariablesGCMask);
-                      return m_interpreter.executeMethod(*method, *byteCodeOffset, context);
-                  }});
-
     registerJavaClasses(*this);
 
     m_gc.addRootObjectsProvider(
@@ -319,10 +134,11 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 
     ClassObject& classObject = m_classLoader.add(std::move(*buffer));
     initialize(classObject);
-    auto lookup = m_jit.lookup(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
+    auto* lookup =
+        m_runtime.lookupJITCC<void(Array<String*>*)>(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
     if (!lookup)
     {
-        llvm::report_fatal_error(("Failed to find main method due to " + toString(lookup.takeError())).c_str());
+        llvm::report_fatal_error("Failed to find main method in " + classObject.getClassName());
     }
 
     auto* javaArgs = m_gc.allocate<Array<String*>>(&m_classLoader.forName("[Ljava/lang/String;"), args.size());
@@ -331,7 +147,7 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 
     try
     {
-        reinterpret_cast<void (*)(void*)>(lookup->getAddress())(javaArgs);
+        lookup(javaArgs);
         return 0;
     }
     catch (const Throwable& activeException)
@@ -375,10 +191,9 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         initialize(*base);
     }
 
-    auto classInitializer = m_jit.lookup(classObject.getClassName(), "<clinit>", "()V");
+    auto* classInitializer = m_runtime.lookupJITCC<void()>(classObject.getClassName(), "<clinit>", "()V");
     if (!classInitializer)
     {
-        llvm::consumeError(classInitializer.takeError());
         return;
     }
 
@@ -386,7 +201,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         llvm::dbgs() << "Executing class initializer "
                      << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
-    reinterpret_cast<void (*)()>(classInitializer->getAddress())();
+    classInitializer();
     classObject.setInitializationStatus(InitializationStatus::Initialized);
 }
 
@@ -438,7 +253,8 @@ void jllvm::VirtualMachine::throwJavaException(Throwable* exception)
                 return;
             }
 
-            m_jit.doExceptionOnStackReplacement(frame, *handlerPc, exception);
+            m_runtime.doOnStackReplacement(
+                frame, getDefaultOSRTarget().createOSRStateForExceptionHandler(frame, *handlerPc, exception));
         });
 
     // If no Java frame is ready to handle the exception, unwind all of it completely.

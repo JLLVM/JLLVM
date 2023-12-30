@@ -11,7 +11,7 @@
 // You should have received a copy of the GNU General Public License along with JLLVM; see the file LICENSE.txt.  If not
 // see <http://www.gnu.org/licenses/>.
 
-#include "ClassObjectStubDefinitionsGenerator.hpp"
+#include "InvokeStubsDefinitionsGenerator.hpp"
 
 #include <jllvm/compiler/ClassObjectStubCodeGenerator.hpp>
 
@@ -68,10 +68,10 @@ llvm::orc::ThreadSafeModule compile(const DemangledVariant& variant, ClassLoader
 
 } // namespace
 
-llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc::LookupState&, llvm::orc::LookupKind,
-                                                                      llvm::orc::JITDylib& dylib,
-                                                                      llvm::orc::JITDylibLookupFlags,
-                                                                      const llvm::orc::SymbolLookupSet& symbolLookupSet)
+llvm::Error jllvm::InvokeStubsDefinitionsGenerator::tryToGenerate(llvm::orc::LookupState&, llvm::orc::LookupKind,
+                                                                  llvm::orc::JITDylib& dylib,
+                                                                  llvm::orc::JITDylibLookupFlags,
+                                                                  const llvm::orc::SymbolLookupSet& symbolLookupSet)
 {
     if (!m_objectClassCache)
     {
@@ -91,19 +91,15 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
         }
 
         // Attempt to demangle the name. If it is a monostate then the symbol is not a stub and there is nothing to do.
+        // Class object globals are handled by 'ClassObjectDefinitionsGenerator'.
         DemangledVariant demangleVariant = demangleStubSymbolName(name);
-        if (holds_alternative<std::monostate>(demangleVariant))
+        if (holds_alternative<std::monostate>(demangleVariant)
+            || holds_alternative<DemangledClassObjectGlobal>(demangleVariant))
         {
             continue;
         }
 
         // Globals are resolved immediately. It is not possible to use a compile stub or the like.
-        if (auto* classObjectGlobal = get_if<DemangledClassObjectGlobal>(&demangleVariant))
-        {
-            generated[symbol] =
-                llvm::JITEvaluatedSymbol::fromPointer(&m_classLoader.forName(classObjectGlobal->classObject));
-            continue;
-        }
         if (auto* stringGlobal = get_if<DemangledStringGlobal>(&demangleVariant))
         {
             generated[symbol] =
@@ -114,7 +110,7 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
         // Otherwise, create a stub containing a compiler callback. The compile callback will be called on the very
         // first invocation of the symbol and will redirect the stub to point to the compiled function. This
         // effectively implements both the lazy compilation and lazy class loading.
-        llvm::cantFail(m_stubsManager.createStub(
+        llvm::cantFail(m_stubsManager->createStub(
             name,
             llvm::cantFail(m_callbackManager->getCompileCallback(
                 [this, demangleVariant, name, symbol]
@@ -125,11 +121,11 @@ llvm::Error jllvm::ClassObjectStubDefinitionsGenerator::tryToGenerate(llvm::orc:
                     llvm::cantFail(m_baseLayer.add(m_impl, std::move(module)));
                     llvm::JITTargetAddress address =
                         llvm::cantFail(m_baseLayer.getExecutionSession().lookup({&m_impl}, symbol)).getAddress();
-                    llvm::cantFail(m_stubsManager.updatePointer(name, address));
+                    llvm::cantFail(m_stubsManager->updatePointer(name, address));
                     return address;
                 })),
             llvm::JITSymbolFlags::Exported));
-        generated[symbol] = m_stubsManager.findStub(name, true);
+        generated[symbol] = m_stubsManager->findStub(name, true);
     }
 
     if (generated.empty())

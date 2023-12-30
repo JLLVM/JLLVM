@@ -60,6 +60,16 @@ public:
         llvm::cantFail(m_jniImpls.define(std::move(materializationUnit)));
     }
 
+    llvm::orc::IRLayer& getBaseLayer() const
+    {
+        return m_irLayer;
+    }
+
+    const llvm::DataLayout& getDataLayout() const
+    {
+        return m_dataLayout;
+    }
+
     void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
 };
 } // namespace jllvm
