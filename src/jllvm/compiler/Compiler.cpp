@@ -72,9 +72,9 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
 {
     const MethodInfo& methodInfo = method.getMethodInfo();
 
-    auto* function =
-        llvm::Function::Create(osrMethodSignature(method.getType(), callingConvention, module.getContext()),
-                               llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(&method, offset), module);
+    auto* function = llvm::Function::Create(
+        osrMethodSignature(method.getType().returnType(), callingConvention, module.getContext()),
+        llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(&method, offset), module);
     addJavaJITMethodMetadata(function, &method, callingConvention);
     applyABIAttributes(function);
 

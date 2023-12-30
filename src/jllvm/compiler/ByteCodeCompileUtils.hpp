@@ -65,11 +65,11 @@ enum class CallingConvention : std::uint8_t
     JIT,
 };
 
-/// Returns the LLVM function type for an OSR method for a given Java method descriptor.
+/// Returns the LLVM function type for an OSR method for a given return type.
 /// The calling convention used is suitable to replace a frame with the given 'callingConvention' by using the same
 /// return type. The parameter list contains of a single pointer to an internal array built by 'OSRState' used to
 /// initialize the abstract machine state.
-llvm::FunctionType* osrMethodSignature(MethodType methodType, CallingConvention callingConvention,
+llvm::FunctionType* osrMethodSignature(FieldType returnType, CallingConvention callingConvention,
                                        llvm::LLVMContext& context);
 
 /// Generates code using 'builder' to convert 'value', which is of the corresponding LLVM type of 'type', to the

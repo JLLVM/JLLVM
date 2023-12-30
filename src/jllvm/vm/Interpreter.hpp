@@ -14,7 +14,6 @@
 #pragma once
 
 #include <jllvm/class/ByteCodeIterator.hpp>
-#include <jllvm/materialization/InterpreterOSRLayer.hpp>
 #include <jllvm/materialization/JIT2InterpreterLayer.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/support/BitArrayRef.hpp>
@@ -252,12 +251,17 @@ class Interpreter : public OSRTarget
 
     /// Single entry for use in 'm_interpreterCCSymbols' as an implementation for ALL methods.
     std::uint64_t (*m_interpreterEntry)(const Method*, const std::uint64_t*){};
+    /// OSR Entry for frames with interpreter calling convention.
+    void* m_interpreterInterpreterCCOSREntry;
+    /// OSR Entry for frames with JIT calling convention returning a reference type.
+    void* m_interpreterJITCCOSREntryReferenceReturn;
+    /// OSR Entries for frames with JIT calling convention returning a base type.
+    std::array<void*, BaseType::MaxValue + 1> m_interpreterJITCCOSREntries{};
 
     llvm::orc::JITDylib& m_jit2InterpreterSymbols;
     llvm::orc::JITDylib& m_interpreterCCSymbols;
 
     JIT2InterpreterLayer m_compiled2InterpreterLayer;
-    InterpreterOSRLayer m_interpreterOSRLayer;
 
     /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
     ClassObject* getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index);
@@ -272,7 +276,7 @@ class Interpreter : public OSRTarget
     /// 'executeMethod' when called from the 'jllvm_interpreter' implementation in 'VirtualMachine'.
     [[noreturn]] void escapeToJIT();
 
-    static std::unique_ptr<std::uint64_t[]> createOSRBuffer(std::uint16_t byteCodeOffset,
+    static std::unique_ptr<std::uint64_t[]> createOSRBuffer(const Method& method, std::uint16_t byteCodeOffset,
                                                             llvm::ArrayRef<std::uint64_t> locals,
                                                             llvm::ArrayRef<std::uint64_t> operandStack,
                                                             BitArrayRef<> localsGCMask,
@@ -286,6 +290,10 @@ class Interpreter : public OSRTarget
 
     /// Initializes 'm_interpreterEntry' by generating LLVM IR.
     void generateInterpreterEntry();
+
+    /// Creates and returns an OSR Entry for the interpreter suitable for replacing a frame with the given calling
+    /// convention and return type.
+    void* generateOSREntry(FieldType returnType, CallingConvention callingConvention);
 
 public:
     explicit Interpreter(VirtualMachine& virtualMachine, bool enableOSR);

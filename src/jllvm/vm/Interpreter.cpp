@@ -25,9 +25,7 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
       m_interpreterCCSymbols(m_jit2InterpreterSymbols.getExecutionSession().createBareJITDylib("<interpreterSymbols>")),
       m_compiled2InterpreterLayer(virtualMachine.getRuntime().getInterner(),
                                   virtualMachine.getRuntime().getLLVMIRLayer(),
-                                  virtualMachine.getRuntime().getDataLayout()),
-      m_interpreterOSRLayer(m_compiled2InterpreterLayer.getInterner(), m_compiled2InterpreterLayer.getBaseLayer(),
-                            m_compiled2InterpreterLayer.getDataLayout())
+                                  virtualMachine.getRuntime().getDataLayout())
 {
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getClassAndMethodObjectsDylib());
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
@@ -82,7 +80,43 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
     m_jit2InterpreterSymbols.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& linkOrder)
                                              { m_interpreterCCSymbols.setLinkOrder(linkOrder); });
     generateInterpreterEntry();
+    m_interpreterInterpreterCCOSREntry = generateOSREntry("V", CallingConvention::Interpreter);
+    m_interpreterJITCCOSREntryReferenceReturn = generateOSREntry("Ljava/lang/Object;", CallingConvention::JIT);
+    for (BaseType::Values value : {BaseType::Boolean, BaseType::Char, BaseType::Float, BaseType::Double, BaseType::Byte,
+                                   BaseType::Short, BaseType::Int, BaseType::Long, BaseType::Void})
+    {
+        m_interpreterJITCCOSREntries[value] = generateOSREntry(BaseType(value), CallingConvention::JIT);
+    }
 }
+
+namespace
+{
+llvm::Value* divideCeil(llvm::IRBuilder<>& builder, llvm::Value* value, llvm::Value* rhs)
+{
+    // This is a 'ceil(value / rhs)' operation implemented in IR as "value / rhs + ((value % rhs) != 0)".
+    llvm::Value* remainder = builder.CreateURem(value, rhs);
+    value = builder.CreateUDiv(value, rhs);
+    return builder.CreateAdd(
+        value, builder.CreateZExt(builder.CreateICmpNE(remainder, llvm::ConstantInt::get(value->getType(), 0)),
+                                  value->getType()));
+}
+
+void callGetFrameSize(llvm::IRBuilder<>& builder, llvm::Value* methodRef, llvm::Value* numLocalsPtr,
+                      llvm::Value* numOperandsPtr)
+{
+    llvm::Module* module = builder.GetInsertBlock()->getParent()->getParent();
+    // Get the number of local variables and operand stack slots from the runtime.
+    // The method uses two out parameters rather than a struct of two as the latter does not automatically adhere to the
+    // C ABI in LLVM.
+    builder.CreateCall(
+        module->getOrInsertFunction(
+            "jllvm_interpreter_frame_sizes",
+            llvm::FunctionType::get(builder.getVoidTy(),
+                                    {methodRef->getType(), numLocalsPtr->getType(), numOperandsPtr->getType()},
+                                    /*isVarArg=*/false)),
+        {methodRef, numLocalsPtr, numOperandsPtr});
+}
+} // namespace
 
 void jllvm::Interpreter::generateInterpreterEntry()
 {
@@ -113,41 +147,22 @@ void jllvm::Interpreter::generateInterpreterEntry()
     llvm::AllocaInst* byteCodeOffset = builder.CreateAlloca(builder.getInt16Ty());
     llvm::AllocaInst* topOfStack = builder.CreateAlloca(builder.getInt16Ty());
 
-    // Get the number local variable and operand stack slots from the runtime.
-    // The method uses two out parameters rather than a struct of two as the latter does not automatically adhere to the
-    // C ABI in LLVM.
     llvm::AllocaInst* numLocalsPtr = builder.CreateAlloca(builder.getInt16Ty());
     llvm::AllocaInst* numOperandsPtr = builder.CreateAlloca(builder.getInt16Ty());
-    builder.CreateCall(
-        module->getOrInsertFunction(
-            "jllvm_interpreter_frame_sizes",
-            llvm::FunctionType::get(builder.getVoidTy(),
-                                    {methodRef->getType(), numLocalsPtr->getType(), numOperandsPtr->getType()},
-                                    /*isVarArg=*/false)),
-        {methodRef, numLocalsPtr, numOperandsPtr});
+    callGetFrameSize(builder, methodRef, numLocalsPtr, numOperandsPtr);
 
     llvm::Value* numLocals =
         builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numLocalsPtr), builder.getInt32Ty());
     llvm::Value* numOperands =
         builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numOperandsPtr), builder.getInt32Ty());
 
-    auto divideCeil = [&](llvm::Value* value, llvm::Value* rhs)
-    {
-        // This is a 'ceil(value / rhs)' operation implemented in IR as "value / rhs + ((value % rhs) != 0)".
-        llvm::Value* remainder = builder.CreateURem(value, rhs);
-        value = builder.CreateUDiv(value, rhs);
-        return builder.CreateAdd(
-            value, builder.CreateZExt(builder.CreateICmpNE(remainder, llvm::ConstantInt::get(value->getType(), 0)),
-                                      value->getType()));
-    };
-
     // Allocate the stack variables now that we know their sizes.
     llvm::AllocaInst* operandStack = builder.CreateAlloca(builder.getInt64Ty(), numOperands);
     llvm::AllocaInst* operandGCMask =
-        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(numOperands, builder.getInt32(64)));
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(builder, numOperands, builder.getInt32(64)));
     llvm::AllocaInst* localVariables = builder.CreateAlloca(builder.getInt64Ty(), numLocals);
     llvm::AllocaInst* localVariablesGCMask =
-        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(numLocals, builder.getInt32(64)));
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(builder, numLocals, builder.getInt32(64)));
 
     builder.CreateMemSet(byteCodeOffset, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
     builder.CreateMemSet(topOfStack, builder.getInt8(0), sizeof(std::uint16_t), std::nullopt);
@@ -200,13 +215,118 @@ void jllvm::Interpreter::generateInterpreterEntry()
             .getAddress());
 }
 
+void* jllvm::Interpreter::generateOSREntry(FieldType returnType, CallingConvention callingConvention)
+{
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("module", *context);
+    module->setDataLayout(m_compiled2InterpreterLayer.getDataLayout());
+    module->setTargetTriple(LLVM_HOST_TRIPLE);
+
+    std::string functionName = "Interpreter OSR Entry";
+    switch (callingConvention)
+    {
+        case CallingConvention::Interpreter: functionName += " Interpreter CC"; break;
+        case CallingConvention::JIT: functionName += " JIT CC " + returnType.textual(); break;
+    }
+    auto* function = llvm::Function::Create(osrMethodSignature(returnType, callingConvention, *context),
+                                            llvm::GlobalValue::ExternalLinkage, functionName, module.get());
+
+    TrivialDebugInfoBuilder debugInfoBuilder(function);
+
+    applyABIAttributes(function);
+    function->clearGC();
+    addJavaInterpreterMethodMetadata(function, callingConvention);
+
+    llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
+
+    builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
+
+    llvm::AllocaInst* byteCodeOffset = builder.CreateAlloca(builder.getInt16Ty());
+    llvm::AllocaInst* topOfStack = builder.CreateAlloca(builder.getInt16Ty());
+    llvm::AllocaInst* numLocalsPtr = builder.CreateAlloca(builder.getInt16Ty());
+    llvm::AllocaInst* numOperandsPtr = builder.CreateAlloca(builder.getInt16Ty());
+
+    auto* pointer = llvm::PointerType::get(*context, 0);
+    llvm::Value* currOsrState = function->getArg(0);
+    llvm::Value* methodRef = builder.CreateLoad(pointer, currOsrState);
+
+    currOsrState = builder.CreateConstGEP1_32(builder.getInt64Ty(), currOsrState, 1);
+    builder.CreateStore(builder.CreateLoad(builder.getInt16Ty(), currOsrState), byteCodeOffset);
+    llvm::Value* topOfStackValue = builder.CreateLoad(builder.getInt32Ty(), currOsrState);
+    topOfStackValue = builder.CreateLShr(topOfStackValue, 16);
+    builder.CreateStore(builder.CreateTrunc(topOfStackValue, builder.getInt16Ty()), topOfStack);
+
+    callGetFrameSize(builder, methodRef, numLocalsPtr, numOperandsPtr);
+
+    llvm::Value* numLocals =
+        builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numLocalsPtr), builder.getInt32Ty());
+    llvm::Value* numOperands =
+        builder.CreateZExt(builder.CreateLoad(builder.getInt16Ty(), numOperandsPtr), builder.getInt32Ty());
+
+    // Allocate the stack variables now that we know their sizes.
+    llvm::AllocaInst* operandStack = builder.CreateAlloca(builder.getInt64Ty(), numOperands);
+    llvm::AllocaInst* operandGCMask =
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(builder, numOperands, builder.getInt32(64)));
+    llvm::AllocaInst* localVariables = builder.CreateAlloca(builder.getInt64Ty(), numLocals);
+    llvm::AllocaInst* localVariablesGCMask =
+        builder.CreateAlloca(builder.getInt64Ty(), divideCeil(builder, numLocals, builder.getInt32(64)));
+
+    // Initialize the interpreter state from the OSR State.
+    currOsrState = builder.CreateConstGEP1_32(builder.getInt64Ty(), currOsrState, 1);
+    builder.CreateMemCpy(localVariables, /*DstAlign=*/std::nullopt, currOsrState,
+                         /*SrcAlign=*/std::nullopt,
+                         builder.CreateMul(numLocals, builder.getInt32(sizeof(std::uint64_t))));
+
+    currOsrState = builder.CreateGEP(builder.getInt64Ty(), currOsrState, numLocals);
+    builder.CreateMemCpy(operandStack, /*DstAlign=*/std::nullopt, currOsrState, /*SrcAlign=*/std::nullopt,
+                         builder.CreateMul(topOfStackValue, builder.getInt32(sizeof(std::uint64_t))));
+
+    currOsrState = builder.CreateGEP(builder.getInt64Ty(), currOsrState, topOfStackValue);
+    builder.CreateMemCpy(
+        localVariablesGCMask, /*DstAlign=*/std::nullopt, currOsrState, /*SrcAlign=*/std::nullopt,
+        builder.CreateMul(localVariablesGCMask->getArraySize(), builder.getInt32(sizeof(std::uint64_t))));
+
+    currOsrState = builder.CreateGEP(builder.getInt64Ty(), currOsrState, localVariablesGCMask->getArraySize());
+    builder.CreateMemCpy(operandGCMask, /*DstAlign=*/std::nullopt, currOsrState, /*SrcAlign=*/std::nullopt,
+                         builder.CreateMul(operandGCMask->getArraySize(), builder.getInt32(sizeof(std::uint64_t))));
+
+    // The OSR frame is responsible for deleting its input arrays as the frame that originally allocated the
+    // pointer is replaced.
+    llvm::FunctionCallee callee =
+        function->getParent()->getOrInsertFunction("jllvm_osr_frame_delete", builder.getVoidTy(), builder.getPtrTy());
+    builder.CreateCall(callee, function->getArg(0));
+
+    std::array<llvm::Value*, 7> arguments = {methodRef,     byteCodeOffset, topOfStack,          operandStack,
+                                             operandGCMask, localVariables, localVariablesGCMask};
+    std::array<llvm::Type*, 7> types{};
+    llvm::transform(arguments, types.begin(), std::mem_fn(&llvm::Value::getType));
+
+    // Deopt all values used as context during interpretation. This makes it possible for the unwinder to read the
+    // method, local variables, the operand stack, the bytecode offset and where GC pointers are contained during
+    // unwinding.
+    llvm::CallInst* callInst = builder.CreateCall(
+        module->getOrInsertFunction("jllvm_interpreter",
+                                    llvm::FunctionType::get(builder.getInt64Ty(), types, /*isVarArg=*/false)),
+        arguments, llvm::OperandBundleDef("deopt", arguments));
+    if (returnType == BaseType(BaseType::Void))
+    {
+        callInst = nullptr;
+    }
+    emitReturn(builder, callInst, callingConvention);
+
+    debugInfoBuilder.finalize();
+
+    Runtime& runtime = m_virtualMachine.getRuntime();
+    llvm::cantFail(runtime.getLLVMIRLayer().add(m_interpreterCCSymbols,
+                                                llvm::orc::ThreadSafeModule(std::move(module), std::move(context))));
+
+    return reinterpret_cast<void*>(
+        llvm::cantFail(runtime.getSession().lookup({&m_interpreterCCSymbols}, runtime.getInterner()(functionName)))
+            .getAddress());
+}
+
 namespace
 {
-
-void allowDuplicateDefinitions(llvm::Error&& error)
-{
-    llvm::handleAllErrors(std::move(error), [](const llvm::orc::DuplicateDefinition&) {});
-}
 
 /// Tag returned when interpreting an instruction to jump to a new bytecode offset.
 struct SetPC
@@ -1398,23 +1518,26 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     }
 }
 
-void* Interpreter::getOSREntry(const Method& method, std::uint16_t byteCodeOffset, CallingConvention callingConvention)
+void* Interpreter::getOSREntry(const Method& method, std::uint16_t /*byteCodeOffset*/,
+                               CallingConvention callingConvention)
 {
-    llvm::orc::SymbolStringPtr mangledName =
-        m_interpreterOSRLayer.getInterner()(mangleOSRMethod(&method, byteCodeOffset));
-    allowDuplicateDefinitions(
-        m_interpreterOSRLayer.add(m_jit2InterpreterSymbols, &method, byteCodeOffset, callingConvention));
-
-    llvm::JITEvaluatedSymbol osrMethod =
-        llvm::cantFail(m_virtualMachine.getRuntime().getSession().lookup({&m_jit2InterpreterSymbols}, mangledName));
-    return reinterpret_cast<void*>(osrMethod.getAddress());
+    if (callingConvention == CallingConvention::Interpreter)
+    {
+        return m_interpreterInterpreterCCOSREntry;
+    }
+    FieldType type = method.getType().returnType();
+    if (type.isReference())
+    {
+        return m_interpreterJITCCOSREntryReferenceReturn;
+    }
+    return m_interpreterJITCCOSREntries[get<BaseType>(type).getValue()];
 }
 
 OSRState Interpreter::createOSRStateFromInterpreterFrame(InterpreterFrame frame)
 {
     return OSRState(*this, *frame.getByteCodeOffset(),
-                    createOSRBuffer(*frame.getByteCodeOffset(), frame.readLocals(), frame.getOperandStack(),
-                                    frame.getLocalsGCMask(), frame.getOperandStackGCMask()));
+                    createOSRBuffer(*frame.getMethod(), *frame.getByteCodeOffset(), frame.readLocals(),
+                                    frame.getOperandStack(), frame.getLocalsGCMask(), frame.getOperandStackGCMask()));
 }
 
 OSRState Interpreter::createOSRStateForExceptionHandler(JavaFrame frame, std::uint16_t handlerOffset,
@@ -1425,13 +1548,13 @@ OSRState Interpreter::createOSRStateForExceptionHandler(JavaFrame frame, std::ui
     return OSRState(
         *this, handlerOffset,
         createOSRBuffer(
-            handlerOffset, frame.readLocals(),
+            *frame.getMethod(), handlerOffset, frame.readLocals(),
             /*operandStack=*/std::initializer_list<std::uint64_t>{reinterpret_cast<std::uint64_t>(throwable)},
             BitArrayRef(localsGcMask.data(), localsGcMask.size() * 64),
             BitArrayRef(data(operandStackGCMask), operandStackGCMask.size() * 64)));
 }
 
-std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(std::uint16_t byteCodeOffset,
+std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(const Method& method, std::uint16_t byteCodeOffset,
                                                               llvm::ArrayRef<std::uint64_t> locals,
                                                               llvm::ArrayRef<std::uint64_t> operandStack,
                                                               BitArrayRef<> localsGCMask,
@@ -1440,11 +1563,12 @@ std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(std::uint16_t byte
     std::size_t numLocals = llvm::size(locals);
     std::size_t numOperandStack = llvm::size(operandStack);
 
-    auto buffer = std::make_unique<std::uint64_t[]>(1 + numLocals + numOperandStack + localsGCMask.numWords()
+    auto buffer = std::make_unique<std::uint64_t[]>(2 + numLocals + numOperandStack + localsGCMask.numWords()
                                                     + operandStackGCMask.numWords());
-    buffer[0] = byteCodeOffset | numOperandStack << 16;
+    buffer[0] = reinterpret_cast<std::uintptr_t>(&method);
+    buffer[1] = byteCodeOffset | numOperandStack << 16;
 
-    auto* outIter = llvm::copy(locals, std::next(buffer.get()));
+    auto* outIter = llvm::copy(locals, std::next(buffer.get(), 2));
     outIter = llvm::copy(operandStack, outIter);
     outIter = std::copy_n(localsGCMask.words_begin(), localsGCMask.numWords(), outIter);
     std::copy_n(operandStackGCMask.words_begin(), operandStackGCMask.numWords(), outIter);

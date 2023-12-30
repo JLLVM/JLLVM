@@ -320,16 +320,16 @@ void jllvm::applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool
     call->setAttributes(getABIAttributes(call->getContext(), methodType, isStatic));
 }
 
-llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, CallingConvention callingConvention,
+llvm::FunctionType* jllvm::osrMethodSignature(FieldType returnType, CallingConvention callingConvention,
                                               llvm::LLVMContext& context)
 {
-    llvm::Type* returnType;
+    llvm::Type* llvmReturnType;
     switch (callingConvention)
     {
-        case CallingConvention::Interpreter: returnType = llvm::IntegerType::getInt64Ty(context); break;
-        case CallingConvention::JIT: returnType = descriptorToType(methodType.returnType(), context); break;
+        case CallingConvention::Interpreter: llvmReturnType = llvm::IntegerType::getInt64Ty(context); break;
+        case CallingConvention::JIT: llvmReturnType = descriptorToType(returnType, context); break;
     }
-    return llvm::FunctionType::get(returnType, {llvm::PointerType::get(context, 0)},
+    return llvm::FunctionType::get(llvmReturnType, {llvm::PointerType::get(context, 0)},
                                    /*isVarArg=*/false);
 }
 

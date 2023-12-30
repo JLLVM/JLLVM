@@ -13,6 +13,8 @@
 
 #include "JIT.hpp"
 
+#include <llvm/ExecutionEngine/Orc/Shared/OrcError.h>
+
 #include <jllvm/materialization/InvokeStubsDefinitionsGenerator.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
