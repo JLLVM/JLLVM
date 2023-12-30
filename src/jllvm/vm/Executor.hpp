@@ -31,7 +31,8 @@ public:
     Executor(Executor&&) = delete;
     Executor& operator=(Executor&&) = delete;
 
-    /// Registers a method within the executor, making it available in the dylib returned by 'getJITCCDylib'.
+    /// Registers a method within the executor, making it available in the dylib returned by 'getJITCCDylib'
+    /// and 'getInterpreterCCDylib'.
     /// This method assumes that 'canExecute' returned true for 'method'.
     virtual void add(const Method& method) = 0;
 
