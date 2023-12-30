@@ -66,8 +66,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
     GarbageCollector& gc = m_virtualMachine.getGC();
     ClassLoader& classLoader = m_virtualMachine.getClassLoader();
 
-    addImplementationSymbols(
-        std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return gc.allocate(size); }},
+    runtime.addImplementationSymbols(
+        m_javaJITImplDetails, std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return gc.allocate(size); }},
         std::pair{"jllvm_for_name_loaded",
                   [&](const char* name) { return classLoader.forNameLoaded(FieldType(name)); }},
         std::pair{"jllvm_instance_of", [](const Object* object, const ClassObject* classObject) -> std::int32_t

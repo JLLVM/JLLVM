@@ -31,7 +31,8 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getClassAndMethodObjectsDylib());
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
 
-    addImplementationSymbols(
+    m_virtualMachine.getRuntime().addImplementationSymbols(
+        m_jit2InterpreterSymbols,
         std::pair{"jllvm_interpreter",
                   [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
                       std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,

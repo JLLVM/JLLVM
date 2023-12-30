@@ -193,24 +193,6 @@ class Interpreter : public OSRTarget
     JIT2InterpreterLayer m_compiled2InterpreterLayer;
     InterpreterOSRLayer m_interpreterOSRLayer;
 
-    /// Add all symbol-implementation pairs to the implementation library.
-    /// The implementation library contains implementation of functions used by the materialization
-    /// (bytecode compiler, JNI bridge, etc.).
-    template <class Ss, class... Fs>
-    void addImplementationSymbols(std::pair<Ss, Fs>&&... args)
-    {
-        (addImplementationSymbol(std::move(args.first), std::move(args.second)), ...);
-    }
-
-    /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class F>
-    void addImplementationSymbol(std::string symbol, const F& f)
-    {
-        llvm::cantFail(m_jit2InterpreterSymbols.define(createLambdaMaterializationUnit(
-            std::move(symbol), m_compiled2InterpreterLayer.getBaseLayer(), f,
-            m_compiled2InterpreterLayer.getDataLayout(), m_compiled2InterpreterLayer.getInterner())));
-    }
-
     /// Returns the class object referred to by 'index' within 'classFile', loading it if necessary.
     ClassObject* getClassObject(const ClassFile& classFile, PoolIndex<ClassInfo> index);
 

@@ -72,6 +72,16 @@ class Runtime
 
     void prepare(ClassObject& classObject);
 
+    template <class F>
+    struct IsVarArg : std::false_type
+    {
+    };
+
+    template <class Ret, class... Args>
+    struct IsVarArg<Ret (*)(Args..., ...)> : std::true_type
+    {
+    };
+
 public:
     /// Creates a runtime instance from a virtual machine and a list of executors.
     /// The list of executors must be the full list of executors that are capable of executing some JVM methods.
@@ -190,5 +200,30 @@ public:
     /// Performs On-Stack-Replacement of 'frame' and all its callees, replacing it with the execution of the same
     /// method. The abstract machine state of the new execution is initialized with 'state'.
     [[noreturn]] void doOnStackReplacement(JavaFrame frame, OSRState&& state);
+
+    /// Add all symbol-implementation pairs to the given dylib.
+    template <class Ss, class... Fs>
+    void addImplementationSymbols(llvm::orc::JITDylib& dylib, std::pair<Ss, Fs>&&... args)
+    {
+        (addImplementationSymbol(dylib, std::move(args.first), std::move(args.second)), ...);
+    }
+
+    /// Add callable 'f' as implementation for symbol 'symbol' to the given library.
+    template <class F>
+    void addImplementationSymbol(llvm::orc::JITDylib& dylib, std::string symbol, const F& f)
+        requires(!IsVarArg<std::decay_t<F>>::value)
+    {
+        llvm::cantFail(dylib.define(
+            createLambdaMaterializationUnit(std::move(symbol), m_optimizeLayer, f, m_dataLayout, m_interner)));
+    }
+
+    /// Adds the C-variadic function 'f' as implementation for symbol 'symbol' to the given library.
+    template <class Ret, class... Args>
+    void addImplementationSymbol(llvm::orc::JITDylib& dylib, llvm::StringRef symbol, Ret (*f)(Args..., ...))
+    {
+        llvm::cantFail(dylib.define(llvm::orc::absoluteSymbols(
+            {{m_interner(symbol), llvm::JITEvaluatedSymbol::fromPointer(f, llvm::JITSymbolFlags::Exported
+                                                                               | llvm::JITSymbolFlags::Callable)}})));
+    }
 };
 } // namespace jllvm

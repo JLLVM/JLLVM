@@ -27,8 +27,8 @@ jllvm::JNIBridge::JNIBridge(VirtualMachine& virtualMachine, void* jniEnv)
                                virtualMachine.getRuntime().getDataLayout(), jniEnv)
 {
     GarbageCollector& gc = virtualMachine.getGC();
-    addImplementationSymbols(
-        std::pair{"jllvm_new_local_root", [&](Object* object) { return gc.root(object).release(); }},
+    virtualMachine.getRuntime().addImplementationSymbols(
+        m_jniSymbols, std::pair{"jllvm_new_local_root", [&](Object* object) { return gc.root(object).release(); }},
         std::pair{"jllvm_throw", [&](Throwable* exception) { virtualMachine.throwJavaException(exception); }},
         std::pair{"jllvm_throw_unsatisfied_link_error",
                   [&](Method* method)

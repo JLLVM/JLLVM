@@ -29,43 +29,6 @@ class JNIBridge : public Executor
 
     JNIImplementationLayer m_jniImplementationLayer;
 
-    /// Add all symbol-implementation pairs to the implementation library.
-    /// The implementation library contains implementation of functions used by the materialization
-    /// (bytecode compiler, JNI bridge, etc.).
-    template <class Ss, class... Fs>
-    void addImplementationSymbols(std::pair<Ss, Fs>&&... args)
-    {
-        (addImplementationSymbol(std::move(args.first), std::move(args.second)), ...);
-    }
-
-    template <class F>
-    struct IsVarArg : std::false_type
-    {
-    };
-
-    template <class Ret, class... Args>
-    struct IsVarArg<Ret (*)(Args..., ...)> : std::true_type
-    {
-    };
-
-    /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class F>
-    void addImplementationSymbol(std::string symbol, const F& f) requires(!IsVarArg<std::decay_t<F>>::value)
-    {
-        llvm::cantFail(m_jniSymbols.define(createLambdaMaterializationUnit(
-            std::move(symbol), m_jniImplementationLayer.getBaseLayer(), f, m_jniImplementationLayer.getDataLayout(),
-            m_jniImplementationLayer.getInterner())));
-    }
-
-    template <class Ret, class... Args>
-    void addImplementationSymbol(llvm::StringRef symbol, Ret (*f)(Args..., ...))
-    {
-        llvm::cantFail(m_jniSymbols.define(
-            llvm::orc::absoluteSymbols({{m_jniImplementationLayer.getInterner()(symbol),
-                                         llvm::JITEvaluatedSymbol::fromPointer(
-                                             f, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable)}})));
-    }
-
 public:
     explicit JNIBridge(VirtualMachine& virtualMachine, void* jniEnv);
 

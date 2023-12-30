@@ -59,32 +59,12 @@ class JIT : public OSRTarget
     ByteCodeCompileLayer m_byteCodeCompileLayer;
     ByteCodeOSRCompileLayer m_byteCodeOSRCompileLayer;
 
-    /// Add all symbol-implementation pairs to the implementation library.
-    /// The implementation library contains implementation of functions used by the materialization
-    /// (bytecode compiler, JNI bridge, etc.).
-    template <class Ss, class... Fs>
-    void addImplementationSymbols(std::pair<Ss, Fs>&&... args)
-    {
-        (addImplementationSymbol(std::move(args.first), std::move(args.second)), ...);
-    }
-
-    /// Add callable 'f' as implementation for symbol 'symbol' to the implementation library.
-    template <class F>
-    void addImplementationSymbol(std::string symbol, const F& f)
-    {
-        llvm::cantFail(m_javaJITImplDetails.define(createLambdaMaterializationUnit(
-            std::move(symbol), m_byteCodeCompileLayer.getBaseLayer(), f, m_byteCodeCompileLayer.getDataLayout(),
-            m_byteCodeCompileLayer.getInterner())));
-    }
-
     static std::unique_ptr<std::uint64_t[]> createOSRBuffer(llvm::ArrayRef<std::uint64_t> locals,
                                                             llvm::ArrayRef<std::uint64_t> operandStack);
 
 public:
     explicit JIT(VirtualMachine& virtualMachine);
 
-    /// Adds and registers a class in the JIT. This has to be done prior to being able to lookup and execute
-    /// any methods defined within the class file.
     void add(const Method& method) override;
 
     bool canExecute(const Method& method) const override
