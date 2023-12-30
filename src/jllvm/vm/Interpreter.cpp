@@ -500,8 +500,8 @@ struct MultiTypeImpls
     template <IsCmp T>
     NextPC operator()(T) const
     {
-        auto value2 = context.pop<typename InstructionElementType<T>::type>();
-        auto value1 = context.pop<typename InstructionElementType<T>::type>();
+        auto value2 = context.pop<typename InstructionElementType<T>::signed_type>();
+        auto value1 = context.pop<typename InstructionElementType<T>::signed_type>();
         if (value1 > value2)
         {
             context.push<std::int32_t>(1);
