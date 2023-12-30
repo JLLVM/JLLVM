@@ -127,7 +127,8 @@ public:
         Short = 9,   /// 'S'
         Int = 10,    /// 'I'
         Long = 11,   /// 'J'
-        Void         /// 'V'
+        Void,        /// 'V'
+        MaxValue = Void
     };
 
     /*implicit*/ constexpr BaseType(Values value) : FieldType(value) {}
