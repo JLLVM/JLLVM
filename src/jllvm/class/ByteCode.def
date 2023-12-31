@@ -237,13 +237,33 @@ GENERATE_SELECTOR(
         std::int8_t byte{};
     },
     parseIInc, 3, 0x84)
-GENERATE_SELECTOR(LookupSwitch, SwitchOp, {}, parseLookupSwitch, lookupSwitchSize(m_current, m_offset), 0xab)
+GENERATE_SELECTOR(
+    LookupSwitch, SwitchOp,
+    {
+        BigEndianArrayRef<std::uint64_t> rawPairs;
+
+        auto matchOffsetPairs() const
+        {
+            return llvm::map_range(
+                rawPairs,
+                [](std::uint64_t value) {
+                    return std::pair{static_cast<std::int32_t>(value >> 32), static_cast<std::int32_t>(value)};
+                });
+        }
+    },
+    parseLookupSwitch, lookupSwitchSize(m_current, m_offset), 0xab)
 GENERATE_SELECTOR(
     MultiANewArray, PoolIndexedOp, { std::uint8_t dimensions; }, parseMultiANewArray, 4, 0xc5)
 GENERATE_SELECTOR(NewArray, ArrayOp, {}, parseNewArray, 2, 0xbc)
 GENERATE_SELECTOR(
     SIPush, ByteCodeBase, { std::int16_t value{}; }, parseSIPush, 3, 0x11)
-GENERATE_SELECTOR(TableSwitch, SwitchOp, {}, parseTableSwitch, tableSwitchSize(m_current, m_offset), 0xaa)
+GENERATE_SELECTOR(
+    TableSwitch, SwitchOp,
+    {
+        std::int32_t low;
+        BigEndianArrayRef<std::int32_t> jumpTable;
+    },
+    parseTableSwitch, tableSwitchSize(m_current, m_offset), 0xaa)
 GENERATE_SELECTOR_END(
     Wide, ByteCodeBase,
     {

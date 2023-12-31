@@ -915,17 +915,17 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     [&](const auto*) { escapeToJIT(); });
                 return NextPC{};
             },
-            [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+            [&](const LookupSwitch& switchOp)
             {
                 auto index = context.pop<std::int32_t>();
                 auto result =
-                    llvm::lower_bound(switchOp.matchOffsetsPairs, index,
+                    llvm::lower_bound(switchOp.matchOffsetPairs(), index,
                                       [](const auto& pair, std::int32_t value) { return pair.first < value; });
-                if (result == switchOp.matchOffsetsPairs.end() || result->first != index)
+                if (result == switchOp.matchOffsetPairs().end() || (*result).first != index)
                 {
                     return SetPC{static_cast<std::uint16_t>(switchOp.offset + switchOp.defaultOffset)};
                 }
-                return SetPC{static_cast<std::uint16_t>(switchOp.offset + result->second)};
+                return SetPC{static_cast<std::uint16_t>(switchOp.offset + (*result).second)};
             },
             [&](OneOf<MonitorEnter, MonitorExit>)
             {
@@ -1056,6 +1056,16 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.pushRaw(value1);
                 context.pushRaw(value2);
                 return NextPC{};
+            },
+            [&](const TableSwitch& tableSwitch)
+            {
+                auto index = context.pop<std::int32_t>();
+                if (index < tableSwitch.low || (index - tableSwitch.low) >= tableSwitch.jumpTable.size())
+                {
+                    return SetPC{static_cast<std::uint16_t>(tableSwitch.offset + tableSwitch.defaultOffset)};
+                }
+                return SetPC{
+                    static_cast<std::uint16_t>(tableSwitch.offset + tableSwitch.jumpTable[index - tableSwitch.low])};
             },
             [&](Wide wide)
             {

@@ -1097,15 +1097,15 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
                 { m_operandStack.push_back(loadClassObjectFromPool(getOffset(operation), ldc.index)); },
                 [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
         },
-        [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+        [&](const LookupSwitch& switchOp)
         {
             llvm::Value* key = m_operandStack.pop_back();
 
             llvm::BasicBlock* defaultBlock = getBasicBlock(switchOp.offset + switchOp.defaultOffset);
 
-            auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.matchOffsetsPairs.size());
+            auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, switchOp.rawPairs.size());
 
-            for (auto [match, target] : switchOp.matchOffsetsPairs)
+            for (auto [match, target] : switchOp.matchOffsetPairs())
             {
                 llvm::BasicBlock* targetBlock = getBasicBlock(switchOp.offset + target);
 
@@ -1352,6 +1352,22 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
 
             m_operandStack.push_back(value1);
             m_operandStack.push_back(value2);
+        },
+        [&](const TableSwitch& tableSwitch)
+        {
+            llvm::Value* key = m_operandStack.pop_back();
+
+            llvm::BasicBlock* defaultBlock = getBasicBlock(tableSwitch.offset + tableSwitch.defaultOffset);
+
+            auto* switchInst = m_builder.CreateSwitch(key, defaultBlock, tableSwitch.jumpTable.size());
+            std::int32_t value = tableSwitch.low;
+            for (std::int32_t target : tableSwitch.jumpTable)
+            {
+                llvm::BasicBlock* targetBlock = getBasicBlock(tableSwitch.offset + target);
+
+                switchInst->addCase(m_builder.getInt32(value++), targetBlock);
+            }
+            fallsThrough = false;
         },
         [&](Wide wide)
         {

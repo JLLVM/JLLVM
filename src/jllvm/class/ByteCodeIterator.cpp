@@ -126,14 +126,7 @@ ByteCodeOp parseLookupSwitch(const char* bytes, std::size_t offset)
     auto pairCount = consume<std::int32_t>(bytes);
     assert(pairCount >= 0);
 
-    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs(pairCount);
-
-    std::generate(matchOffsetsPairs.begin(), matchOffsetsPairs.end(),
-                  [&] {
-                      return std::pair{consume<std::int32_t>(bytes), consume<std::int32_t>(bytes)};
-                  });
-
-    return LookupSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
+    return LookupSwitch{offset, defaultOffset, BigEndianArrayRef<std::uint64_t>(bytes, pairCount)};
 }
 
 template <std::same_as<TableSwitch>>
@@ -144,17 +137,8 @@ ByteCodeOp parseTableSwitch(const char* bytes, std::size_t offset)
     auto defaultOffset = consume<std::int32_t>(bytes);
     auto lowByte = consume<std::int32_t>(bytes);
     auto highByte = consume<std::int32_t>(bytes);
-
     assert(lowByte <= highByte);
-
-    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs(highByte - lowByte + 1);
-
-    std::generate(matchOffsetsPairs.begin(), matchOffsetsPairs.end(),
-                  [&] {
-                      return std::pair{lowByte++, consume<std::int32_t>(bytes)};
-                  });
-
-    return TableSwitch{offset, std::move(matchOffsetsPairs), defaultOffset};
+    return TableSwitch{offset, defaultOffset, lowByte, BigEndianArrayRef<std::int32_t>(bytes, highByte - lowByte + 1)};
 }
 
 template <std::same_as<Wide>>
