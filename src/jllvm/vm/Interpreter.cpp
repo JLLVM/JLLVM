@@ -27,11 +27,13 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
                                   virtualMachine.getRuntime().getLLVMIRLayer(),
                                   virtualMachine.getRuntime().getDataLayout())
 {
+    m_interpreterCCSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
+    m_jit2InterpreterSymbols.addToLinkOrder(m_interpreterCCSymbols);
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getClassAndMethodObjectsDylib());
     m_jit2InterpreterSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
 
     m_virtualMachine.getRuntime().addImplementationSymbols(
-        m_jit2InterpreterSymbols,
+        m_interpreterCCSymbols,
         std::pair{"jllvm_interpreter",
                   [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
                       std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,
@@ -76,9 +78,6 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
             }},
         std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }});
 
-    // Reuse the linking order of the JIT CC interpreter entries for now.
-    m_jit2InterpreterSymbols.withLinkOrderDo([&](const llvm::orc::JITDylibSearchOrder& linkOrder)
-                                             { m_interpreterCCSymbols.setLinkOrder(linkOrder); });
     generateInterpreterEntry();
     m_interpreterInterpreterCCOSREntry = generateOSREntry("V", CallingConvention::Interpreter);
     m_interpreterJITCCOSREntryReferenceReturn = generateOSREntry("Ljava/lang/Object;", CallingConvention::JIT);
