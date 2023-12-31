@@ -16,6 +16,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/iterator.h>
 
+#include <jllvm/support/BigEndianArrayRef.hpp>
 #include <jllvm/support/Variant.hpp>
 
 #include <cstdint>
@@ -66,7 +67,6 @@ struct ArrayOp : ByteCodeBase
 
 struct SwitchOp : ByteCodeBase
 {
-    std::vector<std::pair<std::int32_t, std::int32_t>> matchOffsetsPairs;
     std::int32_t defaultOffset;
 };
 

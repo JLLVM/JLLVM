@@ -412,13 +412,13 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
                     [&](const StringInfo*) { m_typeStack.emplace_back(m_addressType); },
                     [](const auto*) { llvm::report_fatal_error("Not yet implemented"); });
             },
-            [&](const OneOf<LookupSwitch, TableSwitch>& switchOp)
+            [&](const LookupSwitch& switchOp)
             {
                 m_typeStack.pop_back();
 
                 pushNext(switchOp.offset + switchOp.defaultOffset, m_typeStack);
 
-                for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetsPairs))
+                for (std::int32_t target : llvm::make_second_range(switchOp.matchOffsetPairs()))
                 {
                     pushNext(switchOp.offset + target, m_typeStack);
                 }
@@ -449,6 +449,16 @@ void ByteCodeTypeChecker::checkBasicBlock(llvm::ArrayRef<char> block, std::uint1
             },
             [&](Ret ret) { checkRet(ret); },
             [&](Swap) { std::swap(m_typeStack.back(), *std::next(m_typeStack.rbegin())); },
+            [&](const TableSwitch& tableSwitch)
+            {
+                m_typeStack.pop_back();
+                pushNext(tableSwitch.offset + tableSwitch.defaultOffset, m_typeStack);
+                for (std::int32_t target : tableSwitch.jumpTable)
+                {
+                    pushNext(tableSwitch.offset + target, m_typeStack);
+                }
+                done = true;
+            },
             [&](Wide wide)
             {
                 llvm::Type* type;
