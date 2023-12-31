@@ -16,6 +16,9 @@ class Test
         long z = 5l;
 
         //CHECK: 1
+        print(min < max);
+
+        //CHECK: 1
         print(x & max);
         //CHECK: 0
         print(x & min);
@@ -44,8 +47,6 @@ class Test
 
         // CHECK: 1
         print(max == Long.MAX_VALUE);
-        //CHECK: 1
-        print(min < max);
         //CHECK: 0
         print(y > z);
     }
