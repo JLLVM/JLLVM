@@ -22,7 +22,7 @@
 
 jllvm::Interpreter2JITLayer::Interpreter2JITLayer(llvm::orc::IRLayer& baseLayer, llvm::orc::MangleAndInterner& interner,
                                                   const llvm::DataLayout& dataLayout)
-    : m_interner{interner},
+    : ByteCodeLayer(interner),
       m_baseLayer{baseLayer},
       m_dataLayout{dataLayout},
       m_i2jAdaptors{baseLayer.getExecutionSession().createBareJITDylib("<i2jAdaptors>")}
@@ -30,65 +30,13 @@ jllvm::Interpreter2JITLayer::Interpreter2JITLayer(llvm::orc::IRLayer& baseLayer,
     m_i2jAdaptors.addGenerator(std::make_unique<Interpreter2JITAdaptorDefinitionsGenerator>(baseLayer, dataLayout));
 }
 
-namespace
-{
-using namespace jllvm;
-
-class Interpreter2JITMaterializationUnit : public llvm::orc::MaterializationUnit
-{
-    Interpreter2JITLayer& m_layer;
-    const Method& m_method;
-    llvm::orc::JITDylib& m_jitCCDylib;
-
-public:
-    Interpreter2JITMaterializationUnit(Interpreter2JITLayer& layer, const Method& method,
-                                       llvm::orc::JITDylib& jitCcDylib)
-        : llvm::orc::MaterializationUnit(
-              [&]
-              {
-                  llvm::orc::SymbolFlagsMap result;
-                  auto name = mangleDirectMethodCall(&method);
-                  result[layer.getInterner()(name)] = llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable;
-                  return llvm::orc::MaterializationUnit::Interface(std::move(result), nullptr);
-              }()),
-          m_layer(layer),
-          m_method(method),
-          m_jitCCDylib(jitCcDylib)
-    {
-    }
-
-    llvm::StringRef getName() const override
-    {
-        return "Interpreter2JITMaterializationUnit";
-    }
-
-    void materialize(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr) override
-    {
-        m_layer.emit(std::move(mr), m_method, m_jitCCDylib);
-    }
-
-private:
-    void discard(const llvm::orc::JITDylib&, const llvm::orc::SymbolStringPtr&) override
-    {
-        llvm_unreachable("Should not be possible");
-    }
-};
-
-} // namespace
-
-llvm::Error jllvm::Interpreter2JITLayer::add(llvm::orc::JITDylib& dylib, const Method& method,
-                                             llvm::orc::JITDylib& jitCCDylib)
-{
-    return dylib.define(std::make_unique<Interpreter2JITMaterializationUnit>(*this, method, jitCCDylib));
-}
-
 void jllvm::Interpreter2JITLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
-                                       const Method& method, llvm::orc::JITDylib& jitCCDylib)
+                                       const Method* method)
 {
     // Perform mangling from the method type to the adaptor names.
-    MethodType methodType = method.getType();
+    MethodType methodType = method->getType();
     std::string mangling = "(";
-    if (!method.isStatic())
+    if (!method->isStatic())
     {
         mangling += "L";
     }
@@ -105,21 +53,7 @@ void jllvm::Interpreter2JITLayer::emit(std::unique_ptr<llvm::orc::Materializatio
     mangling += ")";
     addToMangling(methodType.returnType());
 
-    // Fetch both the adaptor and the callee in the JIT calling convention.
-    llvm::orc::ExecutionSession& session = mr->getExecutionSession();
-    llvm::JITTargetAddress adaptor =
-        llvm::cantFail(session.lookup({&m_i2jAdaptors}, m_interner(mangling))).getAddress();
-    std::string symbol = mangleDirectMethodCall(&method);
-    llvm::JITTargetAddress jitCCSymbol = llvm::cantFail(session.lookup({&jitCCDylib}, m_interner(symbol))).getAddress();
-
-    // Implement the interpreter calling convention symbol by creating a lambda that just forwards the arguments and
-    // JIT CC symbol to the adaptor.
-    llvm::cantFail(mr->replace(createLambdaMaterializationUnit(
-        symbol, m_baseLayer,
-        [=](const Method*, const std::uint64_t* arguments) -> std::uint64_t
-        {
-            return reinterpret_cast<std::uint64_t (*)(void*, const std::uint64_t*)>(adaptor)(
-                reinterpret_cast<void*>(jitCCSymbol), arguments);
-        },
-        m_dataLayout, m_interner)));
+    auto [methodName, flags] = *mr->getSymbols().begin();
+    llvm::cantFail(mr->replace(llvm::orc::reexports(
+        m_i2jAdaptors, {{methodName, llvm::orc::SymbolAliasMapEntry(getInterner()(mangling), flags)}})));
 }

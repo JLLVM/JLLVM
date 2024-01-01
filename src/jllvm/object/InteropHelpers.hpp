@@ -1,4 +1,4 @@
-// Copyright (C) 2023 The JLLVM Contributors.
+// Copyright (C) 2024 The JLLVM Contributors.
 //
 // This file is part of JLLVM.
 //
@@ -13,32 +13,28 @@
 
 #pragma once
 
-#include <llvm/ExecutionEngine/JITSymbol.h>
-
-#include <jllvm/gc/RootFreeList.hpp>
-#include <jllvm/object/ClassObject.hpp>
-
 #include <concepts>
 #include <type_traits>
 
 namespace jllvm
 {
 
-namespace detail
-{
+class ObjectInterface;
+
+/// Concept for any type that is compatible with Java objects in their object representation.
+/// This should be used in places when doing interop that require the storage/value to be identical to the corresponding
+/// Java type.
+template <class T>
+concept JavaCompatible =
+    std::is_arithmetic_v<T> || std::is_void_v<T> || std::is_base_of_v<ObjectInterface, std::remove_pointer_t<T>>;
+
 // JavaCompatible types convert to themselves.
 template <JavaCompatible T>
 T javaConvertedType(T);
 
-// GCRootRefs convert to their contained object.
-template <class T>
-T* javaConvertedType(GCRootRef<T>);
-
-} // namespace detail
-
 /// Type alias returning the 'JavaCompatible' type a 'JavaConvertible' type implicitly converts to.
 template <class T>
-using JavaConvertedType = decltype(detail::javaConvertedType(std::declval<T>()));
+using JavaConvertedType = decltype(javaConvertedType(std::declval<T>()));
 
 /// Concept for any type that is known to implicitly convert to a 'JavaCompatible' type.
 template <class T>

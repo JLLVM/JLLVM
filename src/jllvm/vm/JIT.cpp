@@ -97,8 +97,7 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
 void jllvm::JIT::add(const Method& method)
 {
     llvm::cantFail(m_byteCodeCompileLayer.add(m_javaJITSymbols, &method));
-    llvm::cantFail(
-        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JITSymbols, method, getJITCCDylib()));
+    llvm::cantFail(m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JITSymbols, &method));
 }
 
 void* jllvm::JIT::getOSREntry(const jllvm::Method& method, std::uint16_t byteCodeOffset,

@@ -28,9 +28,6 @@ namespace jllvm
 /// The name is designed to be derivable from a method type descriptor with the exception that 1) the 'this' parameter
 /// is part of the type and has to be explicitly added by adding an 'L' character and 2) all reference parameters
 /// including arrays are reduced to just 'L'.
-///
-/// All adaptors are callable as 'std::uint64_t(void*, const std::uint64_t*)' where the first parameter is a function
-/// pointer for the original method type and the second the argument array in interpreter calling convention.
 class Interpreter2JITAdaptorDefinitionsGenerator : public llvm::orc::DefinitionGenerator
 {
     llvm::orc::IRLayer& m_baseLayer;

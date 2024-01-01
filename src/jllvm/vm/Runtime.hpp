@@ -197,27 +197,6 @@ public:
         return reinterpret_cast<Fn*>(lookupJITCC(className, methodName, descriptor));
     }
 
-    /// Interpreter calling convention. The first parameter is the method that should be interpreted while the second
-    /// parameter is the array of arguments where all values are bitcast to 'std::uint64_t'. Values of type 'long' or
-    /// 'double' occupy two slots on the argument array with the actual value contained in the first of the two slots.
-    using InterpreterCC = std::uint64_t(const Method*, const std::uint64_t*);
-
-    /// Returns a function pointer for calling 'method' using the interpreter calling convention.
-    /// For convenience, the first parameter is already bound to 'method'.
-    /// Returns null if the method is not callable.
-    llvm::unique_function<std::uint64_t(const std::uint64_t*)> lookupInterpreterCC(const Method& method)
-    {
-        llvm::Expected<llvm::JITEvaluatedSymbol> symbol =
-            m_session->lookup({&m_interpreterCCStubs}, m_interner(mangleDirectMethodCall(&method)));
-        if (!symbol)
-        {
-            llvm::consumeError(symbol.takeError());
-            return nullptr;
-        }
-        return [&method, address = symbol->getAddress()](const std::uint64_t* arguments)
-        { return reinterpret_cast<InterpreterCC*>(address)(&method, arguments); };
-    }
-
     /// Returns the metadata associated with any Java method.
     /// Returns a null pointer if the function pointer is not a Java method.
     const JavaMethodMetadata* getJavaMethodMetadata(std::uintptr_t functionPointer) const
