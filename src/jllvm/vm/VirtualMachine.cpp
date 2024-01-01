@@ -135,9 +135,9 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 
     ClassObject& classObject = m_classLoader.add(std::move(*buffer));
     initialize(classObject);
-    auto* lookup =
-        m_runtime.lookupJITCC<void(Array<String*>*)>(classObject.getClassName(), "main", "([Ljava/lang/String;)V");
-    if (!lookup)
+
+    const Method* method = classObject.getMethod("main", "([Ljava/lang/String;)V");
+    if (!method || method->isAbstract())
     {
         llvm::report_fatal_error("Failed to find main method in " + classObject.getClassName());
     }
@@ -148,7 +148,7 @@ int jllvm::VirtualMachine::executeMain(llvm::StringRef path, llvm::ArrayRef<llvm
 
     try
     {
-        lookup(javaArgs);
+        method->call(javaArgs);
         return 0;
     }
     catch (const Throwable& activeException)
@@ -197,7 +197,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         initialize(*base);
     }
 
-    auto* classInitializer = m_runtime.lookupJITCC<void()>(classObject.getClassName(), "<clinit>", "()V");
+    auto* classInitializer = classObject.getMethod("<clinit>", "()V");
     if (!classInitializer)
     {
         return;
@@ -207,7 +207,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         llvm::dbgs() << "Executing class initializer "
                      << mangleDirectMethodCall(classObject.getClassName(), "<clinit>", "()V") << '\n';
     });
-    classInitializer();
+    classInitializer->call();
     classObject.setInitializationStatus(InitializationStatus::Initialized);
 }
 
