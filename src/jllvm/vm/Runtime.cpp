@@ -13,6 +13,7 @@
 
 #include "Runtime.hpp"
 
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/GlobalsModRef.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
@@ -261,6 +262,59 @@ jllvm::Runtime::~Runtime()
 
 void jllvm::Runtime::prepare(ClassObject& classObject)
 {
+    // Lookup the JIT CC and interpreter CC implementations once ahead of time and save them in the method object.
+    // This is not only more convenient (allowing the method object to be called standalone), but is likely also faster
+    // on average as we do not have to do any repeated lookups and can batch the lookups here.
+    llvm::DenseMap<llvm::orc::SymbolStringPtr, Method*> methodMapping(classObject.getMethods().keys().size());
+    for (const Method& method : classObject.getMethods())
+    {
+        if (method.isAbstract())
+        {
+            // Abstract methods are not callable.
+            continue;
+        }
+        methodMapping.insert({m_interner(mangleDirectMethodCall(&method)), const_cast<Method*>(&method)});
+    }
+
+    // We perform the lookup asynchronously (purely because we can). Use two promises to ensure that both lookups are
+    // done prior to exiting the method.
+    std::promise<void> jitLookupDone;
+    std::promise<void> interpreterLookupDone;
+    auto waitPreparedOnExit = llvm::make_scope_exit(
+        [jitFuture = jitLookupDone.get_future(), interpreterFuture = interpreterLookupDone.get_future()]
+        {
+            jitFuture.wait();
+            interpreterFuture.wait();
+        });
+
+    // Schedule the lookup of the method implementations within 'dylib', using 'promise' to signal completion.
+    // 'setImplementation' is called for every method with the corresponding lookup result.
+    auto scheduleLookup = [&](llvm::orc::JITDylib& dylib, std::promise<void>& promise, auto setImplementation)
+    {
+        m_session->lookup(
+            llvm::orc::LookupKind::Static, llvm::orc::makeJITDylibSearchOrder({&dylib}),
+            llvm::orc::SymbolLookupSet::fromMapKeys(methodMapping), llvm::orc::SymbolState::Ready,
+            [&](llvm::Expected<llvm::orc::SymbolMap> symbolMap)
+            {
+                if (!symbolMap)
+                {
+                    llvm::report_fatal_error(symbolMap.takeError());
+                }
+
+                for (auto [symbol, result] : *symbolMap)
+                {
+                    setImplementation(methodMapping.lookup(symbol), result.getAddress());
+                }
+                promise.set_value();
+            },
+            llvm::orc::NoDependenciesToRegister);
+    };
+
+    scheduleLookup(m_jitCCStubs, jitLookupDone, [](Method* method, llvm::JITTargetAddress targetAddress)
+                   { method->setJITCCImplementation(reinterpret_cast<void*>(targetAddress)); });
+    scheduleLookup(m_interpreterCCStubs, interpreterLookupDone, [](Method* method, llvm::JITTargetAddress targetAddress)
+                   { method->setInterpreterCCImplementation(reinterpret_cast<InterpreterCC*>(targetAddress)); });
+
     // Interfaces and abstract classes have neither VTables nor ITables to initialize.
     if (classObject.isInterface() || classObject.isAbstract())
     {

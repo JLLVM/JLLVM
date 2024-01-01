@@ -50,6 +50,5 @@ jllvm::JNIBridge::JNIBridge(VirtualMachine& virtualMachine, void* jniEnv)
 void jllvm::JNIBridge::add(const Method& method)
 {
     llvm::cantFail(m_jniImplementationLayer.add(m_jniSymbols, &method));
-    llvm::cantFail(
-        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JNISymbols, method, getJITCCDylib()));
+    llvm::cantFail(m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JNISymbols, &method));
 }

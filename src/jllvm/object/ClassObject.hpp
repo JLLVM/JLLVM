@@ -32,6 +32,7 @@
 
 #include <functional>
 
+#include "InteropHelpers.hpp"
 #include "Object.hpp"
 
 namespace jllvm
@@ -45,12 +46,21 @@ enum class Visibility : std::uint8_t
     Protected = 0b11
 };
 
+class Method;
+
+/// Interpreter calling convention. The first parameter is the method that should be executed while the second
+/// parameter is the array of arguments where all values are bitcast to 'std::uint64_t'. Values of type 'long' or
+/// 'double' occupy two slots on the argument array with the actual value contained in the first of the two slots.
+using InterpreterCC = std::uint64_t(const Method*, const std::uint64_t*);
+
 /// Object for representing a classes method.
 class Method
 {
     llvm::StringRef m_name;
     MethodType m_type;
     const ClassObject* m_classObject{};
+    InterpreterCC* m_interpreterCCImplementation{};
+    void* m_jitCCImplementation{};
     std::uint32_t m_tableSlot;
     std::uint8_t m_hasTableSlot : 1;
     std::uint8_t m_isStatic : 1;
@@ -149,6 +159,43 @@ public:
         m_classObject = classObject;
     }
 
+    /// Sets the pointer to the implementation of this method callable using the interpreter calling convention.
+    void setInterpreterCCImplementation(InterpreterCC* interpreterCCImplementation)
+    {
+        assert(interpreterCCImplementation);
+        m_interpreterCCImplementation = interpreterCCImplementation;
+    }
+
+    /// Sets the pointer to the implementation of this method callable using the JIT calling convention.
+    void setJITCCImplementation(void* jitCCImplementation)
+    {
+        assert(jitCCImplementation);
+        m_jitCCImplementation = jitCCImplementation;
+    }
+
+    /// Calls this method using the interpreter calling convention. If the method is abstract, the behaviour is
+    /// undefined.
+    std::uint64_t callInterpreterCC(const std::uint64_t* arguments) const
+    {
+        assert(m_interpreterCCImplementation);
+        return m_interpreterCCImplementation(this, arguments);
+    }
+
+    /// Calls this method using the JIT calling convention. If the method is abstract, the behaviour is
+    /// undefined.
+    template <JavaCompatible Ret = void, JavaConvertible... Args>
+    Ret call(Args... args) const
+    {
+        assert(m_jitCCImplementation);
+        return invokeJava<Ret>(m_jitCCImplementation, args...);
+    }
+
+    /// Returns the byte offset to the function pointer to the JIT CC implementation.
+    consteval static std::size_t getJITCCImplementationOffset()
+    {
+        return offsetof(Method, m_jitCCImplementation);
+    }
+
     bool operator==(const Method& method) const
     {
         return m_name == method.m_name && m_type == method.m_type;
@@ -159,6 +206,8 @@ public:
         return m_name == nameAndDesc.first && m_type == nameAndDesc.second;
     }
 };
+
+static_assert(std::is_standard_layout_v<Method>);
 
 inline llvm::hash_code hash_value(const Method& method)
 {
