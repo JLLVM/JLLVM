@@ -25,8 +25,8 @@ void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
     using namespace security;
     using namespace io;
 
-    addModels<ObjectModel, ClassModel, ThrowableModel, FloatModel, DoubleModel, SystemModel, ReflectionModel, CDSModel,
-              UnsafeModel, VMModel, ReferenceModel, SystemPropsRawModel, RuntimeModel, FileDescriptorModel,
-              ScopedMemoryAccessModel, SignalModel, ThreadModel, AccessControllerModel, FileOutputStreamModel,
-              StringUTF16Model>(virtualMachine);
+    addModels<ObjectModel, ClassModel, ClassLoaderModel, ThrowableModel, FloatModel, DoubleModel, SystemModel,
+              ReflectionModel, CDSModel, UnsafeModel, VMModel, ReferenceModel, SystemPropsRawModel, RuntimeModel,
+              FileDescriptorModel, ScopedMemoryAccessModel, SignalModel, ThreadModel, AccessControllerModel,
+              FileOutputStreamModel, StringUTF16Model>(virtualMachine);
 }
