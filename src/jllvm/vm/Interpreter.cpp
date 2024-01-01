@@ -695,6 +695,11 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
         ByteCodeOp operation = *curr;
         InstructionResult result = match(
             operation, MultiTypeImpls{m_virtualMachine, context},
+            [&](AConstNull)
+            {
+                context.push<ObjectInterface*>(nullptr);
+                return NextPC{};
+            },
             [&](ANewArray aNewArray)
             {
                 auto count = context.pop<std::int32_t>();
@@ -709,6 +714,16 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push(array);
                 return NextPC{};
             },
+            [&](ArrayLength)
+            {
+                auto* array = context.pop<AbstractArray*>();
+                if (!array)
+                {
+                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                }
+                context.push<std::uint32_t>(array->size());
+                return NextPC{};
+            },
             [&](AThrow) -> InstructionResult
             {
                 auto* exception = context.pop<ObjectInterface*>();
@@ -719,21 +734,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 // Verifier checks that the exception is an instance of 'Throwable' rather than performing it at
                 // runtime.
                 m_virtualMachine.throwJavaException(static_cast<Throwable*>(exception));
-            },
-            [&](ArrayLength)
-            {
-                auto* array = context.pop<AbstractArray*>();
-                if (!array)
-                {
-                    m_virtualMachine.throwNullPointerException();
-                }
-                context.push<std::uint32_t>(array->size());
-                return NextPC{};
-            },
-            [&](AConstNull)
-            {
-                context.push<ObjectInterface*>(nullptr);
-                return NextPC{};
             },
             [&](BIPush biPush)
             {
@@ -870,6 +870,25 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::int32_t>(-1);
                 return NextPC{};
             },
+            [&](IInc iInc)
+            {
+                context.setLocal(iInc.index,
+                                 static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
+                return NextPC{};
+            },
+            [&](InstanceOf instanceOf)
+            {
+                auto* object = context.pop<ObjectInterface*>();
+                if (!object)
+                {
+                    context.push<std::int32_t>(0);
+                    return NextPC{};
+                }
+
+                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
+                context.push<std::int32_t>(object->instanceOf(classObject));
+                return NextPC{};
+            },
             [&](OneOf<InvokeStatic, InvokeSpecial, InvokeInterface, InvokeVirtual> invoke)
             {
                 const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
@@ -954,12 +973,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 return NextPC{};
             },
-            [&](IInc iInc)
-            {
-                context.setLocal(iInc.index,
-                                 static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
-                return NextPC{};
-            },
             [&](IReturn)
             {
                 auto value = context.pop<std::uint32_t>();
@@ -978,18 +991,13 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return ReturnValue(value);
             },
-            [&](InstanceOf instanceOf)
+            [&](OneOf<JSR, JSRw> jsr)
             {
-                auto* object = context.pop<ObjectInterface*>();
-                if (!object)
-                {
-                    context.push<std::int32_t>(0);
-                    return NextPC{};
-                }
-
-                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
-                context.push<std::int32_t>(object->instanceOf(classObject));
-                return NextPC{};
+                std::uint16_t retAddress =
+                    jsr.offset + sizeof(OpCodes)
+                    + (holds_alternative<JSRw>(*curr) ? sizeof(std::int32_t) : sizeof(std::int16_t));
+                context.push(reinterpret_cast<ObjectInterface*>(static_cast<std::uintptr_t>(retAddress)));
+                return SetPC{static_cast<std::uint16_t>(jsr.offset + jsr.target)};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
@@ -1135,6 +1143,12 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 std::memcpy(field->getAddressOfStatic(), &value, descriptor.sizeOf());
                 return NextPC{};
             },
+            [&](Ret ret)
+            {
+                std::uint16_t retAddress =
+                    reinterpret_cast<std::uintptr_t>(context.getLocal<ObjectInterface*>(ret.index));
+                return SetPC{retAddress};
+            },
             [&](Return)
             {
                 // "Noop" return value for void methods.
@@ -1163,7 +1177,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 return SetPC{
                     static_cast<std::uint16_t>(tableSwitch.offset + tableSwitch.jumpTable[index - tableSwitch.low])};
             },
-            [&](Wide wide)
+            [&](Wide wide) -> InstructionResult
             {
 #define WIDE_LOAD_CASE(op)                                                            \
     case OpCodes::op:                                                                 \
@@ -1192,8 +1206,9 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     WIDE_STORE_CASE(LStore)
                     case OpCodes::Ret:
                     {
-                        // TODO: implement later
-                        escapeToJIT();
+                        std::uint16_t retAddress =
+                            reinterpret_cast<std::uintptr_t>(context.getLocal<ObjectInterface*>(wide.index));
+                        return SetPC{retAddress};
                     }
                     case OpCodes::IInc:
                     {
