@@ -31,6 +31,7 @@ protected:
     std::size_t m_size;
 
     constexpr static std::size_t numBits = std::numeric_limits<IntegerType>::digits;
+    constexpr static IntegerType one = static_cast<IntegerType>(1);
 
 public:
 
@@ -49,7 +50,7 @@ public:
 
         bool operator*() const
         {
-            return this->getBase()[this->getIndex() / numBits] & (1 << (this->getIndex() % numBits));
+            return this->getBase()[this->getIndex() / numBits] & (one << (this->getIndex() % numBits));
         }
     };
 
@@ -113,18 +114,18 @@ class MutableBitArrayRef : public BitArrayRef<IntegerType>
 
         operator bool() const
         {
-            return m_bits[m_index / Base::numBits] & (1 << (m_index % Base::numBits));
+            return m_bits[m_index / Base::numBits] & (Base::one << (m_index % Base::numBits));
         }
 
         const Proxy& operator=(bool value) const
         {
             if (value)
             {
-                m_bits[m_index / Base::numBits] |= 1 << m_index % Base::numBits;
+                m_bits[m_index / Base::numBits] |= Base::one << m_index % Base::numBits;
             }
             else
             {
-                m_bits[m_index / Base::numBits] &= ~(1 << m_index % Base::numBits);
+                m_bits[m_index / Base::numBits] &= ~(Base::one << m_index % Base::numBits);
             }
             return *this;
         }
@@ -163,6 +164,11 @@ public:
     {
         assert(index < this->m_size);
         return *std::next(begin(), index);
+    }
+
+    Proxy back() const
+    {
+        return (*this)[this->m_size - 1];
     }
 };
 
