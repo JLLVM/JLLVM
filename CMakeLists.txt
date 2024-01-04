@@ -33,6 +33,23 @@ set(LLVM_TABLEGEN_EXE "llvm-tblgen")
 
 find_package(Java 17 COMPONENTS Development REQUIRED)
 
+set(JAVA_INCLUDE_PATH "${JAVA_HOME}/../include")
+find_path(JNI_INCLUDE_PATH1 jni.h REQUIRED PATHS ${JAVA_INCLUDE_PATH})
+find_path(JNI_INCLUDE_PATH2 NAMES jni_md.h jniport.h REQUIRED
+        PATHS ${JAVA_INCLUDE_PATH}
+        ${JAVA_INCLUDE_PATH}/darwin
+        ${JAVA_INCLUDE_PATH}/win32
+        ${JAVA_INCLUDE_PATH}/linux
+        ${JAVA_INCLUDE_PATH}/freebsd
+        ${JAVA_INCLUDE_PATH}/openbsd
+        ${JAVA_INCLUDE_PATH}/solaris
+        ${JAVA_INCLUDE_PATH}/hp-ux
+        ${JAVA_INCLUDE_PATH}/alpha
+        ${JAVA_INCLUDE_PATH}/aix
+)
+add_library(jni_headers INTERFACE)
+target_include_directories(jni_headers INTERFACE ${JNI_INCLUDE_PATH1} ${JNI_INCLUDE_PATH2})
+
 get_filename_component(REAL_JAVAC ${Java_JAVAC_EXECUTABLE} REALPATH)
 cmake_path(GET REAL_JAVAC PARENT_PATH JAVA_HOME)
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/lib)

@@ -310,7 +310,7 @@ void addModel(VirtualMachine& virtualMachine)
             {
                 constexpr auto fn = std::get<idxs>(methods);
                 constexpr std::string_view methodName = detail::functionName<fn>();
-                virtualMachine.getJNI().addJNISymbol(formJNIMethodName(Model::className, methodName),
+                virtualMachine.getJNIBridge().addJNISymbol(formJNIMethodName(Model::className, methodName),
                     detail::createMethodBridge<Model>(state,
                                                       std::integral_constant<std::remove_const_t<decltype(fn)>, fn>{}));
             }(),

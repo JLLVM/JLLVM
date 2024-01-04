@@ -31,6 +31,8 @@
 #include "JavaFrame.hpp"
 #include "Runtime.hpp"
 
+struct JNINativeInterface_;
+
 namespace jllvm
 {
 
@@ -48,17 +50,18 @@ enum class ExecutionMode
 /// Options used to boot the VM.
 struct BootOptions
 {
-    llvm::StringRef javaHome;
+    std::string javaHome;
     std::vector<std::string> classPath;
     bool systemInitialization = true;
     ExecutionMode executionMode = ExecutionMode::Mixed;
+    std::string debugLogging;
 };
 
 struct ModelState;
 
 class VirtualMachine
 {
-    using JNINativeInterfaceUPtr = std::unique_ptr<void, void (*)(void*)>;
+    using JNINativeInterfaceUPtr = std::unique_ptr<JNINativeInterface_, void (*)(JNINativeInterface_*)>;
 
     JNINativeInterfaceUPtr createJNIEnvironment();
 
@@ -97,8 +100,12 @@ class VirtualMachine
         return *defaultExecutor;
     }
 
-public:
     explicit VirtualMachine(BootOptions&& options);
+
+public:
+
+    /// Creates and boots a new instance of a 'VirtualMachine'.
+    static VirtualMachine create(BootOptions&& options);
 
     VirtualMachine(const VirtualMachine&) = delete;
 
@@ -124,10 +131,16 @@ public:
         return m_runtime;
     }
 
-    /// Returns the JNI instance of this VM.
-    JNIBridge& getJNI()
+    /// Returns the JNI Bridge of this VM.
+    JNIBridge& getJNIBridge()
     {
         return m_jni;
+    }
+
+    /// Returns the JNI Native Interface table of this VM.
+    JNINativeInterface_* getJNINativeInterface() const
+    {
+        return m_jniEnv.get();
     }
 
     /// Returns the jit instance of the virtual machine.

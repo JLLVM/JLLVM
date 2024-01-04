@@ -25,6 +25,13 @@ jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEn
     auto* result = new JNINativeInterface_{};
     result->reserved0 = reinterpret_cast<void*>(this);
 
-    return JNINativeInterfaceUPtr(
-        result, +[](void* ptr) { delete reinterpret_cast<JNINativeInterface_*>(ptr); });
+    result->GetVersion = +[](JNIEnv*) -> jint { return JNI_VERSION_10; };
+    result->FindClass = +[](JNIEnv* env, const char* name) -> jclass
+    {
+        VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
+        ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(name));
+        return std::bit_cast<jclass>(virtualMachine.getGC().root(&classObject).release());
+    };
+
+    return JNINativeInterfaceUPtr(result, +[](JNINativeInterface_* ptr) { delete ptr; });
 }
