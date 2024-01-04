@@ -40,7 +40,7 @@ public:
                   bootOptions.javaHome = llvm::sys::path::parent_path(llvm::sys::path::parent_path(JAVA_BASE_PATH));
                   return bootOptions;
               }())),
-          jniEnv(virtualMachine.getJNINativeInterface())
+          jniEnv{virtualMachine.getJNINativeInterface()}
     {
     }
 };
