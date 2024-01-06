@@ -33,6 +33,7 @@
 
 #include <functional>
 
+#include "GCRootRef.hpp"
 #include "InteropHelpers.hpp"
 #include "Object.hpp"
 
@@ -230,7 +231,7 @@ class Field
     {
         std::uint16_t m_offset;
         char m_primitiveStorage[sizeof(double)];
-        void** m_reference;
+        GCRootRef<ObjectInterface> m_reference;
     };
     AccessFlag m_accessFlags;
 
@@ -247,7 +248,7 @@ public:
 
     /// Creates a new static field of a reference type with the given name, type descriptor and a pointer to where the
     /// static reference is allocated.
-    Field(llvm::StringRef name, FieldType type, void** reference, AccessFlag accessFlags)
+    Field(llvm::StringRef name, FieldType type, GCRootRef<ObjectInterface> reference, AccessFlag accessFlags)
         : m_name(name), m_type(type), m_reference(reference), m_accessFlags(accessFlags)
     {
     }
@@ -301,7 +302,7 @@ public:
         assert(isStatic());
         if (m_type.isReference())
         {
-            return m_reference;
+            return m_reference.data();
         }
         return reinterpret_cast<const void*>(m_primitiveStorage);
     }
@@ -362,10 +363,18 @@ public:
     }
 
     /// Allows access to the field referred to by this 'InstanceFieldRef' within 'object'.
-    T& operator()(ObjectInterface* object) const
+    T& operator()(GCRootRefOrPointer<ObjectInterface> object) const requires(!JavaReference<T>)
     {
         assert(m_field);
-        return *reinterpret_cast<T*>(reinterpret_cast<char*>(object) + m_field->getOffset());
+        return *reinterpret_cast<T*>(reinterpret_cast<char*>(static_cast<ObjectInterface*>(object))
+                                     + m_field->getOffset());
+    }
+
+    auto operator()(GCRootRefOrPointer<ObjectInterface> object) const requires JavaReference<T>
+    {
+        assert(m_field);
+        return ObjectPointerRef(*reinterpret_cast<T*>(reinterpret_cast<char*>(static_cast<ObjectInterface*>(object))
+                                                      + m_field->getOffset()));
     }
 };
 
@@ -408,10 +417,16 @@ public:
     }
 
     /// Allows access to the static field referred to by this 'StaticFieldRef'.
-    T& operator()() const
+    T& operator()() const requires(!JavaReference<T>)
     {
         assert(m_field);
         return *reinterpret_cast<T*>(m_field->getAddressOfStatic());
+    }
+
+    auto operator()() const requires JavaReference<T>
+    {
+        assert(m_field);
+        return ObjectPointerRef(*reinterpret_cast<T*>(m_field->getAddressOfStatic()));
     }
 };
 

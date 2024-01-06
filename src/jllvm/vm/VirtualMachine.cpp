@@ -27,9 +27,8 @@
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-        m_stringInterner, std::move(bootOptions.classPath),
-        [this, bootOptions](ClassObject& classObject) { m_runtime.add(&classObject, getDefaultExecutor()); },
-        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
+          m_stringInterner, std::move(bootOptions.classPath), [this, bootOptions](ClassObject& classObject)
+          { m_runtime.add(&classObject, getDefaultExecutor()); }, [&] { return m_gc.allocateStatic(); }),
       m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
       m_jit(*this),
       m_interpreter(*this, /*backEdgeThreshold=*/bootOptions.backEdgeThreshold,
@@ -105,12 +104,12 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
 
     ClassObject& threadGroup = m_classLoader.forName("Ljava/lang/ThreadGroup;");
     initialize(threadGroup);
-    m_mainThreadGroup = m_gc.allocate(&threadGroup);
+    m_mainThreadGroup.assign(m_gc.allocate(&threadGroup));
     executeObjectConstructor(m_mainThreadGroup, "()V");
 
     ClassObject& thread = m_classLoader.forName("Ljava/lang/Thread;");
     initialize(thread);
-    m_mainThread = m_gc.allocate(&thread);
+    m_mainThread.assign(m_gc.allocate(&thread));
 
     // These have to be set prior to the constructor for the constructor not to fail.
     thread.getInstanceField<std::int32_t>("priority", "I")(m_mainThread) = 1;

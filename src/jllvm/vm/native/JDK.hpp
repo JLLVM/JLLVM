@@ -149,59 +149,59 @@ public:
 
     bool compareAndSetByte(GCRootRef<Object> object, std::uint64_t offset, std::int8_t expected, std::int8_t desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetShort(GCRootRef<Object> object, std::uint64_t offset, std::int16_t expected, std::int16_t desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetChar(GCRootRef<Object> object, std::uint64_t offset, std::uint16_t expected,
                            std::uint16_t desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetBoolean(GCRootRef<Object> object, std::uint64_t offset, bool expected, bool desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetInt(GCRootRef<Object> object, std::uint64_t offset, std::int32_t expected, std::int32_t desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetLong(GCRootRef<Object> object, std::uint64_t offset, std::int64_t expected, std::int64_t desired)
     {
-        return compareAndSet(object, offset, expected, desired);
+        return compareAndSet(object.address(), offset, expected, desired);
     }
 
     bool compareAndSetReference(GCRootRef<Object> object, std::uint64_t offset, GCRootRef<Object> expected,
                                 GCRootRef<Object> desired)
     {
-        return compareAndSet(object, offset, expected.address(), desired.address());
+        return compareAndSet(object.address(), offset, expected.address(), desired.address());
     }
 
     Object* getReferenceVolatile(GCRootRef<Object> object, std::uint64_t offset)
     {
-        return getVolatile<Object*>(object, offset);
+        return getVolatile<Object*>(object.address(), offset);
     }
 
     std::int32_t getIntVolatile(GCRootRef<Object> object, std::uint64_t offset)
     {
-        return getVolatile<std::int32_t>(object, offset);
+        return getVolatile<std::int32_t>(object.address(), offset);
     }
 
     void putReferenceVolatile(GCRootRef<Object> object, std::uint64_t offset, GCRootRef<Object> value)
     {
-        putVolatile(object, offset, value.address());
+        putVolatile(object.address(), offset, value.address());
     }
 
     void putIntVolatile(GCRootRef<Object> object, std::uint64_t offset, std::int32_t value)
     {
-        putVolatile(object, offset, value);
+        putVolatile(object.address(), offset, value);
     }
 
     constexpr static llvm::StringLiteral className = "jdk/internal/misc/Unsafe";

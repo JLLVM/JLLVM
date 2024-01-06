@@ -44,7 +44,7 @@ class ClassLoader
 
     std::vector<std::string> m_classPaths;
     llvm::unique_function<void(ClassObject&)> m_prepareClassObject;
-    llvm::unique_function<void**()> m_allocateStatic;
+    llvm::unique_function<GCRootRef<ObjectInterface>()> m_allocateStatic;
     std::size_t m_interfaceIdCounter = 0;
 
     ClassObject m_byte{sizeof(std::uint8_t), "B"};
@@ -68,7 +68,7 @@ public:
     /// 'stringInterner' is used to intern strings that are values of constant fields
     ClassLoader(StringInterner& stringInterner, std::vector<std::string>&& classPaths,
                 llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
-                llvm::unique_function<void**()> allocateStatic);
+                llvm::unique_function<GCRootRef<ObjectInterface>()> allocateStatic);
 
     ~ClassLoader();
 

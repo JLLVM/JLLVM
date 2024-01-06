@@ -46,6 +46,8 @@ class GarbageCollector;
 template <class T>
 class GCUniqueRoot : public GCRootRef<T>
 {
+    using Base = GCRootRef<T>;
+
     friend class GarbageCollector;
 
     GarbageCollector* m_gc = nullptr;
@@ -53,13 +55,6 @@ class GCUniqueRoot : public GCRootRef<T>
     explicit GCUniqueRoot(GarbageCollector* gc, GCRootRef<T> object) : GCRootRef<T>(object), m_gc(gc) {}
 
 public:
-    /// Allows assignment from a valid pointer to an object.
-    GCUniqueRoot& operator=(T* object)
-    {
-        GCRootRef<T>::operator=(object);
-        return *this;
-    }
-
     ~GCUniqueRoot()
     {
         reset();
@@ -69,30 +64,30 @@ public:
     GCUniqueRoot& operator=(const GCUniqueRoot&) = delete;
 
     /// Transfers ownership of the root from 'rhs' to this newly constructed root.
-    /// 'rhs' is left in an invalid state on which no methods but the destructor, 'data' and the move assignment
-    /// operator are valid.
-    GCUniqueRoot(GCUniqueRoot&& rhs) noexcept
-        : GCRootRef<T>(std::exchange(rhs.m_object, nullptr)), m_gc(std::exchange(rhs.m_gc, nullptr))
-    {
-    }
+    /// 'rhs' is an empty root afterwards.
+    GCUniqueRoot(GCUniqueRoot&& rhs) noexcept : Base(rhs.release()), m_gc(rhs.m_gc) {}
 
-    /// Assignment version of the move constructor. See the move constructor.
     GCUniqueRoot& operator=(GCUniqueRoot&& rhs) noexcept
     {
-        reset();
+        // Reuse move constructor for move assignment.
+        this->~GCUniqueRoot();
+        return *new (this) GCUniqueRoot(std::move(rhs));
+    }
 
-        this->m_object = std::exchange(rhs.m_object, nullptr);
-        m_gc = std::exchange(rhs.m_gc, nullptr);
+    /// Assignment from nullptr.
+    /// Equivalent to calling 'reset'.
+    GCUniqueRoot& operator=(std::nullptr_t) noexcept
+    {
+        reset();
         return *this;
     }
 
     /// Releases ownership of the root from this object, returning it as 'GCRootRef'.
-    /// The object is left in an invalid state as described in the move constructor description.
+    /// The object is contains an empty root afterwards.
     GCRootRef<T> release()
     {
         GCRootRef<T> copy = *this;
-        m_gc = nullptr;
-        this->m_object = nullptr;
+        static_cast<Base&>(*this) = nullptr;
         return copy;
     }
 
@@ -241,9 +236,9 @@ public:
     void* allocate(std::size_t size);
 
     /// Allocates a new instance of 'classObject', constructing it with 'classObject' followed by 'args'.
-    template <class T = Object, class... Args>
+    template <JavaObject T = Object, class... Args>
     T* allocate(const ClassObject* classObject, Args&&... args)
-        requires(std::is_base_of_v<ObjectInterface, T> && !IsArray<T>{} && !std::same_as<T, AbstractArray>)
+        requires(!IsArray<T>{} && !std::same_as<T, AbstractArray>)
     {
         assert(classObject->isClass());
         return new (allocate(classObject->getInstanceSize())) T(classObject, std::forward<Args>(args)...);
@@ -279,12 +274,19 @@ public:
     /// Allocates a new local root in the currently active local frame with which references to Java objects can be
     /// persisted.
     /// Initializes the root to refer to 'object'.
-    template <std::derived_from<ObjectInterface> T>
+    template <JavaObject T>
     GCUniqueRoot<T> root(T* object = nullptr)
     {
         GCUniqueRoot<T> uniqueRoot(this, static_cast<GCRootRef<T>>(m_localRoots.back().allocate()));
-        uniqueRoot = object;
+        uniqueRoot.assign(object);
         return uniqueRoot;
+    }
+
+    /// Allocates a new object and roots it.
+    template <JavaObject T, class... Args>
+    GCUniqueRoot<T> rootAndAllocate(Args&&... args)
+    {
+        return root(allocate<T>(std::forward<Args>(args)...));
     }
 
     /// Manual deletion method for roots returned by 'root'.
@@ -370,13 +372,12 @@ public:
 template <class T>
 void GCUniqueRoot<T>::reset()
 {
-    if (!m_gc)
+    if (!this->hasRoot())
     {
         return;
     }
-    m_gc->deleteRoot(*this);
-    m_gc = nullptr;
-    this->m_object = nullptr;
+
+    m_gc->deleteRoot(release());
 }
 
 } // namespace jllvm
