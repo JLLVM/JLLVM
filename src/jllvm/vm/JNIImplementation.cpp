@@ -30,7 +30,7 @@ jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEn
     {
         VirtualMachine& virtualMachine = virtualMachineFromJNIEnv(env);
         ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(name));
-        return std::bit_cast<jclass>(virtualMachine.getGC().root(&classObject).release());
+        return llvm::bit_cast<jclass>(virtualMachine.getGC().root(&classObject).release());
     };
 
     return JNINativeInterfaceUPtr(result, +[](JNINativeInterface_* ptr) { delete ptr; });
