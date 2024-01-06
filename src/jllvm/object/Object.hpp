@@ -81,12 +81,19 @@ public:
 
 static_assert(std::is_standard_layout_v<Object>);
 
+/// Concept for any Java object aka subtypes of 'ObjectInterface'.
+template <class T>
+concept JavaObject = std::is_base_of_v<ObjectInterface, T>;
+
+/// Concept for a Java reference. This is a pointer to Java object in C++.
+template <class T>
+concept JavaReference = std::is_pointer_v<T> && JavaObject<std::remove_pointer_t<T>>;
+
 /// Concept for any type that is compatible with Java objects in their object representation.
 /// This should be used in places when doing interop that require the storage/value to be identical to the corresponding
 /// Java type.
 template <class T>
-concept JavaCompatible =
-    std::is_arithmetic_v<T> || std::is_void_v<T> || std::is_base_of_v<ObjectInterface, std::remove_pointer_t<T>>;
+concept JavaCompatible = std::is_arithmetic_v<T> || std::is_void_v<T> || JavaReference<T>;
 
 /// Base class for all arrays allowing access to fields of the array common to all instances.
 class AbstractArray : public ObjectInterface

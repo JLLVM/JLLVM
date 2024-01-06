@@ -16,6 +16,8 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/iterator.h>
 
+#include <jllvm/object/GCRootRef.hpp>
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -24,122 +26,6 @@ namespace jllvm
 {
 
 class ObjectInterface;
-
-/// Class used to refer to a so called "root" allocated by a 'RootFreeList', usually by the garbage collectors.
-/// This class can be seen as a GC-Safe equivalent to a pointer for C++ code, allowing one to refer to an object
-/// and continue referring to the object even after the object has been relocated by the garbage collector.
-/// It also has the important role of keeping the object it refers to alive, preventing it from being deleted by the
-/// garbage collector.
-///
-/// Most importantly, this class does not manage the lifetime of the root but relies on an outside mechanism to keep
-/// the underlying root alive.
-/// Rather its a lightweight reference type that should be passed by value, analogous to what 'std::string_view'
-/// is to 'std::string' (the equivalent of 'std::string' being 'GCUniqueRoot' in this analogy).
-/// The primary mechanism to create roots are by using the 'root' method of the 'GarbageCollector'.
-///
-/// See its documentation as to when to use 'GCRootRef', 'GCUniqueRoot' or a plain 'T*'.
-///
-/// 'T' is the memory layout of the Java object that should be used when retrieving it.
-template <class T = ObjectInterface>
-class GCRootRef
-{
-protected:
-    ObjectInterface** m_object = nullptr;
-
-    friend class RootFreeList;
-
-    template <class U>
-    friend class GCRootRef;
-
-    explicit GCRootRef(ObjectInterface** object) : m_object(object) {}
-
-    T* get() const
-    {
-        return static_cast<T*>(*m_object);
-    }
-
-public:
-    /// Creates a new 'GCRootRef' from a derived 'GCRootRef', referring to the same root.
-    template <std::derived_from<T> U>
-    GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_object(rhs.m_object)
-    {
-    }
-
-    /// Assignment operator required to make assignment from another 'GCRootRef' not ambiguous.
-    /// This does not copy the root, but rather assigns the object within 'rhs' to this root.
-    /// Rational for this is that null 'GCRootRef's do not exist (and 'GCRootRef' does not have a default constructor),
-    /// making a rootless 'GCRootRef' basically not a thing.
-    template <std::derived_from<T> U>
-    GCRootRef& operator=(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>)
-    {
-        return *this = rhs.address();
-    }
-
-    /// Explicit cast to a 'GCRootRef' of another type. This allows both up and down casting and does not perform any
-    /// validity checks. It is therefore up to the user to make sure the cast is valid.
-    template <class U>
-    explicit operator GCRootRef<U>() const
-    {
-        return GCRootRef<U>(m_object);
-    }
-
-    /// Explicit cast to 'T*'. This operation should generally be avoided in favour of just using the 'GCRootRef' as
-    /// intended.
-    /*implicit*/ operator T*() const
-    {
-        return get();
-    }
-
-    /// Allows assignment from a valid pointer to an object.
-    GCRootRef& operator=(T* object)
-    {
-        *m_object = const_cast<std::remove_const_t<T>*>(object);
-        return *this;
-    }
-
-    /// Returns true if 'lhs' and 'rhs' refer to the same object.
-    template <class U>
-    friend bool operator==(GCRootRef<T> lhs, GCRootRef<U> rhs)
-    {
-        return lhs.get() == static_cast<U*>(rhs);
-    }
-
-    /// Returns true if this root contains a reference to an object instead of null.
-    explicit operator bool() const
-    {
-        return get();
-    }
-
-    /// Returns true if this root contains null instead of a reference to an object.
-    bool operator!() const
-    {
-        return !get();
-    }
-
-    /// Allows using a 'GCRootRef<T>' with the same syntax as you would a 'T*'
-    T* operator->() const
-    {
-        return get();
-    }
-
-    T& operator*() const
-    {
-        return *get();
-    }
-
-    /// Returns the address of the Java object.
-    /// The address is only valid until the next garbage collection.
-    T* address() const
-    {
-        return get();
-    }
-
-    /// Returns the underlying root referred to by this 'GCRootRef'.
-    ObjectInterface** data() const
-    {
-        return m_object;
-    }
-};
 
 /// Special allocator used to allocate new root objects.
 /// It is optimized for LIFO order of allocation and de-allocation patterns.

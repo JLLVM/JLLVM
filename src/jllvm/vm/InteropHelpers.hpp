@@ -34,6 +34,10 @@ T javaConvertedType(T);
 template <class T>
 T* javaConvertedType(GCRootRef<T>);
 
+// GCRootRefOrPointer convert to their contained object.
+template <class T>
+T* javaConvertedType(GCRootRefOrPointer<T>);
+
 } // namespace detail
 
 /// Type alias returning the 'JavaCompatible' type a 'JavaConvertible' type implicitly converts to.
@@ -49,7 +53,7 @@ concept JavaConvertible = !std::is_void_v<T> && JavaCompatible<JavaConvertedType
 template <JavaCompatible Ret, JavaConvertible... Args>
 Ret invokeJava(void* fnPtr, Args... args)
 {
-    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr)(args...);
+    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr)(static_cast<JavaConvertedType<Args>>(args)...);
 }
 
 } // namespace jllvm

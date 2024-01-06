@@ -1070,20 +1070,15 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     std::int32_t count = counts.front();
                     counts = counts.drop_front();
                     ClassObject& arrayType = m_virtualMachine.getClassLoader().forName(currentType);
-                    GCUniqueRoot array = gc.root(gc.allocate<AbstractArray>(&arrayType, count));
+                    GCUniqueRoot array = gc.rootAndAllocate<AbstractArray>(&arrayType, count);
                     if (!counts.empty())
                     {
                         auto outerArray = static_cast<GCRootRef<Array<>>>(array);
                         auto componentType = get<ArrayType>(currentType.getComponentType());
-                        // necessary, because iterator for Arrays is not gc safe
-                        for (std::uint32_t i : llvm::seq(0u, outerArray->size()))
-                        {
-                            // allocation must happen before indexing
-                            ObjectInterface* innerArray = generator(counts, componentType, generator);
-                            (*outerArray)[i] = innerArray;
-                        }
+                        std::generate(outerArray.begin(), outerArray.end(),
+                                      [&] { return generator(counts, componentType, generator); });
                     }
-                    return array;
+                    return array.address();
                 };
 
                 context.push(generateArray(counts, get<ArrayType>(classObject->getDescriptor()), generateArray));

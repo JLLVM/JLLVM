@@ -32,6 +32,7 @@
 
 #include <functional>
 
+#include "GCRootRef.hpp"
 #include "Object.hpp"
 
 namespace jllvm
@@ -306,10 +307,18 @@ public:
     }
 
     /// Allows access to the field referred to by this 'InstanceFieldRef' within 'object'.
-    T& operator()(ObjectInterface* object) const
+    T& operator()(GCRootRefOrPointer<ObjectInterface> object) const requires(!JavaReference<T>)
     {
         assert(m_field);
-        return *reinterpret_cast<T*>(reinterpret_cast<char*>(object) + m_field->getOffset());
+        return *reinterpret_cast<T*>(reinterpret_cast<char*>(static_cast<ObjectInterface*>(object))
+                                     + m_field->getOffset());
+    }
+
+    auto operator()(GCRootRefOrPointer<ObjectInterface> object) const requires JavaReference<T>
+    {
+        assert(m_field);
+        return ObjectPointerRef(*reinterpret_cast<T*>(reinterpret_cast<char*>(static_cast<ObjectInterface*>(object))
+                                                      + m_field->getOffset()));
     }
 };
 
@@ -352,10 +361,16 @@ public:
     }
 
     /// Allows access to the static field referred to by this 'StaticFieldRef'.
-    T& operator()() const
+    T& operator()() const requires(!JavaReference<T>)
     {
         assert(m_field);
         return *reinterpret_cast<T*>(m_field->getAddressOfStatic());
+    }
+
+    auto operator()() const requires JavaReference<T>
+    {
+        assert(m_field);
+        return ObjectPointerRef(*reinterpret_cast<T*>(m_field->getAddressOfStatic()));
     }
 };
 

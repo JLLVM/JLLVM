@@ -44,8 +44,7 @@ concept InterpreterPrimitive = llvm::is_one_of<T, std::int32_t, std::uint32_t, f
 /// Possible types of values in the interpreter. These are all the primitive types with the addition of pointers to
 /// Java objects (references).
 template <class T>
-concept InterpreterValue =
-    InterpreterPrimitive<T> || (std::is_pointer_v<T> && std::derived_from<std::remove_pointer_t<T>, ObjectInterface>);
+concept InterpreterValue = InterpreterPrimitive<T> || JavaReference<T>;
 
 /// Context used in the execution of one Java frame. It incorporates and contains convenience methods for interacting
 /// with local variables and the operand stack.

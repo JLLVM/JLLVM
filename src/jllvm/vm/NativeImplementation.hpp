@@ -55,8 +55,8 @@ struct ModelState
 /// Use case for this type is the ability to persist state between function calls within a Model. This is commonly
 /// used to create and then use 'InstanceFieldRef' or 'StaticFieldRef's without having to look them up on every call.
 ///
-/// The second optional template parameter describes the type that should be used as object representation for any 'this'
-/// object coming from Java. By default it is simply 'Object'.
+/// The second optional template parameter describes the type that should be used as object representation for any
+/// 'this' object coming from Java. By default it is simply 'Object'.
 ///
 /// The model subclass may then simply implement member functions with the EXACT same name as the 'native' method in
 /// Java. Function parameters from Java can easily be translated to C++ types: For integer types simply use signed
@@ -82,7 +82,7 @@ struct ModelState
 ///    being modelled
 /// *  'auto methods = std::make_tuple(&ModelClass::aNativeMethod, ...)' which is a tuple that should list ALL
 ///    implementations of 'native' methods that should be registered in the VM.
-template <std::derived_from<ModelState> StateType = ModelState, std::derived_from<ObjectInterface> JavaObject = Object>
+template <std::derived_from<ModelState> StateType = ModelState, JavaObject JavaObject = Object>
 class ModelBase
 {
 protected:
@@ -174,7 +174,8 @@ auto createMethodBridge(typename Model::State& state,
 
 // Static 'State&, VirtualMachine&, Args...' method.
 template <class Model, class Ret, class... Args, auto ptr>
-auto createMethodBridge(typename Model::State& state,
+auto createMethodBridge(
+    typename Model::State& state,
     std::integral_constant<Ret (*)(typename Model::State&, VirtualMachine&, GCRootRef<ClassObject>, Args...), ptr>)
 {
     return [&state](JNIEnv* env, GCRootRef<ClassObject> classObject, Args... args)
@@ -304,7 +305,8 @@ void addModel(VirtualMachine& virtualMachine)
             {
                 constexpr auto fn = std::get<idxs>(methods);
                 constexpr std::string_view methodName = detail::functionName<fn>();
-                virtualMachine.getJNIBridge().addJNISymbol(formJNIMethodName(Model::className, methodName),
+                virtualMachine.getJNIBridge().addJNISymbol(
+                    formJNIMethodName(Model::className, methodName),
                     detail::createMethodBridge<Model>(state,
                                                       std::integral_constant<std::remove_const_t<decltype(fn)>, fn>{}));
             }(),
