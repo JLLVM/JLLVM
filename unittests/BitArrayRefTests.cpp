@@ -22,7 +22,7 @@ using namespace jllvm;
 using namespace Catch::Matchers;
 
 TEMPLATE_PRODUCT_TEST_CASE("BitArrayRef", "[BitArrayRef]", (BitArrayRef, MutableBitArrayRef),
-                           (std::uint32_t, std::uint64_t))
+                           (std::uint8_t, std::uint16_t, std::uint32_t, std::uint64_t))
 {
     typename TestType::value_type value{};
     TestType ref(&value, /*size=*/5);
@@ -43,9 +43,14 @@ TEMPLATE_PRODUCT_TEST_CASE("BitArrayRef", "[BitArrayRef]", (BitArrayRef, Mutable
 
     CHECK_THAT(llvm::make_range(ref.words_begin(), ref.words_end()),
                RangeEquals(std::initializer_list<decltype(value)>{value}));
+
+    int size = std::numeric_limits<typename TestType::value_type>::digits;
+    ref = TestType(&value, size);
+    CHECK(ref[size - 1] == false);
 }
 
-TEMPLATE_TEST_CASE("MutableBitArrayRef", "[MutableBitArrayRef]", std::uint32_t, std::uint64_t)
+TEMPLATE_TEST_CASE("MutableBitArrayRef", "[MutableBitArrayRef]", std::uint8_t, std::uint16_t, std::uint32_t,
+                   std::uint64_t)
 {
     TestType value{};
     MutableBitArrayRef ref(&value, /*size=*/5);
