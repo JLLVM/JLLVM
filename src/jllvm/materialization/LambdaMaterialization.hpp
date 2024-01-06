@@ -69,7 +69,7 @@ struct CppToLLVMType<void>
 
 /// Specialization for any pointer type.
 template <class T>
-requires(!std::is_base_of_v<ObjectInterface, T>) struct CppToLLVMType<T*>
+requires(!JavaObject<T>) struct CppToLLVMType<T*>
 {
     static llvm::Type* get(llvm::LLVMContext* context)
     {
@@ -78,7 +78,7 @@ requires(!std::is_base_of_v<ObjectInterface, T>) struct CppToLLVMType<T*>
 };
 
 /// Specialization for Objects type.
-template <std::derived_from<ObjectInterface> T>
+template <JavaObject T>
 struct CppToLLVMType<T*>
 {
     static llvm::Type* get(llvm::LLVMContext* context)

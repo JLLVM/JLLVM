@@ -126,7 +126,7 @@ int main(int argc, char** argv)
 
     jllvm::ClassLoader loader(
         stringInterner, std::move(classPath), [](jllvm::ClassObject&) {},
-        [&]() -> void** { return new (allocator.Allocate<void*>()) void* {}; });
+        [&]() { return jllvm::GCRootRef<jllvm::ObjectInterface>(allocator.Allocate<jllvm::ObjectInterface*>()); });
 
     loader.loadBootstrapClasses();
 

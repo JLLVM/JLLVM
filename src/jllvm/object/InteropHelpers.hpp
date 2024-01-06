@@ -21,12 +21,19 @@ namespace jllvm
 
 class ObjectInterface;
 
+/// Concept for any Java object aka subtypes of 'ObjectInterface'.
+template <class T>
+concept JavaObject = std::is_base_of_v<ObjectInterface, T>;
+
+/// Concept for a Java reference. This is a pointer to Java object in C++.
+template <class T>
+concept JavaReference = std::is_pointer_v<T> && JavaObject<std::remove_pointer_t<T>>;
+
 /// Concept for any type that is compatible with Java objects in their object representation.
 /// This should be used in places when doing interop that require the storage/value to be identical to the corresponding
 /// Java type.
 template <class T>
-concept JavaCompatible =
-    std::is_arithmetic_v<T> || std::is_void_v<T> || std::is_base_of_v<ObjectInterface, std::remove_pointer_t<T>>;
+concept JavaCompatible = std::is_arithmetic_v<T> || std::is_void_v<T> || JavaReference<T>;
 
 // JavaCompatible types convert to themselves.
 template <JavaCompatible T>
@@ -45,7 +52,7 @@ concept JavaConvertible = !std::is_void_v<T> && JavaCompatible<JavaConvertedType
 template <JavaCompatible Ret, JavaConvertible... Args>
 Ret invokeJava(void* fnPtr, Args... args)
 {
-    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr)(args...);
+    return reinterpret_cast<Ret (*)(JavaConvertedType<Args>...)>(fnPtr)(static_cast<JavaConvertedType<Args>>(args)...);
 }
 
 } // namespace jllvm

@@ -134,8 +134,7 @@ jllvm::ClassObject& jllvm::ClassLoader::add(std::unique_ptr<llvm::MemoryBuffer>&
             {
                 void* staticAddress = fields.back().getAddressOfStatic();
                 match(
-                    constantValue->value_index.resolve(classFile),
-                    [&](const IntegerInfo* intInfo)
+                    constantValue->value_index.resolve(classFile), [&](const IntegerInfo* intInfo)
                     { std::memcpy(staticAddress, &intInfo->value, sizeof(intInfo->value)); },
                     [&](const FloatInfo* floatInfo)
                     { std::memcpy(staticAddress, &floatInfo->value, sizeof(floatInfo->value)); },
@@ -271,7 +270,7 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
 
 jllvm::ClassLoader::ClassLoader(StringInterner& stringInterner, std::vector<std::string>&& classPaths,
                                 llvm::unique_function<void(ClassObject&)>&& prepareClassObject,
-                                llvm::unique_function<void**()> allocateStatic)
+                                llvm::unique_function<GCRootRef<ObjectInterface>()> allocateStatic)
     : m_stringInterner{stringInterner},
       m_classPaths{std::move(classPaths)},
       m_prepareClassObject{std::move(prepareClassObject)},

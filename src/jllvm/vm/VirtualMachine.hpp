@@ -189,7 +189,7 @@ public:
 
     /// Calls the constructor of 'object' with the types described by 'methodDescriptor' using 'args'.
     template <JavaConvertible... Args>
-    void executeObjectConstructor(ObjectInterface* object, MethodType methodDescriptor, Args... args)
+    void executeObjectConstructor(GCRootRefOrPointer<ObjectInterface> object, MethodType methodDescriptor, Args... args)
     {
         const Method* method = object->getClass()->getMethod("<init>", methodDescriptor);
         assert(method);
@@ -220,9 +220,9 @@ public:
     template <JavaConvertible... Args>
     [[noreturn]] void throwException(FieldType exceptionType, MethodType constructor, Args... args)
     {
-        GCUniqueRoot exception = m_gc.root(m_gc.allocate<Throwable>(&m_classLoader.forName(exceptionType)));
-        executeObjectConstructor(exception, constructor, args...);
-        throwJavaException(exception);
+        GCUniqueRoot exception = m_gc.rootAndAllocate<Throwable>(&m_classLoader.forName(exceptionType));
+        executeObjectConstructor(exception.address(), constructor, args...);
+        throwJavaException(exception.address());
     }
 
     /// Construct and throws an 'ArrayIndexOutOfBoundsException' with a message created from the index that was accessed
