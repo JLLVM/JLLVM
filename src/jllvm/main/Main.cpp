@@ -110,6 +110,14 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
         .debugLogging = argList.getLastArgValue(OPT_Xdebug_EQ).str(),
     };
 
+    if (llvm::opt::Arg* arg = argList.getLastArg(OPT_Xback_edge_threshold_EQ))
+    {
+        if (llvm::StringRef(arg->getValue()).getAsInteger(10, bootOptions.backEdgeThreshold))
+        {
+            llvm::report_fatal_error("Invalid command line argument '" + arg->getSpelling() + "'");
+        }
+    }
+
     auto vm = jllvm::VirtualMachine::create(std::move(bootOptions));
     if (argList.hasArg(OPT_Xenable_test_utils))
     {

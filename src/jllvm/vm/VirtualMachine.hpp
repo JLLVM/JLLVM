@@ -55,6 +55,11 @@ struct BootOptions
     bool systemInitialization = true;
     ExecutionMode executionMode = ExecutionMode::Mixed;
     std::string debugLogging;
+
+    // Runtime tuning parameters.
+
+    /// Number of backedges before the Interpreter performs OSR into the JIT.
+    std::uint64_t backEdgeThreshold = 50000;
 };
 
 struct ModelState;
