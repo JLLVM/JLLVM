@@ -31,3 +31,6 @@ def Xsystem_init : F<"Xsystem-init", "Do System initialization (initPhase1 to 3)
 def Xenable_test_utils : F<"Xenable-test-utils", "Enables native test functions">, Group<grp_internal>;
 def Xint : F<"Xint", "Execute code only with Interpreter">, Group<grp_internal>;
 def Xjit : F<"Xjit", "Execute code only with JIT">, Group<grp_internal>;
+def Xback_edge_threshold_EQ : Joined<["-"], "Xback-edge-threshold=">,
+    HelpText<"Configure threshold for performing OSR on a backedge. Specify 0 to disable entirely.">,
+    Group<grp_internal>, MetaVarName<"<count>">;
