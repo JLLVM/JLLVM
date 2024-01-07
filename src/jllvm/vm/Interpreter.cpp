@@ -19,7 +19,7 @@
 
 jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
     : m_virtualMachine(virtualMachine),
-      m_enableOSR(enableOSR),
+      m_backEdgeThreshold(backEdgeThreshold),
       m_jit2InterpreterSymbols(
           m_virtualMachine.getRuntime().getJITCCDylib().getExecutionSession().createBareJITDylib("<jit2interpreter>")),
       m_interpreterCCSymbols(m_jit2InterpreterSymbols.getExecutionSession().createBareJITDylib("<interpreterSymbols>")),
@@ -955,6 +955,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     llvm::ArrayRef<char> codeArray = code->getCode();
     auto curr = ByteCodeIterator(codeArray.data(), offset);
     MethodType methodType = method.getType();
+    std::uint64_t backEdgeCounter = 0;
 
     // Lazily fetches and caches the class object for 'Object'.
     auto getObjectClass = [&, objectClass = static_cast<ClassObject*>(nullptr)]() mutable
@@ -1511,7 +1512,19 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
         match(
             result, [](ReturnValue) {}, [&](NextPC) { ++curr; },
-            [&](SetPC setPc) { curr = ByteCodeIterator(codeArray.data(), setPc.newPC); });
+            [&](SetPC setPc)
+            {
+                // Backedge.
+                if (setPc.newPC < offset)
+                {
+                    backEdgeCounter++;
+                    if (backEdgeCounter == m_backEdgeThreshold)
+                    {
+                        escapeToJIT();
+                    }
+                }
+                curr = ByteCodeIterator(codeArray.data(), setPc.newPC);
+            });
     }
 }
 
