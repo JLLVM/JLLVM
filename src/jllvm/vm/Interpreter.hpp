@@ -246,8 +246,8 @@ public:
 class Interpreter : public OSRTarget
 {
     VirtualMachine& m_virtualMachine;
-    /// Enable OSR from the interpreter into the JIT if the method is hot enough.
-    bool m_enableOSR;
+    /// Number of backedges before the Interpreter performs OSR into the JIT.
+    std::uint64_t m_backEdgeThreshold;
 
     /// Single entry for use in 'm_interpreterCCSymbols' as an implementation for ALL methods.
     std::uint64_t (*m_interpreterEntry)(const Method*, const std::uint64_t*){};
