@@ -17,9 +17,11 @@
 
 #include "VirtualMachine.hpp"
 
-jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
+jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, std::uint64_t backEdgeThreshold,
+                                std::uint64_t invocationThreshold)
     : m_virtualMachine(virtualMachine),
       m_backEdgeThreshold(backEdgeThreshold),
+      m_invocationThreshold(invocationThreshold),
       m_jit2InterpreterSymbols(
           m_virtualMachine.getRuntime().getJITCCDylib().getExecutionSession().createBareJITDylib("<jit2interpreter>")),
       m_interpreterCCSymbols(m_jit2InterpreterSymbols.getExecutionSession().createBareJITDylib("<interpreterSymbols>")),
@@ -35,10 +37,19 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
     m_virtualMachine.getRuntime().addImplementationSymbols(
         m_interpreterCCSymbols,
         std::pair{"jllvm_interpreter",
-                  [&](const Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
+                  [&](Method* method, std::uint16_t* byteCodeOffset, std::uint16_t* topOfStack,
                       std::uint64_t* operandStack, std::uint64_t* operandGCMask, std::uint64_t* localVariables,
                       std::uint64_t* localVariablesGCMask)
                   {
+                      if (*byteCodeOffset == 0)
+                      {
+                          if (LLVM_UNLIKELY(method->incrementInvocationCounter() >= m_invocationThreshold))
+                          {
+                              m_virtualMachine.getRuntime().changeExecutor(method, m_virtualMachine.getJIT());
+                              return method->callInterpreterCC(localVariables);
+                          }
+                      }
+
                       InterpreterContext context(*topOfStack, operandStack, operandGCMask, localVariables,
                                                  localVariablesGCMask);
                       return executeMethod(*method, *byteCodeOffset, context);

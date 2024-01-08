@@ -34,3 +34,6 @@ def Xjit : F<"Xjit", "Execute code only with JIT">, Group<grp_internal>;
 def Xback_edge_threshold_EQ : Joined<["-"], "Xback-edge-threshold=">,
     HelpText<"Configure threshold for performing OSR on a backedge. Specify 0 to disable entirely.">,
     Group<grp_internal>, MetaVarName<"<count>">;
+def Xinvocation_threshold_EQ : Joined<["-"], "Xinvocation-threshold=">,
+    HelpText<"Configure invocation threshold for switching to JIT.">,
+    Group<grp_internal>, MetaVarName<"<count>">;
