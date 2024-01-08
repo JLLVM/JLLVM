@@ -32,7 +32,8 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
       m_jit(*this),
-      m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
+      m_interpreter(*this, /*backEdgeThreshold=*/bootOptions.backEdgeThreshold,
+                    /*invocationThreshold=*/bootOptions.invocationThreshold),
       m_jni(*this, m_jniEnv.get()),
       m_gc(/*random value for now*/ 1 << 20),
       // Seed from the C++ implementations entropy source.
