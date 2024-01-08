@@ -129,6 +129,20 @@ jllvm::Runtime::Runtime(VirtualMachine& virtualMachine, llvm::ArrayRef<Executor*
 #endif
 }
 
+llvm::JITTargetAddress jllvm::Runtime::getMethodCallThroughTrampoline(const std::string& name,
+                                                                      llvm::orc::JITDylib& sourceDylib,
+                                                                      llvm::orc::IndirectStubsManager& stubsManager)
+{
+    return llvm::cantFail(
+        m_lazyCallThroughManager.getCallThroughTrampoline(sourceDylib, m_interner(name),
+                                                          [&stubsManager, name](llvm::JITTargetAddress executorAddr)
+                                                          {
+                                                              // After having compiled and resolved the method, update
+                                                              // the stub to point to the resolved method instead.
+                                                              return stubsManager.updatePointer(name, executorAddr);
+                                                          }));
+}
+
 void jllvm::Runtime::add(ClassObject* classObject, Executor& defaultExecutor)
 {
     llvm::orc::SymbolMap methodGlobals;
@@ -174,14 +188,7 @@ void jllvm::Runtime::add(ClassObject* classObject, Executor& defaultExecutor)
         auto addStub = [&](llvm::orc::IndirectStubsManager::StubInitsMap& stubInitsMap,
                            llvm::orc::JITDylib& sourceDylib, llvm::orc::IndirectStubsManager& stubsManager)
         {
-            stubInitsMap[name] = {llvm::cantFail(m_lazyCallThroughManager.getCallThroughTrampoline(
-                                      sourceDylib, mangledName,
-                                      [&stubsManager, name](llvm::JITTargetAddress executorAddr)
-                                      {
-                                          // After having compiled and resolved the method, update the stub to point
-                                          // to the resolved method instead.
-                                          return stubsManager.updatePointer(name, executorAddr);
-                                      })),
+            stubInitsMap[name] = {getMethodCallThroughTrampoline(name, sourceDylib, stubsManager),
                                   llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
         };
         addStub(jitStubInits, executor->getJITCCDylib(), *m_jitCCStubsManager);
@@ -375,4 +382,15 @@ void jllvm::Runtime::doOnStackReplacement(JavaFrame frame, OSRState&& state)
         state.getTarget().getOSREntry(*frame.getMethod(), state.getByteCodeOffset(), frame.getCallingConvention());
     frame.getUnwindFrame().resumeExecutionAtFunction(reinterpret_cast<void (*)(std::uint64_t*)>(entry),
                                                      state.release());
+}
+
+void jllvm::Runtime::changeExecutor(const Method* method, Executor& newExecutor)
+{
+    assert(newExecutor.canExecute(*method));
+
+    std::string name = mangleDirectMethodCall(method);
+    llvm::cantFail(m_jitCCStubsManager->updatePointer(
+        name, getMethodCallThroughTrampoline(name, newExecutor.getJITCCDylib(), *m_jitCCStubsManager)));
+    llvm::cantFail(m_interpreterCCStubsManager->updatePointer(
+        name, getMethodCallThroughTrampoline(name, newExecutor.getInterpreterCCDylib(), *m_interpreterCCStubsManager)));
 }

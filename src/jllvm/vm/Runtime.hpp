@@ -76,6 +76,9 @@ class Runtime
 
     void prepare(ClassObject& classObject);
 
+    llvm::JITTargetAddress getMethodCallThroughTrampoline(const std::string& name, llvm::orc::JITDylib& sourceDylib,
+                                                          llvm::orc::IndirectStubsManager& stubsManager);
+
     template <class F>
     struct IsVarArg : std::false_type
     {
@@ -158,6 +161,8 @@ public:
     /// 'defaultExecutor' is used during registering as the initial executor that should be used when executing the
     /// methods within 'classObject' if possible.
     void add(ClassObject* classObject, Executor& defaultExecutor);
+
+    void changeExecutor(const Method* method, Executor& newExecutor);
 
     /// Returns a pointer in the JIT calling convention to the method with the given name.
     /// This pointer can also be called from C++ when cast to the correct signature.

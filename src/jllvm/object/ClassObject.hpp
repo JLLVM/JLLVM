@@ -28,6 +28,7 @@
 
 #include <jllvm/class/ClassFile.hpp>
 #include <jllvm/class/Descriptors.hpp>
+#include <jllvm/support/CopyableAtomic.hpp>
 #include <jllvm/support/NonOwningFrozenSet.hpp>
 
 #include <functional>
@@ -68,6 +69,7 @@ class Method
     std::uint8_t m_isNative : 1;
     std::uint8_t m_visibility : 2;
     std::uint8_t m_isAbstract : 1;
+    CopyableAtomic<std::uint64_t> m_invocationCounter;
 
 public:
     Method(llvm::StringRef name, MethodType type, std::optional<std::uint32_t> vTableSlot, bool isStatic, bool isFinal,
@@ -157,6 +159,11 @@ public:
     void setClassObject(const ClassObject* classObject)
     {
         m_classObject = classObject;
+    }
+
+    std::uint64_t incrementInvocationCounter()
+    {
+        return m_invocationCounter.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     /// Sets the pointer to the implementation of this method callable using the interpreter calling convention.
@@ -622,7 +629,7 @@ public:
     /// Returns nullptr if no method was found.
     const Method* getMethodSuper(llvm::StringRef name, MethodType type) const
     {
-        return getMethodSuper(name, type, [](auto) { return true; });
+        return getMethodSuper(name, type, [](auto&&) { return true; });
     }
 
     /// Returns the method with the given 'name' and 'type' that matches the 'predicate'.
@@ -636,7 +643,7 @@ public:
     /// Returns nullptr if no method was found.
     const Method* getMethod(llvm::StringRef name, MethodType type) const
     {
-        return getMethod(name, type, [](auto) { return true; });
+        return getMethod(name, type, [](auto&&) { return true; });
     }
 
     /// Returns the fields of this class.

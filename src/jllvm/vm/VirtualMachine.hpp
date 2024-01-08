@@ -60,6 +60,7 @@ struct BootOptions
 
     /// Number of backedges before the Interpreter performs OSR into the JIT.
     std::uint64_t backEdgeThreshold = 50000;
+    std::uint64_t invocationThreshold = 100;
 };
 
 struct ModelState;

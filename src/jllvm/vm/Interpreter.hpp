@@ -248,6 +248,7 @@ class Interpreter : public OSRTarget
     VirtualMachine& m_virtualMachine;
     /// Number of backedges before the Interpreter performs OSR into the JIT.
     std::uint64_t m_backEdgeThreshold;
+    std::uint64_t m_invocationThreshold;
 
     /// Single entry for use in 'm_interpreterCCSymbols' as an implementation for ALL methods.
     std::uint64_t (*m_interpreterEntry)(const Method*, const std::uint64_t*){};
@@ -296,7 +297,8 @@ class Interpreter : public OSRTarget
     void* generateOSREntry(FieldType returnType, CallingConvention callingConvention);
 
 public:
-    explicit Interpreter(VirtualMachine& virtualMachine, std::uint64_t backEdgeThreshold);
+    explicit Interpreter(VirtualMachine& virtualMachine, std::uint64_t backEdgeThreshold,
+                         std::uint64_t invocationThreshold);
 
     void add(const Method& method) override;
 
