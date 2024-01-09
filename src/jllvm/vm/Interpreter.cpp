@@ -904,7 +904,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                         auto* thisArg = llvm::bit_cast<ObjectInterface*>(arguments.front());
                         if (!thisArg)
                         {
-                            m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                            m_virtualMachine.throwNullPointerException();
                         }
 
                         // TODO: This is super unoptimized. V-Table and I-Table lookups could be introduced just for
@@ -935,7 +935,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                         auto* thisArg = llvm::bit_cast<ObjectInterface*>(arguments.front());
                         if (!thisArg)
                         {
-                            m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                            m_virtualMachine.throwNullPointerException();
                         }
 
                         return classObject->specialMethodResolution(methodName, descriptor, getObjectClass(),

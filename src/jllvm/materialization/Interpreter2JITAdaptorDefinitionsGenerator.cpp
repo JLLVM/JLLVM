@@ -21,15 +21,87 @@
 
 namespace
 {
-/// Compile an adaptor of the given 'name'. Returns an empty optional if the name does not conform to the grammar.
-std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, const llvm::DataLayout& dataLayout)
+
+struct Signature
+{
+    std::vector<llvm::Type*> parameters;
+    llvm::Type* returnType;
+};
+
+/// Parses a signature as seen in the description of 'Interpreter2JITAdaptorDefinitionsGenerator' into its LLVM types.
+/// Returns an empty optional if it does not match the grammar.
+std::optional<Signature> parseSignature(llvm::StringRef name, llvm::LLVMContext& context)
 {
     if (name.front() != '(')
     {
         return std::nullopt;
     }
 
+    name = name.drop_front();
+
+    auto convertType = [&](char c) -> llvm::Type*
+    {
+        switch (c)
+        {
+            case 'V': return llvm::Type::getVoidTy(context);
+            case 'B': return llvm::Type::getInt8Ty(context);
+            case 'C': return llvm::Type::getInt16Ty(context);
+            case 'D': return llvm::Type::getDoubleTy(context);
+            case 'F': return llvm::Type::getFloatTy(context);
+            case 'I': return llvm::Type::getInt32Ty(context);
+            case 'J': return llvm::Type::getInt64Ty(context);
+            case 'S': return llvm::Type::getInt16Ty(context);
+            case 'Z': return llvm::Type::getInt8Ty(context);
+            case 'L': return jllvm::referenceType(context);
+            default: return nullptr;
+        }
+    };
+
+    std::vector<llvm::Type*> parameters;
+    for (; !name.empty() && name.front() != ')'; name = name.drop_front())
+    {
+        // Void parameters are not allowed.
+        if (name.front() == 'V')
+        {
+            return std::nullopt;
+        }
+
+        llvm::Type* paramType = convertType(name.front());
+        if (!paramType)
+        {
+            return std::nullopt;
+        }
+        parameters.push_back(paramType);
+    }
+    if (name.empty() || name.front() != ')')
+    {
+        return std::nullopt;
+    }
+    name = name.drop_front();
+    if (name.size() != 1)
+    {
+        return std::nullopt;
+    }
+
+    llvm::Type* returnType = convertType(name.front());
+    if (!returnType)
+    {
+        return std::nullopt;
+    }
+    return Signature{std::move(parameters), returnType};
+}
+
+/// Compile an adaptor of the given 'name'. Returns an empty optional if the name does not conform to the grammar.
+std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, const llvm::DataLayout& dataLayout)
+{
     auto context = std::make_unique<llvm::LLVMContext>();
+
+    std::optional<Signature> signature = parseSignature(name, *context);
+    if (!signature)
+    {
+        return std::nullopt;
+    }
+
     auto module = std::make_unique<llvm::Module>("name", *context);
 
     module->setDataLayout(dataLayout);
@@ -48,65 +120,25 @@ std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
     builder.SetCurrentDebugLocation(debugInfoBuilder.getNoopLoc());
 
-    name = name.drop_front();
-
-    auto convertType = [&](char c) -> llvm::Type*
-    {
-        switch (c)
-        {
-            case 'V': return builder.getVoidTy();
-            case 'B': return builder.getInt8Ty();
-            case 'C': return builder.getInt16Ty();
-            case 'D': return builder.getDoubleTy();
-            case 'F': return builder.getFloatTy();
-            case 'I': return builder.getInt32Ty();
-            case 'J': return builder.getInt64Ty();
-            case 'S': return builder.getInt16Ty();
-            case 'Z': return builder.getInt8Ty();
-            case 'L': return jllvm::referenceType(*context);
-            default: return nullptr;
-        }
-    };
-
     llvm::SmallVector<llvm::Value*> arguments;
     std::size_t i = 0;
-    while (!name.empty() && name.front() != ')')
+    for (llvm::Type* loadType : signature->parameters)
     {
         llvm::Value* gep = builder.CreateConstGEP1_32(argumentArray->getType(), argumentArray, i++);
-        llvm::Type* loadType = convertType(name.front());
-        if (!loadType)
-        {
-            return std::nullopt;
-        }
         // 'double' and 'long' take two slots in the arguments array.
         if (loadType->isDoubleTy() || loadType->isIntegerTy(64))
         {
             i++;
         }
         arguments.push_back(builder.CreateLoad(loadType, gep));
-        name = name.drop_front();
-    }
-    if (name.empty() || name.front() != ')')
-    {
-        return std::nullopt;
-    }
-    name = name.drop_front();
-    if (name.size() != 1)
-    {
-        return std::nullopt;
     }
 
-    llvm::Type* returnType = convertType(name.front());
-    if (!returnType)
-    {
-        return std::nullopt;
-    }
     auto* functionType = llvm::FunctionType::get(
-        returnType, llvm::to_vector(llvm::map_range(arguments, std::mem_fn(&llvm::Value::getType))),
+        signature->returnType, llvm::to_vector(llvm::map_range(arguments, std::mem_fn(&llvm::Value::getType))),
         /*isVarArg=*/false);
 
     llvm::Value* call = builder.CreateCall(functionType, functionPointer, arguments);
-    if (returnType->isVoidTy())
+    if (signature->returnType->isVoidTy())
     {
         // For void methods returning any kind of value would suffice as it is never read.
         // C++ callers do not expect a 'poison' or 'undef' value however (as clang uses 'noundef' and 'nopoison'
@@ -116,7 +148,7 @@ std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, 
     else
     {
         // Translate the value returned by the C calling convention to the 'uint64_t' expected by the interpreter.
-        llvm::TypeSize typeSize = dataLayout.getTypeSizeInBits(returnType);
+        llvm::TypeSize typeSize = dataLayout.getTypeSizeInBits(signature->returnType);
         assert(!typeSize.isScalable() && "return type is never a scalable type");
 
         llvm::IntegerType* intNTy = builder.getIntNTy(typeSize.getFixedValue());

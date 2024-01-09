@@ -15,7 +15,6 @@
 
 #include <llvm/IR/IRBuilder.h>
 
-#include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/materialization/LambdaMaterialization.hpp>
 
