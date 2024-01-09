@@ -1231,7 +1231,7 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* classObject = loadClassObjectFromPool(getOffset(operation), newOp.index);
 
-            llvm::CallBase* initializer = initializeClassObject(m_builder, classObject, /* addDeopt */ false);
+            llvm::CallBase* initializer = initializeClassObject(m_builder, classObject, /*addDeopt=*/false);
             // Initialization could throw Exceptions
             addExceptionHandlingDeopts(getOffset(operation), initializer);
 

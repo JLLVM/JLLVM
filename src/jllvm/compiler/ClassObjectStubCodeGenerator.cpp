@@ -125,7 +125,7 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     // Static field accesses trigger class object initializations.
     if (field->isStatic() && classObject.isUnintialized())
     {
-        llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(module, classObject.getDescriptor());
+        llvm::Value* classObjectLLVM = classObjectGlobal(module, classObject.getDescriptor());
         initializeClassObject(builder, classObjectLLVM);
     }
 
@@ -291,7 +291,7 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
 
     if (classObject.isUnintialized())
     {
-        llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(module, classObject.getDescriptor());
+        llvm::Value* classObjectLLVM = classObjectGlobal(module, classObject.getDescriptor());
         initializeClassObject(builder, classObjectLLVM);
     }
 
