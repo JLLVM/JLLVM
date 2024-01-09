@@ -375,12 +375,18 @@ public:
         llvm::report_fatal_error("Not yet implemented.");
     }
 
+    bool isAlive()
+    {
+        return state.eetopField(javaThis) != 0;
+    }
+
     constexpr static llvm::StringLiteral className = "java/lang/Thread";
-    constexpr static auto methods = std::make_tuple(
-        &ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::yield, &ThreadModel::sleep,
-        &ThreadModel::start0, &ThreadModel::holdsLock, &ThreadModel::dumpThreads, &ThreadModel::getThreads,
-        &ThreadModel::setPriority0, &ThreadModel::stop0, &ThreadModel::suspend0, &ThreadModel::resume0,
-        &ThreadModel::interrupt0, &ThreadModel::clearInterruptEvent, &ThreadModel::setNativeName);
+    constexpr static auto methods =
+        std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::yield,
+                        &ThreadModel::sleep, &ThreadModel::start0, &ThreadModel::holdsLock, &ThreadModel::dumpThreads,
+                        &ThreadModel::getThreads, &ThreadModel::setPriority0, &ThreadModel::stop0,
+                        &ThreadModel::suspend0, &ThreadModel::resume0, &ThreadModel::interrupt0,
+                        &ThreadModel::clearInterruptEvent, &ThreadModel::setNativeName, &ThreadModel::isAlive);
 };
 
 class ReferenceModel : public ModelBase<ModelState, Reference>
