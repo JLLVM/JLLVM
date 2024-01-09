@@ -23,6 +23,8 @@
 namespace jllvm
 {
 
+constexpr auto deleteOsrFrame = [](const std::uint64_t* osrFrame) { delete[] osrFrame; };
+
 class OSRState;
 
 /// Class representing 'Executor's capable of producing OSR versions of methods for entry via OSR.

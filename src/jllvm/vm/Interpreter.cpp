@@ -42,7 +42,7 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
                                                  localVariablesGCMask);
                       return executeMethod(*method, *byteCodeOffset, context);
                   }},
-        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }});
+        std::pair{"jllvm_osr_frame_delete", deleteOsrFrame});
 }
 
 namespace
@@ -572,7 +572,7 @@ struct MultiTypeImpls
         auto* array = context.pop<Array<typename InstructionElementType<T>::field_type>*>();
         if (!array)
         {
-            virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+            virtualMachine.throwNullPointerException();
         }
         if (index < 0 || index >= array->size())
         {
@@ -654,7 +654,7 @@ struct MultiTypeImpls
         auto* array = context.pop<Array<typename InstructionElementType<T>::field_type>*>();
         if (!array)
         {
-            virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+            virtualMachine.throwNullPointerException();
         }
         if (index < 0 || index >= array->size())
         {
@@ -702,7 +702,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto* exception = context.pop<ObjectInterface*>();
                 if (!exception)
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
                 // Verifier checks that the exception is an instance of 'Throwable' rather than performing it at
                 // runtime.
@@ -713,7 +713,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto* array = context.pop<AbstractArray*>();
                 if (!array)
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
                 context.push<std::uint32_t>(array->size());
                 return NextPC{};
@@ -816,7 +816,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto* object = context.pop<ObjectInterface*>();
                 if (!object)
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
 
                 std::uint64_t value{};
@@ -934,7 +934,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 //  (un)locking it.
                 if (!context.pop<ObjectInterface*>())
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
                 return NextPC{};
             },
@@ -1022,7 +1022,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto* object = context.pop<ObjectInterface*>();
                 if (!object)
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
 
                 std::memcpy(reinterpret_cast<char*>(object) + field->getOffset(), &value, descriptor.sizeOf());
