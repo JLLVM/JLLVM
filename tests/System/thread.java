@@ -15,11 +15,21 @@ class Test
         // CHECK: 1
         print(t.getState() == Thread.State.RUNNABLE);
 
+        // CHECK: 1
+        print(t.isAlive());
+
         Thread.yield();
 
         Thread.sleep(1000);
 
-        new Thread().start();
+        t = new Thread();
+
+        // CHECK: 0
+        print(t.isAlive());
+        t.start();
+
+        // CHECK: 1
+        print(t.isAlive());
 
         var o = new Test();
 
