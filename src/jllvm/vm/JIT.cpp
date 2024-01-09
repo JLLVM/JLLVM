@@ -72,7 +72,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
         std::pair{"jllvm_instance_of",
                   [](const Object* object, const ClassObject* classObject) -> std::int32_t
                   { return object->instanceOf(classObject); }},
-        std::pair{"jllvm_osr_frame_delete", deleteOsrFrame}, std::pair{"jllvm_throw", virtualMachine.throwLambda()},
+        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
+        std::pair{"jllvm_throw", [&](Throwable* object) { m_virtualMachine.throwJavaException(object); }},
         std::pair{"jllvm_initialize_class_object",
                   [&](ClassObject* classObject)
                   {

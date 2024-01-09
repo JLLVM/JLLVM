@@ -256,11 +256,6 @@ public:
     {
         return static_cast<State&>(*m_modelState.emplace_back(std::make_unique<State>()));
     }
-
-    auto throwLambda()
-    {
-        return [this](Throwable* object) { throwJavaException(object); };
-    }
 };
 
 template <class T>

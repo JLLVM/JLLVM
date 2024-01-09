@@ -42,7 +42,7 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
                                                  localVariablesGCMask);
                       return executeMethod(*method, *byteCodeOffset, context);
                   }},
-        std::pair{"jllvm_osr_frame_delete", deleteOsrFrame});
+        std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }});
 }
 
 namespace
