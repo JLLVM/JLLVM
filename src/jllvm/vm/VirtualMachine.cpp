@@ -197,7 +197,7 @@ void jllvm::VirtualMachine::initialize(ClassObject& classObject)
         initialize(*base);
     }
 
-    auto* classInitializer = classObject.getMethod("<clinit>", "()V");
+    const auto* classInitializer = classObject.getMethod("<clinit>", "()V");
     if (!classInitializer)
     {
         return;
