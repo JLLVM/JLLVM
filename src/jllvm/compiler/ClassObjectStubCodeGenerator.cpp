@@ -22,32 +22,6 @@
 namespace
 {
 
-void buildClassInitializerInitStub(llvm::IRBuilder<>& builder, const jllvm::ClassObject& classObject)
-{
-    llvm::Function* function = builder.GetInsertBlock()->getParent();
-    llvm::Module* module = function->getParent();
-
-    llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(*module, classObject.getDescriptor());
-    auto* initializedGEP = builder.CreateGEP(builder.getInt8Ty(), classObjectLLVM,
-                                             builder.getInt32(jllvm::ClassObject::getInitializedOffset()));
-    auto* initialized =
-        builder.CreateICmpNE(builder.CreateLoad(builder.getInt8Ty(), initializedGEP), builder.getInt8(0));
-
-    auto* classInitializer = llvm::BasicBlock::Create(builder.getContext(), "", function);
-    auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "", function);
-    builder.CreateCondBr(initialized, continueBlock, classInitializer);
-
-    builder.SetInsertPoint(classInitializer);
-
-    builder.CreateCall(
-        module->getOrInsertFunction("jllvm_initialize_class_object", builder.getVoidTy(), classObjectLLVM->getType()),
-        classObjectLLVM, llvm::OperandBundleDef("deopt", std::nullopt));
-
-    builder.CreateBr(continueBlock);
-
-    builder.SetInsertPoint(continueBlock);
-}
-
 /// Builds LLVM IR returning the result of the call with the assumption that the call's return type matches the
 /// containing functions.
 void buildRetCall(llvm::IRBuilder<>& builder, llvm::CallInst* call)
@@ -151,7 +125,8 @@ llvm::Function* jllvm::generateFieldAccessStub(llvm::Module& module, const Class
     // Static field accesses trigger class object initializations.
     if (field->isStatic() && classObject.isUnintialized())
     {
-        buildClassInitializerInitStub(builder, classObject);
+        llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(module, classObject.getDescriptor());
+        initializeClassObject(builder, classObjectLLVM);
     }
 
     llvm::Value* returnValue;
@@ -316,7 +291,8 @@ llvm::Function* jllvm::generateStaticCallStub(llvm::Module& module, const ClassO
 
     if (classObject.isUnintialized())
     {
-        buildClassInitializerInitStub(builder, classObject);
+        llvm::Value* classObjectLLVM = jllvm::classObjectGlobal(module, classObject.getDescriptor());
+        initializeClassObject(builder, classObjectLLVM);
     }
 
     const Method* method = classObject.isInterface() ?

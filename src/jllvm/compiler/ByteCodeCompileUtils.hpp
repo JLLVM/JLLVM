@@ -250,4 +250,8 @@ void applyABIAttributes(llvm::Function* function);
 /// Applies all ABI relevant attributes to the call which must call a function with the signature matching the output of
 /// 'descriptorToType' when called with the given 'methodType' and 'isStatic'.
 void applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool isStatic);
+
+/// Initializes 'classObject' if it is still uninitialized. If 'addDeopt' is true, an empty deopt operand bundle is added.
+/// Returns a pointer to the call instruction of the initializer.
+llvm::CallBase* initializeClassObject(llvm::IRBuilder<>& builder, llvm::Value* classObject, bool addDeopt = true);
 } // namespace jllvm

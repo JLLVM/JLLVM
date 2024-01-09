@@ -266,7 +266,7 @@ void CodeGenerator::generateCodeBody(std::uint16_t startOffset)
             std::size_t offset = getOffset(operation);
 
             // Break out of the current straight-line code if the instruction does not fallthrough.
-            if (!generateInstruction(std::move(operation)))
+            if (!generateInstruction(operation))
             {
                 break;
             }
@@ -1231,6 +1231,10 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
         {
             llvm::Value* classObject = loadClassObjectFromPool(getOffset(operation), newOp.index);
 
+            llvm::CallBase* initializer = initializeClassObject(m_builder, classObject, /* addDeopt */ false);
+            // Initialization could throw Exceptions
+            addExceptionHandlingDeopts(getOffset(operation), initializer);
+
             // Size is first 4 bytes in the class object and does not include the object header.
             llvm::Value* fieldAreaPtr = m_builder.CreateGEP(
                 m_builder.getInt8Ty(), classObject, {m_builder.getInt32(ClassObject::getFieldAreaSizeOffset())});
@@ -1535,14 +1539,7 @@ void CodeGenerator::generateNegativeArraySizeCheck(std::uint16_t byteCodeOffset,
 llvm::Value* CodeGenerator::loadClassObjectFromPool(std::uint16_t offset, PoolIndex<ClassInfo> index)
 {
     llvm::StringRef className = index.resolve(m_classFile)->nameIndex.resolve(m_classFile)->text;
-    if (className.front() == '[')
-    {
-        // Weirdly, it uses normal field mangling if it's an array type, but for other class types it's
-        // just the name of the class. Hence, these two cases.
-        return getClassObject(offset, FieldType(className));
-    }
-
-    return getClassObject(offset, ObjectType(className));
+    return getClassObject(offset, FieldType::fromMangled(className));
 }
 
 llvm::Value* CodeGenerator::generateAllocArray(std::uint16_t offset, ArrayType descriptor, llvm::Value* classObject,
