@@ -53,25 +53,27 @@ void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObje
 {
     if (!src || !dest)
     {
-        vm.throwException("Ljava/lang/NullPointerException;", "()V");
+        vm.throwNullPointerException();
     }
     const ClassObject* srcClass = src->getClass();
     const ClassObject* destClass = dest->getClass();
 
+    auto throwArrayStoreException = [&](const auto& message)
+    {
+        String* string = vm.getStringInterner().intern(message.str());
+        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+    };
+
     if (!srcClass->isArray())
     {
         std::string name = srcClass->getDescriptor().pretty();
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: source type {0} is not an array", name).str());
-        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+        throwArrayStoreException(llvm::formatv("arraycopy: source type {0} is not an array", name));
     }
 
     if (!destClass->isArray())
     {
         std::string name = destClass->getDescriptor().pretty();
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: destination type {0} is not an array", name).str());
-        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+        throwArrayStoreException(llvm::formatv("arraycopy: destination type {0} is not an array", name));
     }
 
     const ClassObject* srcComp = srcClass->getComponentType();
@@ -81,64 +83,54 @@ void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObje
     {
         std::string fromName = srcComp->isPrimitive() ? srcClass->getDescriptor().pretty() : "object array[]";
         std::string toName = destComp->isPrimitive() ? destClass->getDescriptor().pretty() : "object array[]";
-        String* string = vm.getStringInterner().intern(
-            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName).str());
-        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+        throwArrayStoreException(
+            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName));
     }
 
     if (srcComp->isPrimitive() && destComp->isPrimitive() && srcComp != destComp)
     {
         std::string fromName = srcClass->getDescriptor().pretty();
         std::string toName = destClass->getDescriptor().pretty();
-        String* string = vm.getStringInterner().intern(
-            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName).str());
-        vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+        throwArrayStoreException(
+            llvm::formatv("arraycopy: type mismatch: can not copy {0} into {1}", fromName, toName));
     }
 
     auto srcArr = static_cast<GCRootRef<Array<>>>(src);
     auto destArr = static_cast<GCRootRef<Array<>>>(dest);
 
+    auto formatComponentType = [](const ClassObject* type)
+    { return type->isPrimitive() ? type->getDescriptor().pretty() : "object array"; };
+
+    auto throwIndexOutOfBounds = [&](const auto& message)
+    {
+        String* string = vm.getStringInterner().intern(message.str());
+        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+    };
+
     if (srcPos < 0)
     {
-        std::string elemName = srcComp->isPrimitive() ? srcComp->getDescriptor().pretty() : "object array";
-        String* string = vm.getStringInterner().intern(
-            llvm::formatv("arraycopy: source index {0} out of bounds for {1}[{2}]", srcPos, elemName, srcArr->size())
-                .str());
-        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+        throwIndexOutOfBounds(llvm::formatv("arraycopy: source index {0} out of bounds for {1}[{2}]", srcPos,
+                                            formatComponentType(srcComp), srcArr->size()));
     }
     if (destPos < 0)
     {
-        std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: destination index {0} out of bounds for {1}[{2}]",
-                                                        destPos, elemName, destArr->size())
-                                              .str());
-        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+        throwIndexOutOfBounds(llvm::formatv("arraycopy: destination index {0} out of bounds for {1}[{2}]", destPos,
+                                            formatComponentType(destComp), destArr->size()));
     }
     if (length < 0)
     {
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: length {0} is negative", length).str());
-        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+        throwIndexOutOfBounds(llvm::formatv("arraycopy: length {0} is negative", length));
     }
 
     if (srcPos + length > srcArr->size())
     {
-        std::string elemName = srcComp->isPrimitive() ? srcComp->getDescriptor().pretty() : "object array";
-        String* string =
-            vm.getStringInterner().intern(llvm::formatv("arraycopy: last source index {0} out of bounds for {1}[{2}]",
-                                                        srcPos + length, elemName, srcArr->size())
-                                              .str());
-        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+        throwIndexOutOfBounds(llvm::formatv("arraycopy: last source index {0} out of bounds for {1}[{2}]",
+                                            srcPos + length, formatComponentType(srcComp), srcArr->size()));
     }
     if (destPos + length > destArr->size())
     {
-        std::string elemName = destComp->isPrimitive() ? destComp->getDescriptor().pretty() : "object array";
-        String* string = vm.getStringInterner().intern(
-            llvm::formatv("arraycopy: last destination index {0} out of bounds for {1}[{2}]", destPos + length,
-                          elemName, destArr->size())
-                .str());
-        vm.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "(Ljava/lang/String;)V", string);
+        throwIndexOutOfBounds(llvm::formatv("arraycopy: last destination index {0} out of bounds for {1}[{2}]",
+                                            destPos + length, formatComponentType(destComp), destArr->size()));
     }
 
     if (srcComp->isPrimitive() || srcComp->wouldBeInstanceOf(destComp))
@@ -158,12 +150,9 @@ void jllvm::lang::SystemModel::arraycopy(VirtualMachine& vm, GCRootRef<ClassObje
         {
             std::string fromName = srcClass->getDescriptor().pretty();
             std::string toName = destComp->getDescriptor().pretty();
-            String* string = vm.getStringInterner().intern(
-                llvm::formatv(
-                    "arraycopy: element type mismatch: can not cast one of the elements of {0} to the type of the destination array, {1}",
-                    fromName, toName)
-                    .str());
-            vm.throwException("Ljava/lang/ArrayStoreException;", "(Ljava/lang/String;)V", string);
+            throwArrayStoreException(llvm::formatv(
+                "arraycopy: element type mismatch: can not cast one of the elements of {0} to the type of the destination array, {1}",
+                fromName, toName));
         }
         (*destArr)[destPos++] = object;
     }

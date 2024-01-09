@@ -26,7 +26,6 @@
 namespace
 {
 
-
 void allowDuplicateDefinitions(llvm::Error&& error)
 {
     llvm::handleAllErrors(std::move(error), [](const llvm::orc::DuplicateDefinition&) {});
@@ -70,7 +69,8 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
         m_javaJITImplDetails, std::pair{"jllvm_gc_alloc", [&](std::uint32_t size) { return gc.allocate(size); }},
         std::pair{"jllvm_for_name_loaded",
                   [&](const char* name) { return classLoader.forNameLoaded(FieldType(name)); }},
-        std::pair{"jllvm_instance_of", [](const Object* object, const ClassObject* classObject) -> std::int32_t
+        std::pair{"jllvm_instance_of",
+                  [](const Object* object, const ClassObject* classObject) -> std::int32_t
                   { return object->instanceOf(classObject); }},
         std::pair{"jllvm_osr_frame_delete", [](const std::uint64_t* osrFrame) { delete[] osrFrame; }},
         std::pair{"jllvm_throw", [&](Throwable* object) { m_virtualMachine.throwJavaException(object); }},
@@ -83,22 +83,11 @@ jllvm::JIT::JIT(VirtualMachine& virtualMachine)
                   }},
         std::pair{"jllvm_throw_class_cast_exception", [&](ObjectInterface* object, ClassObject* classObject)
                   { m_virtualMachine.throwClassCastException(object, classObject); }},
-        std::pair{"jllvm_throw_null_pointer_exception",
-                  [&]() { m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V"); }},
-        std::pair{"jllvm_throw_array_index_out_of_bounds_exception",
-                  [&](std::int32_t index, std::int32_t size)
-                  {
-                      String* string = m_virtualMachine.getStringInterner().intern(
-                          llvm::formatv("Index {0} out of bounds for length {1}", index, size).str());
-                      m_virtualMachine.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;",
-                                                      "(Ljava/lang/String;)V", string);
-                  }},
-        std::pair{"jllvm_throw_negative_array_size_exception", [&](std::int32_t size)
-                  {
-                      String* string = m_virtualMachine.getStringInterner().intern(std::to_string(size));
-                      m_virtualMachine.throwException("Ljava/lang/NegativeArraySizeException;", "(Ljava/lang/String;)V",
-                                                      string);
-                  }});
+        std::pair{"jllvm_throw_null_pointer_exception", [&]() { m_virtualMachine.throwNullPointerException(); }},
+        std::pair{"jllvm_throw_array_index_out_of_bounds_exception", [&](std::int32_t index, std::int32_t size)
+                  { m_virtualMachine.throwArrayIndexOutOfBoundsException(index, size); }},
+        std::pair{"jllvm_throw_negative_array_size_exception",
+                  [&](std::int32_t size) { m_virtualMachine.throwNegativeArraySizeException(size); }});
 }
 
 void jllvm::JIT::add(const Method& method)

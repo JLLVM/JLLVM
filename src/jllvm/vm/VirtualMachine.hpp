@@ -218,6 +218,9 @@ public:
     /// attempted to be constructed with.
     [[noreturn]] void throwNegativeArraySizeException(std::int32_t arrayLength);
 
+    /// Construct and throws a 'NullPointerException' with the default constructor.
+    [[noreturn]] void throwNullPointerException();
+
     /// Performs stack unwinding, calling 'f' for every Java frame encountered.
     /// 'f' may optionally return a 'UnwindAction' to control whether unwinding should continue.
     /// Returns true if 'UnwindAction::UnwindAction' was ever returned.

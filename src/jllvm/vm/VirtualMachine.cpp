@@ -26,9 +26,9 @@
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-          m_stringInterner, std::move(bootOptions.classPath),
-          [this, bootOptions](ClassObject& classObject) { m_runtime.add(&classObject, getDefaultExecutor()); },
-          [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
+        m_stringInterner, std::move(bootOptions.classPath),
+        [this, bootOptions](ClassObject& classObject) { m_runtime.add(&classObject, getDefaultExecutor()); },
+        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
       m_jit(*this),
       m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
@@ -284,4 +284,9 @@ void jllvm::VirtualMachine::throwNegativeArraySizeException(std::int32_t arrayLe
 {
     String* string = m_stringInterner.intern(std::to_string(arrayLength));
     throwException("Ljava/lang/NegativeArraySizeException;", "(Ljava/lang/String;)V", string);
+}
+
+void jllvm::VirtualMachine::throwNullPointerException()
+{
+    throwException("Ljava/lang/NullPointerException;", "()V");
 }
