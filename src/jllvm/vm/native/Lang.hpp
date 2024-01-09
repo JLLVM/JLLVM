@@ -122,8 +122,8 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Class";
-    constexpr static auto methods =
-        std::make_tuple(&ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
+    constexpr static auto methods = std::make_tuple(
+        &ClassModel::registerNatives, &ClassModel::isArray, &ClassModel::desiredAssertionStatus0,
         &ClassModel::getPrimitiveClass, &ClassModel::isPrimitive, &ClassModel::initClassName, &ClassModel::forName0);
 };
 
@@ -278,7 +278,8 @@ public:
 
 struct ThreadModelState : ModelState
 {
-    InstanceFieldRef<std::int32_t> priorityField;
+    // Usually used to store a pointer to the os thread datastructure.
+    InstanceFieldRef<std::int64_t> eetopField;
 };
 
 class ThreadModel : public ModelBase<ThreadModelState>
@@ -288,24 +289,98 @@ public:
 
     static void registerNatives(State& state, GCRootRef<ClassObject> classObject)
     {
-        state.priorityField = classObject->getInstanceField<std::int32_t>("priority", "I");
+        state.eetopField = classObject->getInstanceField<std::int64_t>("eetop", "J");
     }
 
-    static GCRootRef<Object> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
+    static GCRootRef<ObjectInterface> currentThread(VirtualMachine& vm, GCRootRef<ClassObject>)
     {
         // Once we are multi threaded, this should actually the return the corresponding Java thread
-        // this function is being called from. For now we are just returning the one and only thread for the time being.
+        // this function is being called from. For now, we are just returning the one and only thread for the time
+        // being.
         return vm.getMainThread();
     }
 
-    void setPriority0(std::int32_t priority)
+    static void yield(GCRootRef<ClassObject>)
     {
-        state.priorityField(javaThis) = priority;
+        // A hint to the scheduler that the current thread is willing to yield its current use of a processor.
+        // The scheduler is free to ignore this hint.
+        // For now, this is a nop.
+    }
+
+    static void sleep(GCRootRef<ClassObject>, std::int64_t millis)
+    {
+        // For now, we cause the main thread to sleep for the specified time.
+        std::this_thread::sleep_for(std::chrono::milliseconds(millis));
+    }
+
+    void start0()
+    {
+        // Once we are multi threaded, this should actually spawn a new os thread start execution in a new thread.
+        // For now, we only signal that the thread is alive and should be running.
+        state.eetopField(javaThis) = 1;
+    }
+
+    static bool holdsLock(GCRootRef<ClassObject>, ObjectInterface*)
+    {
+        // Returns true if and only if the current thread holds the monitor lock on the specified object.
+        // For now, there are no locks and only one thread, so it is semantically equivalent to the main thread holding
+        // all locks.
+        return true;
+    }
+
+    static Array<>* dumpThreads(GCRootRef<ClassObject>, Array<>*)
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    static Array<>* getThreads(GCRootRef<ClassObject>)
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    void setPriority0(std::int32_t)
+    {
+        // Changes the priority of this thread.
+        // Once we are multi threaded, this should notify the scheduler that the current thread was assigned a new
+        // priority. For now, this is a nop.
+    }
+
+    void stop0(ObjectInterface*)
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    void suspend0()
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    void resume0()
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    void interrupt0()
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    static void clearInterruptEvent(GCRootRef<ClassObject>)
+    {
+        llvm::report_fatal_error("Not yet implemented.");
+    }
+
+    void setNativeName(String*)
+    {
+        llvm::report_fatal_error("Not yet implemented.");
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/Thread";
-    constexpr static auto methods =
-        std::make_tuple(&ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::setPriority0);
+    constexpr static auto methods = std::make_tuple(
+        &ThreadModel::registerNatives, &ThreadModel::currentThread, &ThreadModel::yield, &ThreadModel::sleep,
+        &ThreadModel::start0, &ThreadModel::holdsLock, &ThreadModel::dumpThreads, &ThreadModel::getThreads,
+        &ThreadModel::setPriority0, &ThreadModel::stop0, &ThreadModel::suspend0, &ThreadModel::resume0,
+        &ThreadModel::interrupt0, &ThreadModel::clearInterruptEvent, &ThreadModel::setNativeName);
 };
 
 class ReferenceModel : public ModelBase<ModelState, Reference>
