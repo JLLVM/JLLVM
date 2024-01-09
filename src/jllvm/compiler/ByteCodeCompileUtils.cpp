@@ -266,3 +266,36 @@ llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, llvm::LLVMC
                                    {llvm::PointerType::get(context, 0)},
                                    /*isVarArg=*/false);
 }
+
+llvm::CallBase* jllvm::initializeClassObject(llvm::IRBuilder<>& builder, llvm::Value* classObject, bool addDeopt)
+{
+    llvm::Function* function = builder.GetInsertBlock()->getParent();
+    llvm::Module* module = function->getParent();
+
+    auto* initializedGEP = builder.CreateGEP(builder.getInt8Ty(), classObject,
+                                             builder.getInt32(jllvm::ClassObject::getInitializedOffset()));
+    auto* initialized = builder.CreateICmpNE(builder.CreateLoad(builder.getInt8Ty(), initializedGEP),
+                                             builder.getInt8(uint8_t(jllvm::InitializationStatus::Uninitialized)));
+
+    auto* classInitializer = llvm::BasicBlock::Create(builder.getContext(), "uninitialized", function);
+    auto* continueBlock = llvm::BasicBlock::Create(builder.getContext(), "initialized", function);
+    builder.CreateCondBr(initialized, continueBlock, classInitializer);
+
+    builder.SetInsertPoint(classInitializer);
+
+    llvm::SmallVector<llvm::OperandBundleDef> deopts{llvm::OperandBundleDef{"deopt", std::nullopt}};
+    if (!addDeopt)
+    {
+        deopts.clear();
+    }
+
+    llvm::CallBase* initialize = builder.CreateCall(
+        module->getOrInsertFunction("jllvm_initialize_class_object", builder.getVoidTy(), classObject->getType()),
+        classObject, deopts);
+
+    builder.CreateBr(continueBlock);
+
+    builder.SetInsertPoint(continueBlock);
+
+    return initialize;
+}
