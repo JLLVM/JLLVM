@@ -22,6 +22,8 @@ add_library(JLLVMMaterialization
         ByteCodeOSRCompileLayer.cpp
         InterpreterOSRLayer.cpp
         InterpreterEntry.cpp
-        ClassObjectDefinitionsGenerator.cpp)
+        ClassObjectDefinitionsGenerator.cpp
+        Interpreter2JITAdaptorDefinitionsGenerator.cpp
+        Interpreter2JITLayer.cpp)
 target_link_libraries(JLLVMMaterialization PUBLIC JLLVMCompiler JLLVMDebugInfo JLLVMObject LLVMCore LLVMOrcJIT
         PRIVATE LLVMTargetParser)

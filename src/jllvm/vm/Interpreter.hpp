@@ -179,6 +179,28 @@ public:
         std::memcpy(&result, m_localVariables + index, sizeof(T));
         return result;
     }
+
+    /// Pops arguments from the stack matching a call to a possibly static method of type 'methodType'.
+    /// Returns a view to the operands that were just popped where the last element in the view is the old top of the
+    /// stack.
+    ///
+    /// Important note: The view is only valid until the next push to the operand stack. Furthermore, Garbage Collection
+    /// will not find any references contained within the view. It is therefore illegal to access the view after garbage
+    /// collection may occurred.
+    llvm::ArrayRef<std::uint64_t> viewAndPopArguments(MethodType methodType, bool isStatic)
+    {
+        std::size_t size = isStatic ? 0 : 1;
+        for (FieldType fieldType : methodType.parameters())
+        {
+            size++;
+            if (fieldType.isWide())
+            {
+                size++;
+            }
+        }
+        m_topOfStack -= size;
+        return {m_operandStack + m_topOfStack, size};
+    }
 };
 
 /// Interpreter instance containing all global state of the interpreter.
@@ -189,6 +211,7 @@ class Interpreter : public OSRTarget
     bool m_enableOSR;
 
     llvm::orc::JITDylib& m_jit2InterpreterSymbols;
+    llvm::orc::JITDylib& m_interpreterCCSymbols;
 
     JIT2InterpreterLayer m_compiled2InterpreterLayer;
     InterpreterOSRLayer m_interpreterOSRLayer;
@@ -221,14 +244,16 @@ class Interpreter : public OSRTarget
 public:
     explicit Interpreter(VirtualMachine& virtualMachine, bool enableOSR);
 
-    void add(const Method& method) override
-    {
-        llvm::cantFail(m_compiled2InterpreterLayer.add(m_jit2InterpreterSymbols, &method));
-    }
+    void add(const Method& method) override;
 
     llvm::orc::JITDylib& getJITCCDylib() override
     {
         return m_jit2InterpreterSymbols;
+    }
+
+    llvm::orc::JITDylib& getInterpreterCCDylib() override
+    {
+        return m_interpreterCCSymbols;
     }
 
     bool canExecute(const Method& method) const override

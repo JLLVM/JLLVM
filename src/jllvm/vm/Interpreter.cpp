@@ -22,6 +22,7 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
       m_enableOSR(enableOSR),
       m_jit2InterpreterSymbols(
           m_virtualMachine.getRuntime().getJITCCDylib().getExecutionSession().createBareJITDylib("<jit2interpreter>")),
+      m_interpreterCCSymbols(m_jit2InterpreterSymbols.getExecutionSession().createBareJITDylib("<interpreterSymbols>")),
       m_compiled2InterpreterLayer(virtualMachine.getRuntime().getInterner(),
                                   virtualMachine.getRuntime().getLLVMIRLayer(),
                                   virtualMachine.getRuntime().getDataLayout()),
@@ -677,12 +678,23 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
     auto curr = ByteCodeIterator(codeArray.data(), offset);
     MethodType methodType = method.getType();
 
+    // Lazily fetches and caches the class object for 'Object'.
+    auto getObjectClass = [&, objectClass = static_cast<ClassObject*>(nullptr)]() mutable
+    {
+        if (!objectClass)
+        {
+            objectClass = &m_virtualMachine.getClassLoader().forName("Ljava/lang/Object;");
+        }
+        return objectClass;
+    };
+
     while (true)
     {
         // Update the current offset to the new instruction.
         offset = curr.getOffset();
+        ByteCodeOp operation = *curr;
         InstructionResult result = match(
-            *curr, MultiTypeImpls{m_virtualMachine, context},
+            operation, MultiTypeImpls{m_virtualMachine, context},
             [&](ANewArray aNewArray)
             {
                 auto count = context.pop<std::int32_t>();
@@ -856,6 +868,90 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             [&](IConstM1)
             {
                 context.push<std::int32_t>(-1);
+                return NextPC{};
+            },
+            [&](OneOf<InvokeStatic, InvokeSpecial, InvokeInterface, InvokeVirtual> invoke)
+            {
+                const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
+
+                llvm::StringRef methodName =
+                    refInfo->nameAndTypeIndex.resolve(classFile)->nameIndex.resolve(classFile)->text;
+                MethodType descriptor(
+                    refInfo->nameAndTypeIndex.resolve(classFile)->descriptorIndex.resolve(classFile)->text);
+
+                // Initialize the class object if it's an 'invokestatic'. This has to be done before the call to
+                // 'viewAndPopArguments' as the arguments on the operand stack could otherwise be garbage collected.
+                ClassObject* classObject = getClassObject(classFile, refInfo->classIndex);
+                if (holds_alternative<InvokeStatic>(operation))
+                {
+                    m_virtualMachine.initialize(*classObject);
+                }
+
+                llvm::ArrayRef<std::uint64_t> arguments =
+                    context.viewAndPopArguments(descriptor, /*isStatic=*/holds_alternative<InvokeStatic>(operation));
+
+                // Find the callee with the resolution of the given call.
+                const Method* callee = match(
+                    operation,
+                    [&](InvokeStatic) -> const Method*
+                    {
+                        return classObject->isInterface() ?
+                                   classObject->interfaceMethodResolution(methodName, descriptor, getObjectClass()) :
+                                   classObject->methodResolution(methodName, descriptor);
+                    },
+                    [&](OneOf<InvokeInterface, InvokeVirtual>) -> const Method*
+                    {
+                        auto* thisArg = llvm::bit_cast<ObjectInterface*>(arguments.front());
+                        if (!thisArg)
+                        {
+                            m_virtualMachine.throwNullPointerException();
+                        }
+
+                        // TODO: This is super unoptimized. V-Table and I-Table lookups could be introduced just for
+                        //       the interpreter, and inline-caching used.
+                        const Method* resolvedMethod;
+                        if (holds_alternative<InvokeVirtual>(operation))
+                        {
+                            resolvedMethod = classObject->methodResolution(methodName, descriptor);
+                        }
+                        else
+                        {
+                            resolvedMethod =
+                                classObject->interfaceMethodResolution(methodName, descriptor, getObjectClass());
+                        }
+
+                        // Fast path: If its known that the method has no table slot due to not being overridable, we
+                        // do not have to perform method selection.
+                        if (!resolvedMethod->getTableSlot())
+                        {
+                            return resolvedMethod;
+                        }
+
+                        // Select the correct method based on the dynamic type of the 'this' argument.
+                        return &thisArg->getClass()->methodSelection(*resolvedMethod);
+                    },
+                    [&](InvokeSpecial)
+                    {
+                        auto* thisArg = llvm::bit_cast<ObjectInterface*>(arguments.front());
+                        if (!thisArg)
+                        {
+                            m_virtualMachine.throwNullPointerException();
+                        }
+
+                        return classObject->specialMethodResolution(methodName, descriptor, getObjectClass(),
+                                                                    method.getClassObject());
+                    },
+                    [&](...) -> const Method* { llvm_unreachable("unexpected op"); });
+
+                std::uint64_t returnValue =
+                    m_virtualMachine.getRuntime().lookupInterpreterCC(*callee)(arguments.data());
+
+                FieldType returnType = descriptor.returnType();
+                if (returnType != BaseType(BaseType::Void))
+                {
+                    context.push(returnValue, returnType);
+                }
+
                 return NextPC{};
             },
             [&](IInc iInc)
@@ -1181,4 +1277,13 @@ std::unique_ptr<std::uint64_t[]> Interpreter::createOSRBuffer(std::uint16_t byte
     outIter = std::copy_n(localsGCMask.words_begin(), localsGCMask.numWords(), outIter);
     std::copy_n(operandStackGCMask.words_begin(), operandStackGCMask.numWords(), outIter);
     return buffer;
+}
+
+void Interpreter::add(const Method& method)
+{
+    llvm::cantFail(m_compiled2InterpreterLayer.add(m_jit2InterpreterSymbols, &method));
+    // TODO: Forego Interpreter -> JIT -> Interpreter conversion by implementing an interpreter calling convention
+    //       entry.
+    llvm::cantFail(
+        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreterCCSymbols, method, getJITCCDylib()));
 }

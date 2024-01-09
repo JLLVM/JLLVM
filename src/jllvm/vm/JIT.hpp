@@ -55,6 +55,7 @@ class JIT : public OSRTarget
 
     llvm::orc::JITDylib& m_javaJITSymbols;
     llvm::orc::JITDylib& m_javaJITImplDetails;
+    llvm::orc::JITDylib& m_interpreter2JITSymbols;
 
     ByteCodeCompileLayer m_byteCodeCompileLayer;
     ByteCodeOSRCompileLayer m_byteCodeOSRCompileLayer;
@@ -75,6 +76,11 @@ public:
     llvm::orc::JITDylib& getJITCCDylib() override
     {
         return m_javaJITSymbols;
+    }
+
+    llvm::orc::JITDylib& getInterpreterCCDylib() override
+    {
+        return m_interpreter2JITSymbols;
     }
 
     void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) override;

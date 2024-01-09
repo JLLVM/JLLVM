@@ -22,6 +22,7 @@
 
 #include <jllvm/compiler/ByteCodeCompileUtils.hpp>
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
+#include <jllvm/materialization/Interpreter2JITLayer.hpp>
 #include <jllvm/object/ClassObject.hpp>
 
 #include <memory>
@@ -44,6 +45,7 @@ class Runtime
 
     /// Dylib containing all Java method symbols in "direct-method-call" mangling using the C calling convention.
     llvm::orc::JITDylib& m_jitCCStubs;
+    llvm::orc::JITDylib& m_interpreterCCStubs;
     /// Mapping of a Java method to the executor it is being executed by.
     llvm::DenseMap<const Method*, Executor*> m_executorState;
 
@@ -57,6 +59,7 @@ class Runtime
     llvm::orc::LazyCallThroughManager& m_lazyCallThroughManager;
 
     std::unique_ptr<llvm::orc::IndirectStubsManager> m_jitCCStubsManager;
+    std::unique_ptr<llvm::orc::IndirectStubsManager> m_interpreterCCStubsManager;
 
     llvm::DataLayout m_dataLayout;
     ClassLoader& m_classLoader;
@@ -65,6 +68,7 @@ class Runtime
     llvm::orc::ObjectLinkingLayer m_objectLayer;
     llvm::orc::IRCompileLayer m_compilerLayer;
     llvm::orc::IRTransformLayer m_optimizeLayer;
+    Interpreter2JITLayer m_interpreter2JITLayer;
 
     llvm::DenseSet<std::uintptr_t> m_javaFrames;
 
@@ -123,6 +127,13 @@ public:
     llvm::orc::IRLayer& getLLVMIRLayer()
     {
         return m_optimizeLayer;
+    }
+
+    /// Returns the adaptor layer that can be used by executors for reusing JIT calling convention implementations
+    /// for the interpreter calling convention implementation.
+    Interpreter2JITLayer& getInterpreter2JITLayer()
+    {
+        return m_interpreter2JITLayer;
     }
 
     /// Returns the datalayout that should be used when compiling LLVM IR.
@@ -184,6 +195,25 @@ public:
     {
         static_assert(std::is_function_v<Fn>);
         return reinterpret_cast<Fn*>(lookupJITCC(className, methodName, descriptor));
+    }
+
+    /// Interpreter calling convention. The one parameter is the array of arguments where all values are bitcast to
+    /// 'std::uint64_t'. Values of type 'long' or 'double' occupy two slots on the argument array with the actual
+    /// value contained in the first of the two slots.
+    using InterpreterCC = std::uint64_t(const std::uint64_t*);
+
+    /// Returns a function pointer for calling 'method' using the interpreter calling convention.
+    /// Returns null if the method is not callable.
+    InterpreterCC* lookupInterpreterCC(const Method& method)
+    {
+        llvm::Expected<llvm::JITEvaluatedSymbol> symbol =
+            m_session->lookup({&m_interpreterCCStubs}, m_interner(mangleDirectMethodCall(&method)));
+        if (!symbol)
+        {
+            llvm::consumeError(symbol.takeError());
+            return nullptr;
+        }
+        return reinterpret_cast<InterpreterCC*>(symbol->getAddress());
     }
 
     /// Returns the metadata associated with any Java method.

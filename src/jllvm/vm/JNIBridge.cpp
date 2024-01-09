@@ -21,7 +21,9 @@
 extern "C" int __gxx_personality_v0(...);
 
 jllvm::JNIBridge::JNIBridge(VirtualMachine& virtualMachine, void* jniEnv)
-    : m_jniSymbols(virtualMachine.getRuntime().getSession().createBareJITDylib("<jniSymbols>")),
+    : m_virtualMachine(virtualMachine),
+      m_jniSymbols(virtualMachine.getRuntime().getSession().createBareJITDylib("<jniSymbols>")),
+      m_interpreter2JNISymbols(virtualMachine.getRuntime().getSession().createBareJITDylib("<interpreter2jni>")),
       m_jniImplementationLayer(virtualMachine.getRuntime().getSession(), virtualMachine.getRuntime().getInterner(),
                                virtualMachine.getRuntime().getLLVMIRLayer(),
                                virtualMachine.getRuntime().getDataLayout(), jniEnv)
@@ -43,4 +45,11 @@ jllvm::JNIBridge::JNIBridge(VirtualMachine& virtualMachine, void* jniEnv)
 
     m_jniSymbols.addToLinkOrder(virtualMachine.getRuntime().getClassAndMethodObjectsDylib());
     m_jniSymbols.addToLinkOrder(virtualMachine.getRuntime().getCLibDylib());
+}
+
+void jllvm::JNIBridge::add(const Method& method)
+{
+    llvm::cantFail(m_jniImplementationLayer.add(m_jniSymbols, &method));
+    llvm::cantFail(
+        m_virtualMachine.getRuntime().getInterpreter2JITLayer().add(m_interpreter2JNISymbols, method, getJITCCDylib()));
 }

@@ -25,7 +25,10 @@ namespace jllvm
 /// generation for the Java Native Interface (JNI).
 class JNIBridge : public Executor
 {
+    VirtualMachine& m_virtualMachine;
+
     llvm::orc::JITDylib& m_jniSymbols;
+    llvm::orc::JITDylib& m_interpreter2JNISymbols;
 
     JNIImplementationLayer m_jniImplementationLayer;
 
@@ -50,10 +53,7 @@ public:
             m_jniImplementationLayer.getInterner()));
     }
 
-    void add(const Method& method) override
-    {
-        llvm::cantFail(m_jniImplementationLayer.add(m_jniSymbols, &method));
-    }
+    void add(const Method& method) override;
 
     bool canExecute(const Method& method) const override
     {
@@ -63,6 +63,11 @@ public:
     llvm::orc::JITDylib& getJITCCDylib() override
     {
         return m_jniSymbols;
+    }
+
+    llvm::orc::JITDylib& getInterpreterCCDylib() override
+    {
+        return m_interpreter2JNISymbols;
     }
 };
 

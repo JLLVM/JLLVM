@@ -65,6 +65,7 @@ jllvm::Runtime::Runtime(VirtualMachine& virtualMachine, llvm::ArrayRef<Executor*
           llvm::cantFail(llvm::orc::SelfExecutorProcessControl::Create()))),
       m_executors(executors.begin(), executors.end()),
       m_jitCCStubs(m_session->createBareJITDylib("<jitCCStubs>")),
+      m_interpreterCCStubs(m_session->createBareJITDylib("<interpreterCCStubs>")),
       m_classAndMethodObjects(m_session->createBareJITDylib("<class-and-method-objects>")),
       m_clib(m_session->createBareJITDylib("<clib>")),
       m_epciu(llvm::cantFail(llvm::orc::EPCIndirectionUtils::Create(m_session->getExecutorProcessControl()))),
@@ -80,6 +81,7 @@ jllvm::Runtime::Runtime(VirtualMachine& virtualMachine, llvm::ArrayRef<Executor*
       m_lazyCallThroughManager(m_epciu->createLazyCallThroughManager(
           *m_session, llvm::pointerToJITTargetAddress(+[] { llvm::report_fatal_error("Dynamic linking failed"); }))),
       m_jitCCStubsManager(m_epciu->createIndirectStubsManager()),
+      m_interpreterCCStubsManager(m_epciu->createIndirectStubsManager()),
       m_dataLayout(m_targetMachine->createDataLayout()),
       m_interner(*m_session, m_dataLayout),
       m_classLoader(virtualMachine.getClassLoader()),
@@ -90,7 +92,8 @@ jllvm::Runtime::Runtime(VirtualMachine& virtualMachine, llvm::ArrayRef<Executor*
                       {
                           tsm.withModuleDo([&](llvm::Module& module) { optimize(module); });
                           return std::move(tsm);
-                      })
+                      }),
+      m_interpreter2JITLayer(m_optimizeLayer, m_interner, m_dataLayout)
 {
     llvm::cantFail(llvm::orc::setUpInProcessLCTMReentryViaEPCIU(*m_epciu));
 
@@ -182,6 +185,7 @@ void jllvm::Runtime::add(ClassObject* classObject, Executor& defaultExecutor)
                                   llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Callable};
         };
         addStub(jitStubInits, executor->getJITCCDylib(), *m_jitCCStubsManager);
+        addStub(interpreterStubInits, executor->getInterpreterCCDylib(), *m_interpreterCCStubsManager);
     }
 
     auto defineStubs = [&](const llvm::orc::IndirectStubsManager::StubInitsMap& stubInitsMap,
@@ -202,6 +206,7 @@ void jllvm::Runtime::add(ClassObject* classObject, Executor& defaultExecutor)
     // Define the methods in the dylib.
     llvm::cantFail(m_classAndMethodObjects.define(llvm::orc::absoluteSymbols(std::move(methodGlobals))));
     defineStubs(jitStubInits, *m_jitCCStubsManager, m_jitCCStubs);
+    defineStubs(interpreterStubInits, *m_interpreterCCStubsManager, m_interpreterCCStubs);
 
     prepare(*classObject);
 }
