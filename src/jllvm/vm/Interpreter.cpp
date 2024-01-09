@@ -889,6 +889,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::int32_t>(object->instanceOf(classObject));
                 return NextPC{};
             },
+            // TODO: InvokeDynamic
             [&](OneOf<InvokeStatic, InvokeSpecial, InvokeInterface, InvokeVirtual> invoke)
             {
                 const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
@@ -1225,10 +1226,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             },
             [&](...) -> InstructionResult
             {
-                // While the interpreter is not fully implemented, we escaped to JIT code that implements the
-                // given bytecode instruction.
-                // TODO: Remove this once interpreter implements all bytecodes.
-                escapeToJIT();
+                // TODO: Remove this once the interpreter implements all opcodes.
+                llvm_unreachable("NOT YET IMPLEMENTED");
             });
 
         if (auto* returnValue = get_if<ReturnValue>(&result))

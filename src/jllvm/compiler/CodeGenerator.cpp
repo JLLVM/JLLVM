@@ -321,7 +321,12 @@ bool CodeGenerator::generateInstruction(ByteCodeOp operation)
     };
 
     match(
-        operation, [](...) { llvm_unreachable("NOT YET IMPLEMENTED"); },
+        operation,
+        [](...)
+        {
+            // TODO: Remove this once the jit implements all opcodes.
+            llvm_unreachable("NOT YET IMPLEMENTED");
+        },
         [&](OneOf<AALoad, BALoad, CALoad, DALoad, FALoad, IALoad, LALoad, SALoad>)
         {
             auto* type = match(
