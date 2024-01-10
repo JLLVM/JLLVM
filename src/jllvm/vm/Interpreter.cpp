@@ -534,35 +534,35 @@ struct MultiTypeImpls
     template <IsLoad T>
     NextPC operator()(T load) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(load.index));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(load.index));
         return {};
     }
 
     template <IsLoad0 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(0));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(0));
         return {};
     }
 
     template <IsLoad1 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(1));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(1));
         return {};
     }
 
     template <IsLoad2 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(2));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(2));
         return {};
     }
 
     template <IsLoad3 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(3));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(3));
         return {};
     }
 
@@ -586,35 +586,40 @@ struct MultiTypeImpls
     template <IsStore T>
     NextPC operator()(T store) const
     {
-        context.setLocal(store.index, context.pop<typename InstructionElementType<T>::type>());
+        using type = InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(store.index, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore0 T>
     NextPC operator()(T) const
     {
-        context.setLocal(0, context.pop<typename InstructionElementType<T>::type>());
+        using type = InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(0, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore1 T>
     NextPC operator()(T) const
     {
-        context.setLocal(1, context.pop<typename InstructionElementType<T>::type>());
+        using type = InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(1, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore2 T>
     NextPC operator()(T) const
     {
-        context.setLocal(2, context.pop<typename InstructionElementType<T>::type>());
+        using type = InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(2, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore3 T>
     NextPC operator()(T) const
     {
-        context.setLocal(3, context.pop<typename InstructionElementType<T>::type>());
+        using type = InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(3, context.popAsRaw<type>());
         return {};
     }
 
@@ -719,7 +724,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 auto* array = context.pop<AbstractArray*>();
                 if (!array)
                 {
-                    m_virtualMachine.throwException("Ljava/lang/NullPointerException;", "()V");
+                    m_virtualMachine.throwNullPointerException();
                 }
                 context.push<std::uint32_t>(array->size());
                 return NextPC{};
@@ -997,7 +1002,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 std::uint16_t retAddress =
                     jsr.offset + sizeof(OpCodes)
                     + (holds_alternative<JSRw>(*curr) ? sizeof(std::int32_t) : sizeof(std::int16_t));
-                context.push(reinterpret_cast<ObjectInterface*>(static_cast<std::uintptr_t>(retAddress)));
+                context.pushRaw(retAddress, false);
                 return SetPC{static_cast<std::uint16_t>(jsr.offset + jsr.target)};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
