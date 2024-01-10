@@ -15,7 +15,6 @@
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Path.h>
-#include <llvm/Support/TargetSelect.h>
 
 #include <jllvm/vm/VirtualMachine.hpp>
 
@@ -59,25 +58,7 @@ struct TrivialPrinter<jllvm::String>
 
 int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
 {
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    llvm::InitializeNativeTargetAsmParser();
-
-    llvm::SmallVector<const char*> llvmArgs{"jllvm"};
     CommandLine commandLine(args);
-
-    // Deopt values are read-only and can be read from CSR registers by libunwind.
-    llvmArgs.push_back("-use-registers-for-deopt-values=1");
-
-#ifndef NDEBUG
-    llvm::SmallString<64> buffer;
-    llvmArgs.push_back("-jllvm-gc-every-alloc=1");
-    if (llvm::StringRef value = commandLine.getArgs().getLastArgValue(OPT_Xdebug_EQ); !value.empty())
-    {
-        llvmArgs.push_back(("-debug-only=" + value).toNullTerminatedStringRef(buffer).data());
-    }
-#endif
-    llvm::cl::ParseCommandLineOptions(llvmArgs.size(), llvmArgs.data());
 
     llvm::opt::InputArgList& argList = commandLine.getArgs();
     auto inputFiles = argList.getAllArgValues(OPT_INPUT);
@@ -122,17 +103,17 @@ int jllvm::main(llvm::StringRef executablePath, llvm::ArrayRef<char*> args)
     }
 
     BootOptions bootOptions{
-        .javaHome = javaHome,
+        .javaHome = javaHome.str().str(),
         .classPath = std::move(classPath),
         .systemInitialization = argList.hasFlag(OPT_Xsystem_init, OPT_Xno_system_init, true),
         .executionMode = executionMode,
+        .debugLogging = argList.getLastArgValue(OPT_Xdebug_EQ).str(),
     };
 
-    jllvm::VirtualMachine vm(std::move(bootOptions));
-
+    auto vm = jllvm::VirtualMachine::create(std::move(bootOptions));
     if (argList.hasArg(OPT_Xenable_test_utils))
     {
-        JNIBridge& jni = vm.getJNI();
+        JNIBridge& jni = vm.getJNIBridge();
         jni.addJNISymbol("Java_Test_print__B", TrivialPrinter<std::int8_t>{});
         jni.addJNISymbol("Java_Test_print__D", TrivialPrinter<double>{});
         jni.addJNISymbol("Java_Test_print__F", TrivialPrinter<float>{});

@@ -16,11 +16,11 @@ project(JLLVM)
 
 set(CMAKE_CXX_STANDARD 20)
 
-if( NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
+if (NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
     option(JLLVM_ENABLE_ASSERTIONS "Enable assertions" OFF)
-else()
+else ()
     option(JLLVM_ENABLE_ASSERTIONS "Enable assertions" ON)
-endif()
+endif ()
 
 option(JLLVM_BUILD_DOCS "Build documentation" OFF)
 
@@ -31,7 +31,11 @@ link_libraries(Threads::Threads)
 find_package(LLVM REQUIRED CONFIG)
 set(LLVM_TABLEGEN_EXE "llvm-tblgen")
 
-find_package(Java 17 COMPONENTS Development REQUIRED)
+find_package(Java 17 EXACT COMPONENTS Development REQUIRED)
+find_package(JNI 17 EXACT REQUIRED)
+
+add_library(jni_headers INTERFACE)
+target_include_directories(jni_headers INTERFACE ${JNI_INCLUDE_DIRS})
 
 get_filename_component(REAL_JAVAC ${Java_JAVAC_EXECUTABLE} REALPATH)
 cmake_path(GET REAL_JAVAC PARENT_PATH JAVA_HOME)
@@ -58,7 +62,7 @@ endif ()
 if (JLLVM_ENABLE_ASSERTIONS)
     # On non-Debug builds cmake automatically defines NDEBUG, so we
     # explicitly undefine it:
-    if( NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
+    if (NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG")
         # NOTE: use `add_compile_options` rather than `add_definitions` since
         # `add_definitions` does not support generator expressions.
         add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:-UNDEBUG>)
@@ -71,11 +75,11 @@ if (JLLVM_ENABLE_ASSERTIONS)
                     CMAKE_C_FLAGS_RELEASE
                     CMAKE_C_FLAGS_RELWITHDEBINFO
                     CMAKE_C_FLAGS_MINSIZEREL)
-                string (REGEX REPLACE "(^| )[/-]D *NDEBUG($| )" " "
+                string(REGEX REPLACE "(^| )[/-]D *NDEBUG($| )" " "
                         "${flags_var_to_scrub}" "${${flags_var_to_scrub}}")
-            endforeach()
-        endif()
-    endif()
+            endforeach ()
+        endif ()
+    endif ()
 endif ()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")

@@ -16,6 +16,7 @@
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/TargetSelect.h>
 
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/unwind/Unwinder.hpp>
@@ -289,4 +290,31 @@ void jllvm::VirtualMachine::throwNegativeArraySizeException(std::int32_t arrayLe
 void jllvm::VirtualMachine::throwNullPointerException()
 {
     throwException("Ljava/lang/NullPointerException;", "()V");
+}
+
+jllvm::VirtualMachine jllvm::VirtualMachine::create(BootOptions&& options)
+{
+    // Setup the global state in LLVM as is required by our VM.
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+
+    llvm::cl::ResetAllOptionOccurrences();
+
+    llvm::SmallVector<const char*> llvmArgs{"jllvm"};
+
+    // Deopt values are read-only and can be read from CSR registers by libunwind.
+    llvmArgs.push_back("-use-registers-for-deopt-values=1");
+
+#ifndef NDEBUG
+    std::string temp = "-debug-only=" + options.debugLogging;
+    llvmArgs.push_back("-jllvm-gc-every-alloc=1");
+    if (!options.debugLogging.empty())
+    {
+        llvmArgs.push_back(temp.c_str());
+    }
+#endif
+    llvm::cl::ParseCommandLineOptions(llvmArgs.size(), llvmArgs.data());
+
+    return VirtualMachine(std::move(options));
 }
