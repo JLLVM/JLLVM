@@ -586,7 +586,7 @@ struct MultiTypeImpls
     template <IsStore T>
     NextPC operator()(T store) const
     {
-        using type = InstructionElementType<T>::type;
+        using type = typename InstructionElementType<T>::type;
         context.setLocalAsRaw<type>(store.index, context.popAsRaw<type>());
         return {};
     }
@@ -594,7 +594,7 @@ struct MultiTypeImpls
     template <IsStore0 T>
     NextPC operator()(T) const
     {
-        using type = InstructionElementType<T>::type;
+        using type = typename InstructionElementType<T>::type;
         context.setLocalAsRaw<type>(0, context.popAsRaw<type>());
         return {};
     }
@@ -602,7 +602,7 @@ struct MultiTypeImpls
     template <IsStore1 T>
     NextPC operator()(T) const
     {
-        using type = InstructionElementType<T>::type;
+        using type = typename InstructionElementType<T>::type;
         context.setLocalAsRaw<type>(1, context.popAsRaw<type>());
         return {};
     }
@@ -610,7 +610,7 @@ struct MultiTypeImpls
     template <IsStore2 T>
     NextPC operator()(T) const
     {
-        using type = InstructionElementType<T>::type;
+        using type = typename InstructionElementType<T>::type;
         context.setLocalAsRaw<type>(2, context.popAsRaw<type>());
         return {};
     }
@@ -618,7 +618,7 @@ struct MultiTypeImpls
     template <IsStore3 T>
     NextPC operator()(T) const
     {
-        using type = InstructionElementType<T>::type;
+        using type = typename InstructionElementType<T>::type;
         context.setLocalAsRaw<type>(3, context.popAsRaw<type>());
         return {};
     }
