@@ -534,35 +534,35 @@ struct MultiTypeImpls
     template <IsLoad T>
     NextPC operator()(T load) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(load.index));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(load.index));
         return {};
     }
 
     template <IsLoad0 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(0));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(0));
         return {};
     }
 
     template <IsLoad1 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(1));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(1));
         return {};
     }
 
     template <IsLoad2 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(2));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(2));
         return {};
     }
 
     template <IsLoad3 T>
     NextPC operator()(T) const
     {
-        context.push(context.getLocal<typename InstructionElementType<T>::type>(3));
+        context.pushAsRaw<typename InstructionElementType<T>::type>(context.getLocalRaw(3));
         return {};
     }
 
@@ -586,35 +586,40 @@ struct MultiTypeImpls
     template <IsStore T>
     NextPC operator()(T store) const
     {
-        context.setLocal(store.index, context.pop<typename InstructionElementType<T>::type>());
+        using type = typename InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(store.index, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore0 T>
     NextPC operator()(T) const
     {
-        context.setLocal(0, context.pop<typename InstructionElementType<T>::type>());
+        using type = typename InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(0, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore1 T>
     NextPC operator()(T) const
     {
-        context.setLocal(1, context.pop<typename InstructionElementType<T>::type>());
+        using type = typename InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(1, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore2 T>
     NextPC operator()(T) const
     {
-        context.setLocal(2, context.pop<typename InstructionElementType<T>::type>());
+        using type = typename InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(2, context.popAsRaw<type>());
         return {};
     }
 
     template <IsStore3 T>
     NextPC operator()(T) const
     {
-        context.setLocal(3, context.pop<typename InstructionElementType<T>::type>());
+        using type = typename InstructionElementType<T>::type;
+        context.setLocalAsRaw<type>(3, context.popAsRaw<type>());
         return {};
     }
 
@@ -695,6 +700,11 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
         ByteCodeOp operation = *curr;
         InstructionResult result = match(
             operation, MultiTypeImpls{m_virtualMachine, context},
+            [&](AConstNull)
+            {
+                context.push<ObjectInterface*>(nullptr);
+                return NextPC{};
+            },
             [&](ANewArray aNewArray)
             {
                 auto count = context.pop<std::int32_t>();
@@ -709,17 +719,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push(array);
                 return NextPC{};
             },
-            [&](AThrow) -> InstructionResult
-            {
-                auto* exception = context.pop<ObjectInterface*>();
-                if (!exception)
-                {
-                    m_virtualMachine.throwNullPointerException();
-                }
-                // Verifier checks that the exception is an instance of 'Throwable' rather than performing it at
-                // runtime.
-                m_virtualMachine.throwJavaException(static_cast<Throwable*>(exception));
-            },
             [&](ArrayLength)
             {
                 auto* array = context.pop<AbstractArray*>();
@@ -730,10 +729,16 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::uint32_t>(array->size());
                 return NextPC{};
             },
-            [&](AConstNull)
+            [&](AThrow) -> InstructionResult
             {
-                context.push<ObjectInterface*>(nullptr);
-                return NextPC{};
+                auto* exception = context.pop<ObjectInterface*>();
+                if (!exception)
+                {
+                    m_virtualMachine.throwNullPointerException();
+                }
+                // Verifier checks that the exception is an instance of 'Throwable' rather than performing it at
+                // runtime.
+                m_virtualMachine.throwJavaException(static_cast<Throwable*>(exception));
             },
             [&](BIPush biPush)
             {
@@ -870,6 +875,26 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 context.push<std::int32_t>(-1);
                 return NextPC{};
             },
+            [&](IInc iInc)
+            {
+                context.setLocal(iInc.index,
+                                 static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
+                return NextPC{};
+            },
+            [&](InstanceOf instanceOf)
+            {
+                auto* object = context.pop<ObjectInterface*>();
+                if (!object)
+                {
+                    context.push<std::int32_t>(0);
+                    return NextPC{};
+                }
+
+                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
+                context.push<std::int32_t>(object->instanceOf(classObject));
+                return NextPC{};
+            },
+            // TODO: InvokeDynamic
             [&](OneOf<InvokeStatic, InvokeSpecial, InvokeInterface, InvokeVirtual> invoke)
             {
                 const RefInfo* refInfo = PoolIndex<RefInfo>{invoke.index}.resolve(classFile);
@@ -954,12 +979,6 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
 
                 return NextPC{};
             },
-            [&](IInc iInc)
-            {
-                context.setLocal(iInc.index,
-                                 static_cast<std::int32_t>(iInc.byte) + context.getLocal<std::uint32_t>(iInc.index));
-                return NextPC{};
-            },
             [&](IReturn)
             {
                 auto value = context.pop<std::uint32_t>();
@@ -978,18 +997,13 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 }
                 return ReturnValue(value);
             },
-            [&](InstanceOf instanceOf)
+            [&](OneOf<JSR, JSRw> jsr)
             {
-                auto* object = context.pop<ObjectInterface*>();
-                if (!object)
-                {
-                    context.push<std::int32_t>(0);
-                    return NextPC{};
-                }
-
-                ClassObject* classObject = getClassObject(classFile, instanceOf.index);
-                context.push<std::int32_t>(object->instanceOf(classObject));
-                return NextPC{};
+                std::uint16_t retAddress =
+                    jsr.offset + sizeof(OpCodes)
+                    + (holds_alternative<JSRw>(*curr) ? sizeof(std::int32_t) : sizeof(std::int16_t));
+                context.pushRaw(retAddress, /*isReference=*/false);
+                return SetPC{static_cast<std::uint16_t>(jsr.offset + jsr.target)};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
             {
@@ -1135,6 +1149,11 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 std::memcpy(field->getAddressOfStatic(), &value, descriptor.sizeOf());
                 return NextPC{};
             },
+            [&](Ret ret)
+            {
+                std::uint16_t retAddress = context.getLocalRaw(ret.index).first;
+                return SetPC{retAddress};
+            },
             [&](Return)
             {
                 // "Noop" return value for void methods.
@@ -1163,7 +1182,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 return SetPC{
                     static_cast<std::uint16_t>(tableSwitch.offset + tableSwitch.jumpTable[index - tableSwitch.low])};
             },
-            [&](Wide wide)
+            [&](Wide wide) -> InstructionResult
             {
 #define WIDE_LOAD_CASE(op)                                                            \
     case OpCodes::op:                                                                 \
@@ -1192,8 +1211,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     WIDE_STORE_CASE(LStore)
                     case OpCodes::Ret:
                     {
-                        // TODO: implement later
-                        escapeToJIT();
+                        std::uint16_t retAddress = context.getLocalRaw(wide.index).first;
+                        return SetPC{retAddress};
                     }
                     case OpCodes::IInc:
                     {
@@ -1210,10 +1229,8 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             },
             [&](...) -> InstructionResult
             {
-                // While the interpreter is not fully implemented, we escaped to JIT code that implements the
-                // given bytecode instruction.
-                // TODO: Remove this once interpreter implements all bytecodes.
-                escapeToJIT();
+                // TODO: Remove this once the interpreter implements all opcodes.
+                llvm_unreachable("NOT YET IMPLEMENTED");
             });
 
         if (auto* returnValue = get_if<ReturnValue>(&result))

@@ -123,6 +123,18 @@ public:
     /// A raw value consisting of the value and a boolean denoting whether the type is a reference type.
     using RawValue = std::pair<std::uint64_t, bool>;
 
+    /// Pushes a raw value pair of type 'T' to the operand stack.
+    template <InterpreterValue T>
+    void pushAsRaw(RawValue pair)
+    {
+        pushRaw(pair);
+        if constexpr (InterpreterClass2<T>)
+        {
+            // "overwrite" the operand stack after as well.
+            pushRaw(0, pair.second);
+        }
+    }
+
     void pushRaw(RawValue pair)
     {
         pushRaw(pair.first, pair.second);
@@ -132,11 +144,7 @@ public:
     template <InterpreterValue T>
     T pop()
     {
-        if constexpr (InterpreterClass2<T>)
-        {
-            popRaw();
-        }
-        return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(popRaw().first));
+        return llvm::bit_cast<T>(static_cast<NextSizedUInt<T>>(popAsRaw<T>().first));
     }
 
     /// Pops the top value of the type given by 'descriptor' from the operand stack.
@@ -147,6 +155,17 @@ public:
             popRaw();
         }
         return popRaw().first;
+    }
+
+    /// Pops the top value of type 'T' as a raw value pair from the operand stack.
+    template <InterpreterValue T>
+    RawValue popAsRaw()
+    {
+        if constexpr (InterpreterClass2<T>)
+        {
+            popRaw();
+        }
+        return popRaw();
     }
 
     /// Pops the top-most operand stack slot from the stack.
@@ -171,6 +190,19 @@ public:
         }
     }
 
+    /// Sets the local 'index' to the given raw value pair.
+    template <InterpreterValue T>
+    void setLocalAsRaw(std::uint16_t index, RawValue pair)
+    {
+        m_localVariables[index] = pair.first;
+        setMaskBit(m_localVariableGCMask, index, pair.second);
+        if constexpr (InterpreterClass2<T>)
+        {
+            // overwrite local variable after.
+            setMaskBit(m_localVariableGCMask, index + 1, pair.second);
+        }
+    }
+
     /// Gets the value of the local 'index' and interprets it as 'T'.
     template <InterpreterValue T>
     T getLocal(std::uint16_t index) const
@@ -178,6 +210,14 @@ public:
         T result;
         std::memcpy(&result, m_localVariables + index, sizeof(T));
         return result;
+    }
+
+    /// Gets the raw value pair of the local 'index'.
+    RawValue getLocalRaw(std::uint16_t index) const
+    {
+        bool isReference = BitArrayRef(m_localVariableGCMask, index + 1)[index];
+        std::uint64_t copy = m_localVariables[index];
+        return {copy, isReference};
     }
 
     /// Pops arguments from the stack matching a call to a possibly static method of type 'methodType'.
