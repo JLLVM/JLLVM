@@ -27,9 +27,8 @@
 
 jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
     : m_classLoader(
-        m_stringInterner, std::move(bootOptions.classPath),
-        [this, bootOptions](ClassObject& classObject) { m_runtime.add(&classObject, getDefaultExecutor()); },
-        [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
+          m_stringInterner, std::move(bootOptions.classPath), [this, bootOptions](ClassObject& classObject)
+          { m_runtime.add(&classObject, getDefaultExecutor()); }, [&] { return m_gc.allocateStatic(); }),
       m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
       m_jit(*this),
       m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),

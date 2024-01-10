@@ -175,7 +175,7 @@ class Field
     {
         std::uint16_t m_offset;
         char m_primitiveStorage[sizeof(double)];
-        void** m_reference;
+        GCRootRef<ObjectInterface> m_reference;
     };
     AccessFlag m_accessFlags;
 
@@ -192,7 +192,7 @@ public:
 
     /// Creates a new static field of a reference type with the given name, type descriptor and a pointer to where the
     /// static reference is allocated.
-    Field(llvm::StringRef name, FieldType type, void** reference, AccessFlag accessFlags)
+    Field(llvm::StringRef name, FieldType type, GCRootRef<ObjectInterface> reference, AccessFlag accessFlags)
         : m_name(name), m_type(type), m_reference(reference), m_accessFlags(accessFlags)
     {
     }
@@ -246,7 +246,7 @@ public:
         assert(isStatic());
         if (m_type.isReference())
         {
-            return m_reference;
+            return m_reference.data();
         }
         return reinterpret_cast<const void*>(m_primitiveStorage);
     }
