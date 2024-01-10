@@ -1002,7 +1002,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                 std::uint16_t retAddress =
                     jsr.offset + sizeof(OpCodes)
                     + (holds_alternative<JSRw>(*curr) ? sizeof(std::int32_t) : sizeof(std::int16_t));
-                context.pushRaw(retAddress, false);
+                context.pushRaw(retAddress, /*isReference=*/false);
                 return SetPC{static_cast<std::uint16_t>(jsr.offset + jsr.target)};
             },
             [&](OneOf<LDC, LDCW, LDC2W> ldc)
@@ -1151,8 +1151,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
             },
             [&](Ret ret)
             {
-                std::uint16_t retAddress =
-                    reinterpret_cast<std::uintptr_t>(context.getLocal<ObjectInterface*>(ret.index));
+                std::uint16_t retAddress = context.getLocalRaw(ret.index).first;
                 return SetPC{retAddress};
             },
             [&](Return)
@@ -1212,8 +1211,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     WIDE_STORE_CASE(LStore)
                     case OpCodes::Ret:
                     {
-                        std::uint16_t retAddress =
-                            reinterpret_cast<std::uintptr_t>(context.getLocal<ObjectInterface*>(wide.index));
+                        std::uint16_t retAddress = context.getLocalRaw(wide.index).first;
                         return SetPC{retAddress};
                     }
                     case OpCodes::IInc:
