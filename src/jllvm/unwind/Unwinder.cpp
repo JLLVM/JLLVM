@@ -99,23 +99,26 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
     {
         UnwindFrame frame;
 
-        explicit ForcedException(const UnwindFrame& frame) : _Unwind_Exception{0}, frame(frame)
+        explicit ForcedException(const UnwindFrame& frame, void (*cleanupFn)(_Unwind_Reason_Code, _Unwind_Exception*))
+            : _Unwind_Exception{0}, frame(frame)
         {
             // Identifier used by personality functions to identify the kind of exception object being thrown.
             // Mustn't match what the C++ runtime uses.
             std::memcpy(&exception_class, "JLVMJAVA", sizeof(exception_class));
-            exception_cleanup = +[](_Unwind_Reason_Code, _Unwind_Exception* exception)
-            { delete static_cast<ForcedException*>(exception); };
+            exception_cleanup = cleanupFn;
         }
     };
 
-    // Exception object for the force unwind must be heap allocated as the stack unwinding destroys all local variables.
-    auto* exception = new ForcedException(nextFrame);
+    // Exception object for the force unwind must not be a local as the stack unwinding destroys all local variables.
+    thread_local static std::optional<ForcedException> forcedExceptionStorage;
+    forcedExceptionStorage.emplace(
+        nextFrame, +[](_Unwind_Reason_Code, _Unwind_Exception*) { forcedExceptionStorage.reset(); });
+
     // Unwind the C++ stack until the Java frame that should be replaced is reached. The program counter of that frame
     // is passed as 'stopPc' and always compared with the current frame being unwound by the '_Unwind_ForcedUnwind'
     // implementation.
     _Unwind_ForcedUnwind(
-        exception,
+        &*forcedExceptionStorage,
         +[](int, _Unwind_Action, std::uint64_t, _Unwind_Exception* exception, _Unwind_Context* context, void* stopPc)
         {
             std::uintptr_t pc = _Unwind_GetIP(context);
