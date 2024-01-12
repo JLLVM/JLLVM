@@ -104,3 +104,24 @@ TEMPLATE_TEST_CASE_METHOD_SIG(TemplatedFieldVirtualMachineFixture, "JNI Get-Set 
 
     CHECK((this->jniEnv.*getter)(clazz, field) == 0);
 }
+
+TEST_CASE_METHOD(VirtualMachineFixture, "JNI Rooting", "[JNI]")
+{
+    CHECK(jniEnv.EnsureLocalCapacity(0) == JNI_OK);
+
+    CHECK(jniEnv.PushLocalFrame(16) == JNI_OK);
+
+    jclass clazz = jniEnv.FindClass("TestSimpleJNI");
+    REQUIRE(clazz);
+    jfieldID field = jniEnv.GetStaticFieldID(clazz, "O", "Ljava/lang/String;");
+    REQUIRE(field);
+    jobject string = jniEnv.GetStaticObjectField(clazz, field);
+    REQUIRE(string);
+
+    // Promote to global ref.
+    jobject oldLocalRef = string;
+    string = jniEnv.NewGlobalRef(string);
+    jniEnv.DeleteLocalRef(oldLocalRef);
+
+    clazz = static_cast<jclass>(jniEnv.PopLocalFrame(clazz));
+}

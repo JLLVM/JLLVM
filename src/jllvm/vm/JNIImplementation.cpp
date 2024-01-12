@@ -75,6 +75,53 @@ jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEn
         return llvm::bit_cast<jclass>(virtualMachine.getGC().root(&classObject).release());
     };
 
+    result->NewGlobalRef = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, GCRootRef<ObjectInterface> object)
+        {
+            GCRootRef<ObjectInterface> globalRef = virtualMachine.getGC().allocateStatic();
+            globalRef.assign(object.address());
+            return globalRef;
+        });
+    result->DeleteGlobalRef = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, GCRootRef<ObjectInterface> object)
+        {
+            if (!object)
+            {
+                return;
+            }
+            virtualMachine.getGC().deleteStatic(object);
+        });
+    result->DeleteLocalRef = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, GCRootRef<ObjectInterface> object)
+        {
+            if (!object)
+            {
+                return;
+            }
+            virtualMachine.getGC().deleteRoot(object);
+        });
+    result->EnsureLocalCapacity = translateJNIInterface([](VirtualMachine&, std::int32_t) { return JNI_OK; });
+    result->PushLocalFrame = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, std::int32_t)
+        {
+            virtualMachine.getGC().pushLocalFrame();
+            return JNI_OK;
+        });
+    result->PopLocalFrame = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, GCRootRef<ObjectInterface> result)
+        {
+            // Save object in-case 'result' is from the frame being popped.
+            ObjectInterface* object = result.address();
+            virtualMachine.getGC().popLocalFrame();
+            return object;
+        });
+    result->NewLocalRef = translateJNIInterface(
+        [](VirtualMachine&, GCRootRef<ObjectInterface> result)
+        {
+            // Re-root object in 'result' in the current frame by simply returning the 'ObjectInterface*'.
+            return result.address();
+        });
+
     result->GetStaticFieldID = translateJNIInterface(
         [](VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject, const char* name,
            const char* signature) -> const Field*
