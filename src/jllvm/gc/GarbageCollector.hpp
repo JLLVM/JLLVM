@@ -360,6 +360,11 @@ public:
     /// sweeping.
     GCRootRef<Object> allocateStatic();
 
+    void deleteStatic(GCRootRef<ObjectInterface> staticRoot)
+    {
+        m_staticRoots.free(staticRoot);
+    }
+
     /// Returns the size of the object heap in bytes.
     std::size_t getHeapSize() const
     {
