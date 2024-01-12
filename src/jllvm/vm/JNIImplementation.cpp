@@ -20,6 +20,48 @@ jllvm::VirtualMachine& jllvm::virtualMachineFromJNIEnv(JNIEnv* env)
     return *reinterpret_cast<jllvm::VirtualMachine*>(env->functions->reserved0);
 }
 
+namespace
+{
+
+using namespace jllvm;
+
+template <class T>
+auto getStaticFieldFunction()
+{
+    return translateJNIInterface(
+        [](VirtualMachine&, GCRootRef<ClassObject>, Field* field)
+        {
+            using type = std::conditional_t<std::is_same_v<T, GCRootRef<ObjectInterface>>, ObjectInterface*, T>;
+            return static_cast<type>(StaticFieldRef<type>(field)());
+        });
+}
+
+template <class T>
+auto setStaticFieldFunction()
+{
+    return translateJNIInterface(
+        [](VirtualMachine&, GCRootRef<ClassObject>, Field* field, T value)
+        {
+            using type = std::conditional_t<std::is_same_v<T, GCRootRef<ObjectInterface>>, ObjectInterface*, T>;
+            auto staticField = StaticFieldRef<type>(field);
+            staticField() = value;
+        });
+}
+
+} // namespace
+
+/// X-Macro used to conveniently implement JNI methods that only differs in part of the name and type.
+#define NAME_AND_TYPES                            \
+    NAME_TYPE(Boolean, jboolean)                  \
+    NAME_TYPE(Object, GCRootRef<ObjectInterface>) \
+    NAME_TYPE(Byte, jbyte)                        \
+    NAME_TYPE(Char, jchar)                        \
+    NAME_TYPE(Short, jshort)                      \
+    NAME_TYPE(Int, jint)                          \
+    NAME_TYPE(Long, jlong)                        \
+    NAME_TYPE(Float, jfloat)                      \
+    NAME_TYPE(Double, jdouble)
+
 jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEnvironment()
 {
     auto* result = new JNINativeInterface_{};
@@ -32,6 +74,23 @@ jllvm::VirtualMachine::JNINativeInterfaceUPtr jllvm::VirtualMachine::createJNIEn
         ClassObject& classObject = virtualMachine.getClassLoader().forName(FieldType::fromMangled(name));
         return llvm::bit_cast<jclass>(virtualMachine.getGC().root(&classObject).release());
     };
+
+    result->GetStaticFieldID = translateJNIInterface(
+        [](VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject, const char* name,
+           const char* signature) -> const Field*
+        {
+            // Static field access always initializes the class object.
+            virtualMachine.initialize(*classObject);
+            return classObject->getStaticField(name, FieldType(signature));
+        });
+
+#define NAME_TYPE(name, type) result->GetStatic##name##Field = getStaticFieldFunction<type>();
+    NAME_AND_TYPES
+#undef NAME_TYPE
+
+#define NAME_TYPE(name, type) result->SetStatic##name##Field = setStaticFieldFunction<type>();
+    NAME_AND_TYPES
+#undef NAME_TYPE
 
     return JNINativeInterfaceUPtr(result, +[](JNINativeInterface_* ptr) { delete ptr; });
 }
