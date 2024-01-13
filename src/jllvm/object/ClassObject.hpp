@@ -511,8 +511,10 @@ public:
     /// Function to create a new class object for an array type. The class object is allocated within 'allocator'
     /// using 'componentType' as the component type of the array type.
     /// 'stringSaver' is used to save the array type descriptor created and used as class name.
+    /// Bases are the bases of the array (Object and the interfaces implemented by arrays).
     static ClassObject* createArray(llvm::BumpPtrAllocator& allocator, ClassObject* objectClass,
-                                    const ClassObject* componentType, llvm::StringSaver& stringSaver);
+                                    const ClassObject* componentType, llvm::StringSaver& stringSaver,
+                                    llvm::ArrayRef<ClassObject*> arrayBases);
 
     /// Constructor for creating the class objects for primitive types with a size and name.
     ClassObject(std::uint32_t instanceSize, llvm::StringRef name);
@@ -659,7 +661,7 @@ public:
     /// Returns the direct interfaces implemented by this class.
     llvm::ArrayRef<const ClassObject*> getInterfaces() const
     {
-        return m_bases.drop_front(isClass() ? 1 : 0);
+        return m_bases.drop_front(isClass() || isArray() ? 1 : 0);
     }
 
     /// Returns a range containing all direct and indirect interfaces of this class in an unspecified order.
@@ -708,7 +710,7 @@ public:
     }
 
     /// Returns the super class of this class or null if the class does not have a super class.
-    /// This is notably the case for array types, primitives and java/lang/Object.
+    /// This is notably the case for interfaces, primitives and java/lang/Object.
     const ClassObject* getSuperClass() const
     {
         return (m_bases.empty() || !m_bases.front()->isClass()) ? nullptr : m_bases.front();

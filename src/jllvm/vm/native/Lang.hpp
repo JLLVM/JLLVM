@@ -79,8 +79,23 @@ public:
         return &classObject;
     }
 
-    // isInstance
-    // isAssignableFrom
+    bool isInstance(GCRootRef<ObjectInterface> object)
+    {
+        if (!object)
+        {
+            return false;
+        }
+        return object->instanceOf(javaThis);
+    }
+
+    bool isAssignableFrom(const ClassObject* cls)
+    {
+        if (!cls)
+        {
+            virtualMachine.throwNullPointerException();
+        }
+        return cls->wouldBeInstanceOf(javaThis);
+    }
 
     bool isInterface()
     {
@@ -99,26 +114,39 @@ public:
 
     String* initClassName()
     {
-        std::string string = javaThis->getClassName().str();
+        std::string string =
+            javaThis->isPrimitive() ? javaThis->getDescriptor().pretty() : javaThis->getClassName().str();
         std::replace(string.begin(), string.end(), '/', '.');
         return virtualMachine.getStringInterner().intern(string);
     }
 
-    // getSuperclass
-    // getInterfaces0
+    const ClassObject* getSuperclass()
+    {
+        return javaThis->getSuperClass();
+    }
+
+    Array<const ClassObject*>* getInterfaces0()
+    {
+        llvm::ArrayRef interfaces = javaThis->getInterfaces();
+        auto* array = virtualMachine.getGC().allocate<Array<const ClassObject*>>(
+            &virtualMachine.getClassLoader().forName("[Ljava/lang/Class;"), interfaces.size());
+        llvm::copy(interfaces, array->begin());
+
+        return array;
+    }
+
     // getModifiers
     // getSigners
     // setSigners
 
-    Array<ObjectInterface*>* getEnclosingMethod0()
+    Array<>* getEnclosingMethod0()
     {
         if (auto* enclosing = javaThis->getClassFile()->getAttributes().find<EnclosingMethod>())
         {
             const ClassFile& classFile = *javaThis->getClassFile();
             ClassLoader& classLoader = virtualMachine.getClassLoader();
             StringInterner& stringInterner = virtualMachine.getStringInterner();
-            auto* arr = virtualMachine.getGC().allocate<Array<ObjectInterface*>>(
-                &classLoader.forName("[Ljava/lang/Object;"), 3);
+            auto* arr = virtualMachine.getGC().allocate<Array<>>(&classLoader.forName("[Ljava/lang/Object;"), 3);
 
             (*arr)[0] = &classLoader.forName(
                 FieldType::fromMangled(enclosing->class_index.resolve(classFile)->nameIndex.resolve(classFile)->text));
@@ -181,10 +209,11 @@ public:
     // getPermittedSubclasses0
 
     constexpr static llvm::StringLiteral className = "java/lang/Class";
-    constexpr static auto methods =
-        std::make_tuple(&ClassModel::registerNatives, &ClassModel::isInterface, &ClassModel::isArray,
-                        &ClassModel::isPrimitive, &ClassModel::initClassName, &ClassModel::getEnclosingMethod0,
-                        &ClassModel::getPrimitiveClass, &ClassModel::desiredAssertionStatus0);
+    constexpr static auto methods = std::make_tuple(
+        &ClassModel::registerNatives, &ClassModel::forName0, &ClassModel::isInstance, &ClassModel::isAssignableFrom,
+        &ClassModel::isInterface, &ClassModel::isArray, &ClassModel::isPrimitive, &ClassModel::initClassName,
+        &ClassModel::getSuperclass, &ClassModel::getInterfaces0, &ClassModel::getEnclosingMethod0,
+        &ClassModel::getPrimitiveClass, &ClassModel::desiredAssertionStatus0);
 };
 
 class ClassLoaderModel : public ModelBase<>
