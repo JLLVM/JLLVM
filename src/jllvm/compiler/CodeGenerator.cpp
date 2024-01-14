@@ -163,7 +163,8 @@ ArrayInfo resolveNewArrayInfo(BaseType::Values componentType, llvm::IRBuilder<>&
 
 } // namespace
 
-llvm::Value* CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::uint16_t offset)
+llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*> CodeGenerator::generateBody(PrologueGenFn generatePrologue,
+                                                                                  std::uint16_t offset)
 {
     TrivialDebugInfoBuilder debugInfoBuilder(m_function);
 
@@ -224,7 +225,11 @@ llvm::Value* CodeGenerator::generateBody(PrologueGenFn generatePrologue, std::ui
 
     // Move the return block to the very back, purely to improve the readability of textual IR.
     m_returnBlock->moveAfter(&m_function->back());
-    return m_returnValue ? static_cast<llvm::Value*>(m_returnValue) : static_cast<llvm::Value*>(m_returnBlock);
+    if (m_returnValue)
+    {
+        return m_returnValue;
+    }
+    return m_returnBlock;
 }
 
 void CodeGenerator::createBasicBlocks(const ByteCodeTypeChecker& checker)

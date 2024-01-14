@@ -142,7 +142,8 @@ public:
     /// This function must be only called once. 'generatePrologue' is used to initialize the local variables and
     /// operand stack at the start of the method. 'offset' is the bytecode offset at which compilation should start and
     /// must refer to a JVM instruction.
-    llvm::Value* generateBody(PrologueGenFn generatePrologue, std::uint16_t offset = 0);
+    llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*> generateBody(PrologueGenFn generatePrologue,
+                                                                       std::uint16_t offset = 0);
 };
 
 /// Generates new LLVM code at the back of 'function' from the JVM Bytecode in 'method'.
@@ -152,8 +153,9 @@ public:
 /// A basic block without a terminator is created that all return instructions branch to instead of calling return.
 /// If the method returns void, this basic block is returned. Otherwise, a PHI instruction within the basic block
 /// containing the value that should be returned is returned instead.
-inline llvm::Value* compileMethodBody(llvm::Function* function, const Method& method,
-                                      CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
+inline llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*>
+    compileMethodBody(llvm::Function* function, const Method& method, CodeGenerator::PrologueGenFn generatePrologue,
+                      std::uint16_t offset = 0)
 {
     CodeGenerator codeGenerator{function, method};
 

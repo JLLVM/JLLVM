@@ -28,7 +28,7 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
     addJavaJITMethodMetadata(function, &method, CallingConvention::JIT);
     applyABIAttributes(function);
 
-    llvm::Value* ret = compileMethodBody(
+    llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*> ret = compileMethodBody(
         function, method,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack&, const ByteCodeTypeChecker::TypeInfo&)
         {
@@ -53,15 +53,16 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
             }
         });
 
-    if (auto* bb = llvm::dyn_cast<llvm::BasicBlock>(ret))
+    if (auto* bb = ret.dyn_cast<llvm::BasicBlock*>())
     {
         llvm::IRBuilder<> builder(bb);
         builder.CreateRetVoid();
     }
     else
     {
-        llvm::IRBuilder<> builder(llvm::cast<llvm::Instruction>(ret)->getParent());
-        builder.CreateRet(ret);
+        auto* phi = ret.get<llvm::PHINode*>();
+        llvm::IRBuilder<> builder(phi->getParent());
+        builder.CreateRet(phi);
     }
 
     return function;
@@ -70,8 +71,6 @@ llvm::Function* jllvm::compileMethod(llvm::Module& module, const Method& method)
 llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offset, const Method& method,
                                         CallingConvention callingConvention)
 {
-    const MethodInfo& methodInfo = method.getMethodInfo();
-
     auto* function =
         llvm::Function::Create(osrMethodSignature(method.getType(), callingConvention, module.getContext()),
                                llvm::GlobalValue::ExternalLinkage, mangleOSRMethod(&method, offset), module);
@@ -80,7 +79,7 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
 
     llvm::Value* osrState = function->getArg(0);
 
-    llvm::Value* result = compileMethodBody(
+    llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*> result = compileMethodBody(
         function, method,
         [&](llvm::IRBuilder<>& builder, LocalVariables& locals, OperandStack& operandStack,
             const ByteCodeTypeChecker::TypeInfo& typeInfo)
@@ -135,11 +134,12 @@ llvm::Function* jllvm::compileOSRMethod(llvm::Module& module, std::uint16_t offs
         offset);
 
     llvm::Value* returnValue = nullptr;
-    auto* basicBlock = llvm::dyn_cast<llvm::BasicBlock>(result);
+    auto* basicBlock = result.dyn_cast<llvm::BasicBlock*>();
     if (!basicBlock)
     {
-        basicBlock = llvm::cast<llvm::Instruction>(result)->getParent();
-        returnValue = result;
+        auto* phi = result.get<llvm::PHINode*>();
+        basicBlock = phi->getParent();
+        returnValue = phi;
     }
     llvm::IRBuilder<> builder(basicBlock);
     emitReturn(builder, returnValue, callingConvention);
