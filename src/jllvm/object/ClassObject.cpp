@@ -126,7 +126,8 @@ jllvm::ClassObject::ClassObject(const jllvm::ClassObject* metaClass, std::int32_
 }
 
 jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allocator, ClassObject* objectClass,
-                                                    const ClassObject* componentType, llvm::StringSaver& stringSaver)
+                                                    const ClassObject* componentType, llvm::StringSaver& stringSaver,
+                                                    llvm::ArrayRef<ClassObject*> arrayBases)
 {
     std::uint32_t arrayFieldAreaSize = sizeof(std::uint32_t);
     // Account for padding inbetween 'length' and the elements after.
@@ -147,7 +148,7 @@ jllvm::ClassObject* jllvm::ClassObject::createArray(llvm::BumpPtrAllocator& allo
     result->m_componentTypeOrInterfaceId = componentType;
     result->m_initialized = InitializationStatus::Initialized;
     result->m_tableSize = vTableSlots;
-    result->m_bases = arrayRefAlloc(allocator, std::initializer_list<ClassObject*>{objectClass});
+    result->m_bases = arrayBases;
     std::fill(result->getVTable().begin(), result->getVTable().end(), nullptr);
     return result;
 }
@@ -222,8 +223,7 @@ bool jllvm::ClassObject::wouldBeInstanceOf(const ClassObject* other) const
         if (other->isInterface())
         {
             // If T is an interface type, then T must be one of the interfaces implemented by arrays.
-            // TODO: add interface to array class object
-            return other->getClassName() == "java/lang/Cloneable" || other->getClassName() == "java/io/Serializable";
+            return llvm::is_contained(getAllInterfaces(), other);
         }
 
         // Strip array types and check that the component types are compatible.
@@ -302,9 +302,9 @@ const jllvm::Method& jllvm::ClassObject::methodSelection(const Method& resolvedM
     // method.
     for (const ClassObject* curr : getSuperClasses())
     {
-        const Method* result =
-            curr->getMethod(resolvedMethod.getName(), resolvedMethod.getType(), [&](const Method& method)
-                            { return !method.isStatic() && canOverride(curr, resolvedMethod); });
+        const Method* result = curr->getMethod(resolvedMethod.getName(), resolvedMethod.getType(),
+                                               [&](const Method& method)
+                                               { return !method.isStatic() && canOverride(curr, resolvedMethod); });
         if (result)
         {
             return *result;

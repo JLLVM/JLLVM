@@ -59,6 +59,7 @@ class ClassLoader
 
     ClassObject* m_metaClassObject = nullptr;
     ClassObject* m_objectClassObject = nullptr;
+    std::array<ClassObject*, 3> m_arrayBases{};
 
 public:
     /// Constructs a class loader with 'classPaths', which are all directories that class files will be searched for.

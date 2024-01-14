@@ -38,7 +38,8 @@ public:
         : metaObject(&metaObject, /*fieldAreaSize=*/0, "MetaObject"),
           objectClass(&metaObject, /*fieldAreaSize=*/0, "Object"),
           emptyTestObject(&metaObject, /*fieldAreaSize=*/0, "TestObject"),
-          arrayOfEmptyTestObject(ClassObject::createArray(m_allocator, &objectClass, &emptyTestObject, m_stringSaver))
+          arrayOfEmptyTestObject(
+              ClassObject::createArray(m_allocator, &objectClass, &emptyTestObject, m_stringSaver, {&objectClass}))
     {
     }
 };

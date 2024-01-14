@@ -217,7 +217,7 @@ jllvm::ClassObject* jllvm::ClassLoader::forNameLoaded(FieldType fieldType)
     ClassObject* curr = result->second;
     for (std::size_t i = 1; i <= arrayTypesCount; i++)
     {
-        curr = ClassObject::createArray(m_classAllocator, m_objectClassObject, curr, m_stringSaver);
+        curr = ClassObject::createArray(m_classAllocator, m_objectClassObject, curr, m_stringSaver, m_arrayBases);
         m_mapping.insert({curr->getDescriptor(), curr});
         m_prepareClassObject(*curr);
     }
@@ -237,8 +237,8 @@ jllvm::ClassObject& jllvm::ClassLoader::forName(FieldType fieldType)
         if (auto arrayTypeDesc = get_if<ArrayType>(&fieldType))
         {
             const ClassObject& componentType = forName(arrayTypeDesc->getComponentType());
-            ClassObject* arrayType =
-                ClassObject::createArray(m_classAllocator, m_objectClassObject, &componentType, m_stringSaver);
+            ClassObject* arrayType = ClassObject::createArray(m_classAllocator, m_objectClassObject, &componentType,
+                                                              m_stringSaver, m_arrayBases);
             m_mapping.insert({arrayType->getDescriptor(), arrayType});
             m_prepareClassObject(*arrayType);
             return *arrayType;
@@ -292,6 +292,9 @@ jllvm::ClassObject& jllvm::ClassLoader::loadBootstrapClasses()
 {
     m_metaClassObject = &forName("Ljava/lang/Class;");
     m_objectClassObject = &forName("Ljava/lang/Object;");
+    m_arrayBases[0] = m_objectClassObject;
+    m_arrayBases[1] = &forName("Ljava/lang/Cloneable;");
+    m_arrayBases[2] = &forName("Ljava/io/Serializable;");
 
     // With the meta class object loaded we can update all so far loaded class objects to be of type 'Class'.
     // This includes 'Class' itself.
