@@ -29,11 +29,13 @@ class OSRState;
 class OSRTarget : public Executor
 {
 public:
-    /// Returns an OSR version for 'method' starting at the given 'byteCodeOffset'.
-    /// The method must have the signature '<original-ret-type>(uint64_t*)' where the 'uint64_t*' is the buffer the
+    /// Returns an OSR version for 'method' starting at the given 'byteCodeOffset' with the given calling convention.
+    /// The method must have the signature '<cc-ret-type>(uint64_t*)' where the 'uint64_t*' is the buffer the
     /// 'OSRState's are initialized with by the 'createOSRState*' methods below. This buffer should be used to
-    /// initialize the abstract machine state at the given 'byteCodeOffset'.
-    virtual void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset) = 0;
+    /// initialize the abstract machine state at the given 'byteCodeOffset'. The 'cc-ret-type' is the return type as
+    /// specified by the given calling convention.
+    virtual void* getOSREntry(const Method& method, std::uint16_t byteCodeOffset,
+                              CallingConvention callingConvention) = 0;
 
     /// Methods creating an 'OSRState' method suitable for use by functions returned by 'getOSREntry' and initializing
     /// it from their given parameters.

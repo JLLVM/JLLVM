@@ -161,30 +161,90 @@ void placeInJavaSection(llvm::Function* function)
     function->setSection(sectionName);
 }
 
-void addPrefixData(llvm::Function* function, llvm::ArrayRef<llvm::Constant*> structFields)
+llvm::Constant* constantStruct(llvm::ArrayRef<llvm::Constant*> structFields)
 {
+    assert(!structFields.empty());
     llvm::SmallVector<llvm::Type*> body =
         llvm::to_vector(llvm::map_range(structFields, std::mem_fn(&llvm::Value::getType)));
 
-    auto* structType = llvm::StructType::get(function->getContext(), body);
-    function->setPrefixData(llvm::ConstantStruct::get(structType, structFields));
+    auto* structType = llvm::StructType::get(structFields.front()->getContext(), body);
+    return llvm::ConstantStruct::get(structType, structFields);
+}
+
+using namespace jllvm;
+
+llvm::Constant* createMethodMetadata(llvm::LLVMContext& context, JavaMethodMetadata::Kind kind,
+                                     CallingConvention callingConvention)
+{
+    llvm::IntegerType* byteType = llvm::Type::getInt8Ty(context);
+    return constantStruct({llvm::ConstantInt::get(byteType, static_cast<std::uint8_t>(kind)),
+                           llvm::ConstantInt::get(byteType, static_cast<std::uint8_t>(callingConvention))});
 }
 
 } // namespace
 
-void jllvm::addJavaMethodMetadata(llvm::Function* function, const Method* method, JavaMethodMetadata::Kind kind)
+void jllvm::addJavaJITMethodMetadata(llvm::Function* function, const Method* method,
+                                     CallingConvention callingConvention)
 {
-    llvm::SmallVector<llvm::Constant*> structBody;
-    structBody.push_back(methodGlobal(*function->getParent(), method));
-    llvm::IntegerType* byteType = llvm::Type::getInt8Ty(function->getContext());
-    // unions in LLVM IR do not exist. Rather they're just byte array allocations with the proper size and padding
-    // after and before and then reinterpreted to the active type.
-    structBody.push_back(
-        llvm::ConstantAggregateZero::get(llvm::ArrayType::get(byteType, JavaMethodMetadata::unionSize())));
-    structBody.push_back(llvm::ConstantInt::get(byteType, static_cast<std::uint8_t>(kind)));
+    static_assert(alignof(JavaMethodMetadata) <= alignof(JavaMethodMetadata::JITData));
 
+    std::size_t alignmentRequirement = alignof(JavaMethodMetadata::JITData);
+    function->setAlignment(llvm::Align(alignmentRequirement));
+
+    llvm::PointerType* pointerType = llvm::PointerType::get(function->getContext(), 0);
+    llvm::Constant* jitData = constantStruct({/*method=*/methodGlobal(*function->getParent(), method),
+                                              /*DenseMap=*/llvm::ConstantPointerNull::get(pointerType)});
+    llvm::Constant* methodMetadata =
+        createMethodMetadata(function->getContext(), JavaMethodMetadata::Kind::JIT, callingConvention);
+
+    // Both the general Java method metadata and the JIT specific metadata are placed prior to the function in a packed
+    // struct. A packed struct causes no padding to be inserted between the two structures nor at the end of the
+    // structure.
+    // This makes it possible to access the method metadata using 'functionPointer[-1]' and the jit data using
+    // 'methodMetadata[-1]' after casting pointers to the appropriate types.
+    auto* structType = llvm::StructType::get(function->getContext(), {jitData->getType(), methodMetadata->getType()},
+                                             /*isPacked=*/true);
     placeInJavaSection(function);
-    addPrefixData(function, structBody);
+    function->setPrefixData(constantStruct(llvm::ConstantStruct::get(structType, {jitData, methodMetadata})));
+}
+
+void jllvm::addJavaNativeMethodMetadata(llvm::Function* function, const Method* method)
+{
+    static_assert(alignof(JavaMethodMetadata) <= alignof(JavaMethodMetadata::NativeData));
+
+    std::size_t alignmentRequirement = alignof(JavaMethodMetadata::NativeData);
+    function->setAlignment(llvm::Align(alignmentRequirement));
+
+    llvm::Constant* nativeData = constantStruct({/*method=*/methodGlobal(*function->getParent(), method)});
+    // JNI always uses the JIT calling convention.
+    llvm::Constant* methodMetadata =
+        createMethodMetadata(function->getContext(), JavaMethodMetadata::Kind::Native, CallingConvention::JIT);
+
+    auto* structType = llvm::StructType::get(function->getContext(), {nativeData->getType(), methodMetadata->getType()},
+                                             /*isPacked=*/true);
+    placeInJavaSection(function);
+    function->setPrefixData(constantStruct(llvm::ConstantStruct::get(structType, {nativeData, methodMetadata})));
+}
+
+void jllvm::addJavaInterpreterMethodMetadata(llvm::Function* function, CallingConvention callingConvention)
+{
+    static_assert(alignof(JavaMethodMetadata) <= alignof(JavaMethodMetadata::InterpreterData));
+
+    std::size_t alignmentRequirement = alignof(JavaMethodMetadata::NativeData);
+    function->setAlignment(llvm::Align(alignmentRequirement));
+
+    llvm::IntegerType* byteType = llvm::Type::getInt8Ty(function->getContext());
+    // The linker sets interpreter data. Sufficient space has to be allocated nevertheless.
+    llvm::Constant* interpreterData =
+        llvm::ConstantAggregateZero::get(llvm::ArrayType::get(byteType, sizeof(JavaMethodMetadata::InterpreterData)));
+    llvm::Constant* methodMetadata =
+        createMethodMetadata(function->getContext(), JavaMethodMetadata::Kind::Interpreter, callingConvention);
+
+    auto* structType =
+        llvm::StructType::get(function->getContext(), {interpreterData->getType(), methodMetadata->getType()},
+                              /*isPacked=*/true);
+    placeInJavaSection(function);
+    function->setPrefixData(constantStruct(llvm::ConstantStruct::get(structType, {interpreterData, methodMetadata})));
 }
 
 namespace
@@ -260,10 +320,16 @@ void jllvm::applyABIAttributes(llvm::CallBase* call, MethodType methodType, bool
     call->setAttributes(getABIAttributes(call->getContext(), methodType, isStatic));
 }
 
-llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, llvm::LLVMContext& context)
+llvm::FunctionType* jllvm::osrMethodSignature(MethodType methodType, CallingConvention callingConvention,
+                                              llvm::LLVMContext& context)
 {
-    return llvm::FunctionType::get(descriptorToType(methodType.returnType(), context),
-                                   {llvm::PointerType::get(context, 0)},
+    llvm::Type* returnType;
+    switch (callingConvention)
+    {
+        case CallingConvention::Interpreter: returnType = llvm::IntegerType::getInt64Ty(context); break;
+        case CallingConvention::JIT: returnType = descriptorToType(methodType.returnType(), context); break;
+    }
+    return llvm::FunctionType::get(returnType, {llvm::PointerType::get(context, 0)},
                                    /*isVarArg=*/false);
 }
 
@@ -298,4 +364,41 @@ llvm::CallBase* jllvm::initializeClassObject(llvm::IRBuilder<>& builder, llvm::V
     builder.SetInsertPoint(continueBlock);
 
     return initialize;
+}
+
+void jllvm::emitReturn(llvm::IRBuilder<>& builder, llvm::Value* value, CallingConvention callingConvention)
+{
+    switch (callingConvention)
+    {
+        case CallingConvention::Interpreter:
+        {
+            if (!value)
+            {
+                // For void methods returning any kind of value would suffice as it is never read.
+                // C++ callers do not expect a 'poison' or 'undef' value however (as clang uses 'noundef' and 'nopoison'
+                // return attributes), so avoid using those.
+                builder.CreateRet(builder.getInt64(0));
+                return;
+            }
+
+            // Translate the value returned by the JIT calling convention to the 'uint64_t' expected by the interpreter.
+            llvm::Function* function = builder.GetInsertBlock()->getParent();
+            llvm::TypeSize typeSize = function->getParent()->getDataLayout().getTypeSizeInBits(value->getType());
+            assert(!typeSize.isScalable() && "return type is never a scalable type");
+
+            llvm::IntegerType* intNTy = builder.getIntNTy(typeSize.getFixedValue());
+            value = builder.CreateBitOrPointerCast(value, intNTy);
+            value = builder.CreateZExtOrTrunc(value, function->getReturnType());
+            builder.CreateRet(value);
+            break;
+        }
+        case CallingConvention::JIT:
+            if (!value)
+            {
+                builder.CreateRetVoid();
+                return;
+            }
+            builder.CreateRet(value);
+            break;
+    }
 }

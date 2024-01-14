@@ -46,16 +46,14 @@ llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocals() const
 
 llvm::MutableArrayRef<std::uint64_t> jllvm::InterpreterFrame::getLocals() const
 {
-    std::uint16_t numLocals =
-        m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
+    std::uint16_t numLocals = getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
     std::uint64_t* locals = m_javaMethodMetadata->getInterpreterData().localVariables.readScalar(*m_unwindFrame);
     return llvm::MutableArrayRef<std::uint64_t>(locals, locals + numLocals);
 }
 
 jllvm::BitArrayRef<> jllvm::InterpreterFrame::getLocalsGCMask() const
 {
-    std::uint16_t numLocals =
-        m_javaMethodMetadata->getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
+    std::uint16_t numLocals = getMethod()->getMethodInfo().getAttributes().find<Code>()->getMaxLocals();
     std::uint64_t* mask = m_javaMethodMetadata->getInterpreterData().localVariablesGCMask.readScalar(*m_unwindFrame);
     return BitArrayRef<>(mask, numLocals);
 }
@@ -87,5 +85,16 @@ llvm::SmallVector<std::uint64_t> jllvm::JavaFrame::readLocalsGCMask() const
             BitArrayRef<> bitArray = llvm::cast<InterpreterFrame>(*this).getLocalsGCMask();
             return llvm::SmallVector<std::uint64_t>(bitArray.words_begin(), bitArray.words_end());
         }
+    }
+}
+
+const jllvm::Method* jllvm::JavaFrame::getMethod() const
+{
+    switch (m_javaMethodMetadata->getKind())
+    {
+        case JavaMethodMetadata::Kind::JIT: return m_javaMethodMetadata->getJITData().getMethod();
+        case JavaMethodMetadata::Kind::Native: return m_javaMethodMetadata->getNativeData().method;
+        case JavaMethodMetadata::Kind::Interpreter:
+            return m_javaMethodMetadata->getInterpreterData().method.readScalar(*m_unwindFrame);
     }
 }

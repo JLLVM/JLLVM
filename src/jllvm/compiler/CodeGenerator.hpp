@@ -43,6 +43,10 @@ class CodeGenerator
     OperandStack m_operandStack;
     LocalVariables m_locals;
     llvm::DenseMap<std::uint16_t, BasicBlockData> m_basicBlocks;
+
+    llvm::PHINode* m_returnValue{};
+    llvm::BasicBlock* m_returnBlock{};
+
     ByteCodeTypeChecker::PossibleRetsMap m_retToMap;
     llvm::SmallSetVector<std::uint16_t, 8> m_workList;
 
@@ -138,19 +142,24 @@ public:
     /// This function must be only called once. 'generatePrologue' is used to initialize the local variables and
     /// operand stack at the start of the method. 'offset' is the bytecode offset at which compilation should start and
     /// must refer to a JVM instruction.
-    void generateBody(PrologueGenFn generatePrologue, std::uint16_t offset = 0);
+    llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*> generateBody(PrologueGenFn generatePrologue,
+                                                                       std::uint16_t offset = 0);
 };
 
 /// Generates new LLVM code at the back of 'function' from the JVM Bytecode in 'method'.
 /// 'generatePrologue' is called by the function to initialize the operand stack and local variables at the beginning of
 /// the newly created code. 'offset' is the bytecode offset at which compilation should start and must refer to a JVM
 /// instruction.
-inline void compileMethodBody(llvm::Function* function, const Method& method,
-                              CodeGenerator::PrologueGenFn generatePrologue, std::uint16_t offset = 0)
+/// A basic block without a terminator is created that all return instructions branch to instead of calling return.
+/// If the method returns void, this basic block is returned. Otherwise, a PHI instruction within the basic block
+/// containing the value that should be returned is returned instead.
+inline llvm::PointerUnion<llvm::PHINode*, llvm::BasicBlock*>
+    compileMethodBody(llvm::Function* function, const Method& method, CodeGenerator::PrologueGenFn generatePrologue,
+                      std::uint16_t offset = 0)
 {
     CodeGenerator codeGenerator{function, method};
 
-    codeGenerator.generateBody(generatePrologue, offset);
+    return codeGenerator.generateBody(generatePrologue, offset);
 }
 
 } // namespace jllvm

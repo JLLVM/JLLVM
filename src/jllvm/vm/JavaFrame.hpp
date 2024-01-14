@@ -56,15 +56,18 @@ public:
         return m_javaMethodMetadata->isNative();
     }
 
+    /// Returns the calling convention used by this frame.
+    CallingConvention getCallingConvention() const
+    {
+        return m_javaMethodMetadata->getCallingConvention();
+    }
+
     /// Returns the bytecode offset of the frame currently being executed.
     /// Returns an empty optional if the method being executed is native and therefore does not have a bytecode offset.
     std::optional<std::uint16_t> getByteCodeOffset() const;
 
     /// Returns the method object currently being executed.
-    const Method* getMethod() const
-    {
-        return m_javaMethodMetadata->getMethod();
-    }
+    const Method* getMethod() const;
 
     /// Returns the enclosing class object of the method currently being executed.
     const ClassObject* getClassObject() const

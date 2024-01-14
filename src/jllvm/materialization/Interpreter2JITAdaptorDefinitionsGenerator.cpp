@@ -140,22 +140,9 @@ std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, 
     llvm::Value* call = builder.CreateCall(functionType, functionPointer, arguments);
     if (signature->returnType->isVoidTy())
     {
-        // For void methods returning any kind of value would suffice as it is never read.
-        // C++ callers do not expect a 'poison' or 'undef' value however (as clang uses 'noundef' and 'nopoison'
-        // return attributes), so avoid using those.
-        builder.CreateRet(builder.getInt64(0));
+        call = nullptr;
     }
-    else
-    {
-        // Translate the value returned by the C calling convention to the 'uint64_t' expected by the interpreter.
-        llvm::TypeSize typeSize = dataLayout.getTypeSizeInBits(signature->returnType);
-        assert(!typeSize.isScalable() && "return type is never a scalable type");
-
-        llvm::IntegerType* intNTy = builder.getIntNTy(typeSize.getFixedValue());
-        call = builder.CreateBitOrPointerCast(call, intNTy);
-        call = builder.CreateZExtOrTrunc(call, function->getReturnType());
-        builder.CreateRet(call);
-    }
+    jllvm::emitReturn(builder, call, jllvm::CallingConvention::Interpreter);
     debugInfoBuilder.finalize();
 
     return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));

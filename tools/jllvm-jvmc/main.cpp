@@ -161,7 +161,7 @@ int main(int argc, char** argv)
             llvm::errs() << "invalid integer '" << ref << "' as argument to '--osr'\n";
             return -1;
         }
-        compileOSRMethod(module, offset, *method);
+        compileOSRMethod(module, offset, *method, jllvm::CallingConvention::JIT);
     }
     else
     {
