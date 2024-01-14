@@ -85,7 +85,7 @@ public:
         {
             return false;
         }
-        return object->instanceOf(javaThis);
+        return object->instanceOf(javaThis.address());
     }
 
     bool isAssignableFrom(const ClassObject* cls)
@@ -94,7 +94,7 @@ public:
         {
             virtualMachine.throwNullPointerException();
         }
-        return cls->wouldBeInstanceOf(javaThis);
+        return cls->wouldBeInstanceOf(javaThis.address());
     }
 
     bool isInterface()
