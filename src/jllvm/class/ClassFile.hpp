@@ -229,21 +229,6 @@ enum class AccessFlag : std::uint16_t
 
 LLVM_ENABLE_BITMASK_ENUMS_IN_NAMESPACE();
 
-/// Attributes are represented by types which are required to have following structure:
-///     * a static constexpr string called 'identifier' which is the name of the attribute
-///     * a static 'parse(ArrayRef<char>)' method which returns a parsed instance of the attribute class.
-template <class T>
-concept Attribute = requires
-{
-    {
-        T::identifier
-    } -> std::convertible_to<llvm::StringRef>;
-
-    {
-        T::parse(std::declval<llvm::ArrayRef<char>>())
-    } -> std::same_as<T>;
-};
-
 /// Convenience class for accessing the attributes of an entity.
 /// This is essentially a map of attribute names to the attributes themselves.
 ///
@@ -252,7 +237,7 @@ concept Attribute = requires
 class AttributeMap
 {
     using AttributePointer = std::unique_ptr<void, void (*)(void*)>;
-    mutable llvm::DenseMap<llvm::StringRef, std::variant<llvm::ArrayRef<char>, AttributePointer>> m_map;
+    mutable llvm::DenseMap<llvm::StringRef, std::pair<llvm::ArrayRef<char>, AttributePointer>> m_map;
 
 public:
     AttributeMap() = default;
@@ -264,12 +249,19 @@ public:
 
     void insert(llvm::StringRef name, llvm::ArrayRef<char> bytes)
     {
-        m_map.try_emplace(name, bytes);
+        m_map.try_emplace(name, bytes, AttributePointer(nullptr, nullptr));
     }
 
     /// Looks up an attribute in the attribute map and parses it if present.
-    /// If the attribute is not present within the map a null pointer is returned.
-    template <Attribute T>
+    ///
+    /// Attributes are represented by types which are required to have following structure:
+    ///     * a static constexpr string called 'identifier' which is the name of the attribute
+    ///     * a static 'parse(ArrayRef<char>, const ClassFile&)' method which returns a parsed instance of the attribute
+    ///       class.
+    ///
+    /// 'T' of this method must be such a class. If the attribute is not present within the map a null pointer is
+    /// returned.
+    template <class T>
     T* find() const
     {
         auto result = m_map.find(T::identifier);
@@ -278,13 +270,12 @@ public:
             return nullptr;
         }
 
-        if (auto* bytes = std::get_if<llvm::ArrayRef<char>>(&result->second))
+        if (!result->second.second)
         {
-            result->second = std::unique_ptr<void, void (*)(void*)>(
-                new T(T::parse(*bytes)), +[](void* pointer) { delete reinterpret_cast<T*>(pointer); });
+            result->second.second = std::unique_ptr<void, void (*)(void*)>(
+                new T(T::parse(result->second.first)), +[](void* pointer) { delete reinterpret_cast<T*>(pointer); });
         }
-
-        return reinterpret_cast<T*>(std::get<AttributePointer>(result->second).get());
+        return reinterpret_cast<T*>(result->second.second.get());
     }
 };
 
@@ -376,20 +367,6 @@ struct ConstantValue
     static ConstantValue parse(llvm::ArrayRef<char> bytes)
     {
         return {consume<std::uint16_t>(bytes)};
-    }
-};
-
-/// 'EnclosingMethod' attribute attached to class files if it is a local or an anonymous class.
-struct EnclosingMethod
-{
-    PoolIndex<ClassInfo> class_index{};
-    PoolIndex<NameAndTypeInfo> method_index{};
-
-    constexpr static llvm::StringRef identifier = "EnclosingMethod";
-
-    static EnclosingMethod parse(llvm::ArrayRef<char> bytes)
-    {
-        return {consume<std::uint16_t>(bytes), consume<std::uint16_t>(bytes)};
     }
 };
 

@@ -138,31 +138,7 @@ public:
     // getModifiers
     // getSigners
     // setSigners
-
-    Array<>* getEnclosingMethod0()
-    {
-        if (auto* enclosing = javaThis->getClassFile()->getAttributes().find<EnclosingMethod>())
-        {
-            const ClassFile& classFile = *javaThis->getClassFile();
-            ClassLoader& classLoader = virtualMachine.getClassLoader();
-            StringInterner& stringInterner = virtualMachine.getStringInterner();
-            auto* arr = virtualMachine.getGC().allocate<Array<>>(&classLoader.forName("[Ljava/lang/Object;"), 3);
-
-            (*arr)[0] = &classLoader.forName(
-                FieldType::fromMangled(enclosing->class_index.resolve(classFile)->nameIndex.resolve(classFile)->text));
-
-            if (auto methodIndex = enclosing->method_index)
-            {
-                const NameAndTypeInfo* nameAndTypeInfo = methodIndex.resolve(classFile);
-                (*arr)[1] = stringInterner.intern(nameAndTypeInfo->nameIndex.resolve(classFile)->text);
-                (*arr)[2] = stringInterner.intern(nameAndTypeInfo->descriptorIndex.resolve(classFile)->text);
-            }
-
-            return arr;
-        }
-        return nullptr;
-    }
-
+    // getEnclosingMethod0
     // getDeclaringClass0
     // getSimpleBinaryName0
     // getProtectionDomain0
@@ -212,8 +188,8 @@ public:
     constexpr static auto methods = std::make_tuple(
         &ClassModel::registerNatives, &ClassModel::forName0, &ClassModel::isInstance, &ClassModel::isAssignableFrom,
         &ClassModel::isInterface, &ClassModel::isArray, &ClassModel::isPrimitive, &ClassModel::initClassName,
-        &ClassModel::getSuperclass, &ClassModel::getInterfaces0, &ClassModel::getEnclosingMethod0,
-        &ClassModel::getPrimitiveClass, &ClassModel::desiredAssertionStatus0);
+        &ClassModel::getSuperclass, &ClassModel::getInterfaces0, &ClassModel::getPrimitiveClass,
+        &ClassModel::desiredAssertionStatus0);
 };
 
 class ClassLoaderModel : public ModelBase<>
