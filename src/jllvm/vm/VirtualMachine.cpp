@@ -299,6 +299,12 @@ void jllvm::VirtualMachine::throwNullPointerException()
 
 jllvm::VirtualMachine jllvm::VirtualMachine::create(BootOptions&& options)
 {
+    // Disable OSR into the JIT if the JIT is disabled.
+    if (options.executionMode == ExecutionMode::Interpreter)
+    {
+        options.backEdgeThreshold = 0;
+    }
+
     // Setup the global state in LLVM as is required by our VM.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
