@@ -128,6 +128,7 @@ public:
         Int = 10,    /// 'I'
         Long = 11,   /// 'J'
         Void,        /// 'V'
+        MinValue = Boolean,
         MaxValue = Void
     };
 

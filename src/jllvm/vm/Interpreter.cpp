@@ -85,7 +85,8 @@ jllvm::Interpreter::Interpreter(VirtualMachine& virtualMachine, bool enableOSR)
     for (BaseType::Values value : {BaseType::Boolean, BaseType::Char, BaseType::Float, BaseType::Double, BaseType::Byte,
                                    BaseType::Short, BaseType::Int, BaseType::Long, BaseType::Void})
     {
-        m_interpreterJITCCOSREntries[value] = generateOSREntry(BaseType(value), CallingConvention::JIT);
+        m_interpreterJITCCOSREntries[value - BaseType::MinValue] =
+            generateOSREntry(BaseType(value), CallingConvention::JIT);
     }
 }
 
@@ -1530,7 +1531,7 @@ void* Interpreter::getOSREntry(const Method& method, std::uint16_t /*byteCodeOff
     {
         return m_interpreterJITCCOSREntryReferenceReturn;
     }
-    return m_interpreterJITCCOSREntries[get<BaseType>(type).getValue()];
+    return m_interpreterJITCCOSREntries[get<BaseType>(type).getValue() - BaseType::MinValue];
 }
 
 OSRState Interpreter::createOSRStateFromInterpreterFrame(InterpreterFrame frame)

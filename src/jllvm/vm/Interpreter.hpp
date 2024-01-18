@@ -256,7 +256,7 @@ class Interpreter : public OSRTarget
     /// OSR Entry for frames with JIT calling convention returning a reference type.
     void* m_interpreterJITCCOSREntryReferenceReturn;
     /// OSR Entries for frames with JIT calling convention returning a base type.
-    std::array<void*, BaseType::MaxValue + 1> m_interpreterJITCCOSREntries{};
+    std::array<void*, (BaseType::MaxValue - BaseType::MinValue) + 1> m_interpreterJITCCOSREntries{};
 
     llvm::orc::JITDylib& m_jit2InterpreterSymbols;
     llvm::orc::JITDylib& m_interpreterCCSymbols;
