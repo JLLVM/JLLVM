@@ -20,7 +20,6 @@ add_library(JLLVMMaterialization
         JIT2InterpreterLayer.cpp
         ByteCodeOSRLayer.cpp
         ByteCodeOSRCompileLayer.cpp
-        InterpreterEntry.cpp
         ClassObjectDefinitionsGenerator.cpp
         Interpreter2JITAdaptorDefinitionsGenerator.cpp
         Interpreter2JITLayer.cpp)

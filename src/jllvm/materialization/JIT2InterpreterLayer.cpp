@@ -20,8 +20,6 @@
 #include <jllvm/compiler/ClassObjectStubMangling.hpp>
 #include <jllvm/debuginfo/TrivialDebugInfoBuilder.hpp>
 
-#include "InterpreterEntry.hpp"
-
 void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
                                        const Method* method)
 {
