@@ -43,36 +43,45 @@ class ObjectInterface;
 template <class T = ObjectInterface>
 class GCRootRef
 {
-protected:
-    ObjectInterface** m_object = nullptr;
-
-    friend class RootFreeList;
+    ObjectInterface** m_root = nullptr;
 
     template <class U>
     friend class GCRootRef;
 
-    explicit GCRootRef(ObjectInterface** object) : m_object(object) {}
-
     T* get() const
     {
-        return static_cast<T*>(*m_object);
+        if (!hasRoot())
+        {
+            return nullptr;
+        }
+        return static_cast<T*>(*m_root);
     }
 
 public:
+    /// Creates a new 'GCRootRef' from a root. The lifetime of the root must be valid throughout the use of the
+    /// 'GCRootRef'.
+    explicit GCRootRef(ObjectInterface** root) : m_root(root) {}
+
+    /// Creates a 'GCRootRef' with no root. 'GCRootRef' without roots are for all intents and purposes equal to
+    /// 'GCRootRef's that refer to a null reference with the exception of NOT being able to assign an object to it.
+    /// Prefer assignment from another 'GCRootRef' instead.
+    GCRootRef() = default;
+
+    /// Allows implicit construction of a 'GCRootRef' without a root from a nullptr.
+    GCRootRef(std::nullptr_t) : GCRootRef() {}
+
     /// Creates a new 'GCRootRef' from a derived 'GCRootRef', referring to the same root.
     template <std::derived_from<T> U>
-    GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_object(rhs.m_object)
+    GCRootRef(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>) : m_root(rhs.m_root)
     {
     }
 
-    /// Assignment operator required to make assignment from another 'GCRootRef' not ambiguous.
-    /// This does not copy the root, but rather assigns the object within 'rhs' to this root.
-    /// Rational for this is that null 'GCRootRef's do not exist (and 'GCRootRef' does not have a default constructor),
-    /// making a rootless 'GCRootRef' basically not a thing.
+    /// Assignment operator from a derived 'GCRootRef'.
     template <std::derived_from<T> U>
     GCRootRef& operator=(GCRootRef<U> rhs) requires(!std::is_same_v<T, U>)
     {
-        return *this = rhs.address();
+        *this = static_cast<GCRootRef<T>>(rhs);
+        return *this;
     }
 
     /// Explicit cast to a 'GCRootRef' of another type. This allows both up and down casting and does not perform any
@@ -80,7 +89,7 @@ public:
     template <class U>
     explicit operator GCRootRef<U>() const
     {
-        return GCRootRef<U>(m_object);
+        return GCRootRef<U>(m_root);
     }
 
     /// Explicit cast to 'T*'. This operation should generally be avoided in favour of just using the 'GCRootRef' as
@@ -90,11 +99,18 @@ public:
         return get();
     }
 
-    /// Allows assignment from a valid pointer to an object.
-    GCRootRef& operator=(T* object)
+    /// Returns true if this 'GCRootRef' has a root.
+    bool hasRoot() const
     {
-        *m_object = const_cast<std::remove_const_t<T>*>(object);
-        return *this;
+        return m_root;
+    }
+
+    /// Assign an object to the root of this 'GCRootRef'. This is only a valid operation if the 'GCRootRef' is not
+    /// empty i.e. refers to a root.
+    void assign(T* object)
+    {
+        assert(hasRoot() && "GCRootRef must have a root");
+        *m_root = const_cast<std::remove_const_t<T>*>(object);
     }
 
     /// Returns true if 'lhs' and 'rhs' refer to the same object.
@@ -105,15 +121,21 @@ public:
     }
 
     /// Returns true if this root contains a reference to an object instead of null.
+    friend bool operator==(GCRootRef<T> lhs, std::nullptr_t)
+    {
+        return !static_cast<bool>(lhs);
+    }
+
+    /// Returns true if this root contains a reference to an object instead of null.
     explicit operator bool() const
     {
         return get();
     }
 
-    /// Returns true if this root contains null instead of a reference to an object.
+    /// Returns true if this root does not contain a reference to an object.
     bool operator!() const
     {
-        return !get();
+        return !static_cast<bool>(*this);
     }
 
     /// Allows using a 'GCRootRef<T>' with the same syntax as you would a 'T*'
@@ -137,7 +159,7 @@ public:
     /// Returns the underlying root referred to by this 'GCRootRef'.
     ObjectInterface** data() const
     {
-        return m_object;
+        return m_root;
     }
 };
 
