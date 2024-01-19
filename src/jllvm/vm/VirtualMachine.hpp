@@ -18,6 +18,7 @@
 
 #include <jllvm/class/ClassFile.hpp>
 #include <jllvm/gc/GarbageCollector.hpp>
+#include <jllvm/object/ClassLoader.hpp>
 #include <jllvm/object/ClassObject.hpp>
 #include <jllvm/object/StringInterner.hpp>
 
