@@ -63,9 +63,9 @@ public:
         return virtualMachine.getGC().allocate<AbstractArray>(&arrayType, length);
     }
 
-    static ObjectInterface* multiNewArray(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
-                                          GCRootRef<ClassObject> componentType,
-                                          GCRootRef<Array<std::int32_t>> dimensions)
+    static GCRootRef<AbstractArray> multiNewArray(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
+                                                  GCRootRef<ClassObject> componentType,
+                                                  GCRootRef<Array<std::int32_t>> dimensions)
     {
         if (dimensions->size() == 0)
         {
@@ -85,7 +85,8 @@ public:
 
         GarbageCollector& gc = virtualMachine.getGC();
 
-        auto generateArray = [&](std::size_t index, ArrayType currentType, const auto generator) -> ObjectInterface*
+        auto generateArray = [&](std::size_t index, ArrayType currentType,
+                                 const auto generator) -> GCRootRef<AbstractArray>
         {
             std::int32_t length = (*dimensions)[index];
             ClassObject& arrayType = virtualMachine.getClassLoader().forName(currentType);
@@ -98,11 +99,11 @@ public:
                 for (std::uint32_t i : llvm::seq(0u, outerArray->size()))
                 {
                     // allocation must happen before indexing
-                    ObjectInterface* innerArray = generator(index, componentType, generator);
-                    (*outerArray)[i] = innerArray;
+                    GCRootRef<AbstractArray> innerArray = generator(index, componentType, generator);
+                    (*outerArray)[i] = innerArray.address();
                 }
             }
-            return array;
+            return array.release();
         };
 
         return generateArray(0, get<ArrayType>(currentType), generateArray);
@@ -177,7 +178,7 @@ public:
         {
             return false;
         }
-        return object->instanceOf(javaThis);
+        return object->instanceOf(javaThis.address());
     }
 
     bool isAssignableFrom(const ClassObject* cls)
@@ -186,7 +187,7 @@ public:
         {
             virtualMachine.throwNullPointerException();
         }
-        return cls->wouldBeInstanceOf(javaThis);
+        return cls->wouldBeInstanceOf(javaThis.address());
     }
 
     bool isInterface()
