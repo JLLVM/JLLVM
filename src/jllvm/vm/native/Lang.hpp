@@ -17,9 +17,101 @@
 
 #include <chrono>
 
-/// Model implementations for all Java classes in a 'java/lang/*' package.
+/// Model implementations for all Java classes in a 'java.lang.*' package.
 namespace jllvm::lang
 {
+
+/// Model implementation for the native methods of Javas 'reflect.Array' class.
+class ArrayModel : public ModelBase<>
+{
+public:
+    using Base::Base;
+
+    static std::int32_t getLength(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
+                                  GCRootRef<ObjectInterface> array)
+    {
+        if (!array)
+        {
+            virtualMachine.throwNullPointerException();
+        }
+        if (!array->getClass()->isArray())
+        {
+            String* message = virtualMachine.getStringInterner().intern("Argument is not an array");
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "(Ljava/lang/String;)V", message);
+        }
+
+        return static_cast<GCRootRef<AbstractArray>>(array)->size();
+    }
+
+    static ObjectInterface* newArray(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
+                                     GCRootRef<ClassObject> componentType, std::int32_t length)
+    {
+        if (!componentType)
+        {
+            virtualMachine.throwNullPointerException();
+        }
+        if (length < 0)
+        {
+            virtualMachine.throwNegativeArraySizeException(length);
+        }
+        if (componentType->getClassName() == "V")
+        {
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "()V");
+        }
+
+        ClassObject& arrayType = virtualMachine.getClassLoader().forName(ArrayType{componentType->getDescriptor()});
+        return virtualMachine.getGC().allocate<AbstractArray>(&arrayType, length);
+    }
+
+    static ObjectInterface* multiNewArray(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
+                                          GCRootRef<ClassObject> componentType,
+                                          GCRootRef<Array<std::int32_t>> dimensions)
+    {
+        if (dimensions->size() == 0)
+        {
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "()V");
+        }
+        if (auto* it = llvm::find_if(*dimensions, [](std::int32_t len) { return len < 0; }); it != dimensions->end())
+        {
+            virtualMachine.throwNegativeArraySizeException(*it);
+        }
+        if (componentType->getClassName() == "V")
+        {
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "()V");
+        }
+
+        FieldType currentType = componentType->getDescriptor();
+        llvm::for_each(*dimensions, [&](auto) { currentType = ArrayType{currentType}; });
+
+        GarbageCollector& gc = virtualMachine.getGC();
+
+        auto generateArray = [&](std::size_t index, ArrayType currentType, const auto generator) -> ObjectInterface*
+        {
+            std::int32_t length = (*dimensions)[index];
+            ClassObject& arrayType = virtualMachine.getClassLoader().forName(currentType);
+            GCUniqueRoot array = gc.root(gc.allocate<AbstractArray>(&arrayType, length));
+            if (++index < dimensions->size())
+            {
+                auto outerArray = static_cast<GCRootRef<Array<>>>(array);
+                auto componentType = get<ArrayType>(currentType.getComponentType());
+                // necessary, because iterator for Arrays is not gc safe
+                for (std::uint32_t i : llvm::seq(0u, outerArray->size()))
+                {
+                    // allocation must happen before indexing
+                    ObjectInterface* innerArray = generator(index, componentType, generator);
+                    (*outerArray)[i] = innerArray;
+                }
+            }
+            return array;
+        };
+
+        return generateArray(0, get<ArrayType>(currentType), generateArray);
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/reflect/Array";
+    constexpr static auto methods =
+        std::make_tuple(&ArrayModel::getLength, &ArrayModel::newArray, &ArrayModel::multiNewArray);
+};
 
 /// Model implementation for the native methods of Javas 'Object' class.
 class ObjectModel : public ModelBase<>
