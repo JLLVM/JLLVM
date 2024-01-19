@@ -125,7 +125,7 @@ void jllvm::Interpreter::generateInterpreterEntry()
     module->setDataLayout(m_compiled2InterpreterLayer.getDataLayout());
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
-    llvm::StringRef functionName = "Interpreter Entry";
+    llvm::StringRef functionName = "jllvm_interpreter_entry";
     auto* pointer = llvm::PointerType::get(*context, 0);
     auto* function = llvm::Function::Create(
         llvm::FunctionType::get(llvm::Type::getInt64Ty(*context), {pointer, pointer}, /*isVarArg=*/false),

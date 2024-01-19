@@ -71,7 +71,7 @@ void jllvm::JIT2InterpreterLayer::emit(std::unique_ptr<llvm::orc::Materializatio
         }
     }
 
-    llvm::Value* value = builder.CreateCall(module->getOrInsertFunction("Interpreter Entry", builder.getInt64Ty(),
+    llvm::Value* value = builder.CreateCall(module->getOrInsertFunction("jllvm_interpreter_entry", builder.getInt64Ty(),
                                                                         builder.getPtrTy(0), builder.getPtrTy(0)),
                                             {methodGlobal(*module, method), argumentArray});
 
