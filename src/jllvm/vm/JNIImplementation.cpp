@@ -25,8 +25,9 @@ namespace
 
 using namespace jllvm;
 
+/// Implementation of 'GetStatic*Field' that should return type 'T'.
 template <class T>
-auto getStaticFieldFunction()
+consteval auto getStaticFieldFunction()
 {
     return translateJNIInterface(
         [](VirtualMachine&, GCRootRef<ClassObject>, Field* field)
@@ -36,8 +37,9 @@ auto getStaticFieldFunction()
         });
 }
 
+/// Implementation of 'SetStatic*Field' that set a value of type 'T'.
 template <class T>
-auto setStaticFieldFunction()
+consteval auto setStaticFieldFunction()
 {
     return translateJNIInterface(
         [](VirtualMachine&, GCRootRef<ClassObject>, Field* field, T value)
