@@ -135,7 +135,7 @@ struct JNIConvert<const Field*>
 ///
 /// The return value is converted using 'JNIConvert'. There is no symmetry restriction for the return type.
 template <class Lambda>
-consteval auto translateJNIInterface(Lambda) requires std::is_empty_v<Lambda>&& std::is_default_constructible_v<Lambda>
+auto translateJNIInterface(Lambda) requires std::is_empty_v<Lambda>&& std::is_default_constructible_v<Lambda>
 {
     // Initial 0 to discard the implicit 'VirtualMachine&' parameter of 'Lambda'.
     return +[]<std::size_t... idx>(std::index_sequence<0, idx...>)
