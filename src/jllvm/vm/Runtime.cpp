@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/GlobalsModRef.h>
 #include <llvm/ExecutionEngine/JITLink/EHFrameSupport.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
 #include <llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h>
