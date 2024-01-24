@@ -41,14 +41,7 @@ void jllvm::Interpreter2JITLayer::emit(std::unique_ptr<llvm::orc::Materializatio
         mangling += "L";
     }
     auto addToMangling = [&](FieldType fieldType)
-    {
-        if (fieldType.isReference())
-        {
-            mangling += "L";
-            return;
-        }
-        mangling += fieldType.textual();
-    };
+    { mangling += fieldType.isReference() ? "L" : fieldType.textual(); };
     llvm::for_each(methodType.parameters(), addToMangling);
     mangling += ")";
     addToMangling(methodType.returnType());
