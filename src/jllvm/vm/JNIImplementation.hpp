@@ -47,20 +47,9 @@ struct JNIConvert
     }
 };
 
-namespace detail
-{
-template <class T>
-struct DelayInstantiation
-{
-    using type = std::decay_t<decltype(JNIConvert<T>{}(std::declval<VirtualMachine&>(), std::declval<T>()))>;
-};
-
-} // namespace detail
-
 /// The type 'T' converts to.
 template <class T>
-using JNIConverted =
-    typename std::conditional_t<std::is_void_v<T>, std::type_identity<void>, detail::DelayInstantiation<T>>::type;
+using JNIConverted = decltype(JNIConvert<T>{}(std::declval<VirtualMachine&>(), std::declval<T>()));
 
 /// Concept satisfied if the JNI conversion of 'T' is symmetric, i.e. the type 'T' converts to, also converts back to
 /// 'T'.
