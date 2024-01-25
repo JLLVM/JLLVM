@@ -99,6 +99,16 @@ struct JNIConvert<T*>
 
 BITCAST(GCRootRef<ClassObject>, jclass);
 BITCAST(GCRootRef<ObjectInterface>, jobject);
+BITCAST(GCRootRef<AbstractArray>, jarray);
+BITCAST(GCRootRef<Array<ObjectInterface*>>, jobjectArray);
+BITCAST(GCRootRef<Array<jboolean>>, jbooleanArray);
+BITCAST(GCRootRef<Array<jbyte>>, jbyteArray);
+BITCAST(GCRootRef<Array<jchar>>, jcharArray);
+BITCAST(GCRootRef<Array<jshort>>, jshortArray);
+BITCAST(GCRootRef<Array<jint>>, jintArray);
+BITCAST(GCRootRef<Array<jlong>>, jlongArray);
+BITCAST(GCRootRef<Array<jfloat>>, jfloatArray);
+BITCAST(GCRootRef<Array<jdouble>>, jdoubleArray);
 BITCAST(Field*, jfieldID);
 
 #undef BITCAST
