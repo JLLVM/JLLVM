@@ -25,7 +25,6 @@
 #include <memory>
 #include <random>
 
-#include "InteropHelpers.hpp"
 #include "Interpreter.hpp"
 #include "JIT.hpp"
 #include "JNIBridge.hpp"
@@ -186,9 +185,9 @@ public:
     template <JavaConvertible... Args>
     void executeObjectConstructor(ObjectInterface* object, MethodType methodDescriptor, Args... args)
     {
-        void* addr = m_runtime.lookupJITCC(object->getClass()->getClassName(), "<init>", methodDescriptor);
-        assert(addr);
-        invokeJava<void>(addr, object, args...);
+        const Method* method = object->getClass()->getMethod("<init>", methodDescriptor);
+        assert(method);
+        method->call(object, args...);
     }
 
     /// Calls the static method 'methodName' with types 'methodDescriptor' within 'className' using 'args'.

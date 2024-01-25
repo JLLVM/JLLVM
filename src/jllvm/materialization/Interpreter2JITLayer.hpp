@@ -22,30 +22,17 @@ namespace jllvm
 
 /// Layer for creating adaptors allowing implementations using the JIT calling convention to be reused with the
 /// interpreter calling convention.
-class Interpreter2JITLayer
+class Interpreter2JITLayer : public ByteCodeLayer
 {
     llvm::orc::IRLayer& m_baseLayer;
     llvm::DataLayout m_dataLayout;
     llvm::orc::JITDylib& m_i2jAdaptors;
-    llvm::orc::MangleAndInterner& m_interner;
 
 public:
     Interpreter2JITLayer(llvm::orc::IRLayer& baseLayer, llvm::orc::MangleAndInterner& interner,
                          const llvm::DataLayout& dataLayout);
 
-    /// Registers an implementation of 'method' within 'dylib' conforming to the interpreter calling convention.
-    /// Any calls will be translated to the JIT calling convention and calls 'method' within 'jitCCDylib'.
-    /// If 'jitCCDylib' does not contain an implementation of 'method' using the JIT calling convention the behaviour
-    /// is undefined.
-    llvm::Error add(llvm::orc::JITDylib& dylib, const Method& method, llvm::orc::JITDylib& jitCCDylib);
-
-    llvm::orc::MangleAndInterner& getInterner() const
-    {
-        return m_interner;
-    }
-
-    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method& method,
-              llvm::orc::JITDylib& jitCCDylib);
+    void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr, const Method* method) override;
 };
 
 } // namespace jllvm

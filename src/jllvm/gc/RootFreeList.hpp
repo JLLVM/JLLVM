@@ -240,4 +240,8 @@ public:
         return llvm::filter_iterator<SlotsIterator, FilterPredicate>(end, end, {});
     }
 };
+
+// GCRootRefs convert to their contained object.
+template <class T>
+T* javaConvertedType(GCRootRef<T>);
 } // namespace jllvm

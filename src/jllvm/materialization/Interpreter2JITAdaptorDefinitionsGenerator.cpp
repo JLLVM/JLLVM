@@ -107,14 +107,15 @@ std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, 
     module->setDataLayout(dataLayout);
     module->setTargetTriple(LLVM_HOST_TRIPLE);
 
+    llvm::PointerType* pointerType = llvm::PointerType::get(*context, 0);
     auto* function = llvm::Function::Create(
         llvm::FunctionType::get(llvm::IntegerType::getInt64Ty(*context),
-                                {llvm::PointerType::get(*context, 0), llvm::PointerType::get(*context, 0)},
-                                /*isVarArg=*/false),
-        llvm::GlobalValue::ExternalLinkage, name, *module);
+                                                                    {pointerType, pointerType},
+                                                                    /*isVarArg=*/false),
+                                            llvm::GlobalValue::ExternalLinkage, name, *module);
     jllvm::TrivialDebugInfoBuilder debugInfoBuilder(function);
 
-    llvm::Value* functionPointer = function->getArg(0);
+    llvm::Value* methodRef = function->getArg(0);
     llvm::Value* argumentArray = function->getArg(1);
 
     llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "entry", function));
@@ -137,6 +138,9 @@ std::optional<llvm::orc::ThreadSafeModule> compileAdaptor(llvm::StringRef name, 
         signature->returnType, llvm::to_vector(llvm::map_range(arguments, std::mem_fn(&llvm::Value::getType))),
         /*isVarArg=*/false);
 
+    llvm::Value* gep =
+        builder.CreateConstGEP1_32(builder.getInt8Ty(), methodRef, jllvm::Method::getJITCCImplementationOffset());
+    llvm::Value* functionPointer = builder.CreateLoad(pointerType, gep);
     llvm::Value* call = builder.CreateCall(functionType, functionPointer, arguments);
     if (signature->returnType->isVoidTy())
     {

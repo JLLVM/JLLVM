@@ -1242,9 +1242,7 @@ std::uint64_t jllvm::Interpreter::executeMethod(const Method& method, std::uint1
                     },
                     [&](...) -> const Method* { llvm_unreachable("unexpected op"); });
 
-                std::uint64_t returnValue =
-                    m_virtualMachine.getRuntime().lookupInterpreterCC(*callee)(arguments.data());
-
+                std::uint64_t returnValue = callee->callInterpreterCC(arguments.data());
                 FieldType returnType = descriptor.returnType();
                 if (returnType != BaseType(BaseType::Void))
                 {
