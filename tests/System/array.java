@@ -9,6 +9,7 @@ class Test
     {
         newInstance();
         getLength();
+        getBoolean();
     }
 
     private static void newInstance()
@@ -71,6 +72,42 @@ class Test
         catch (IllegalArgumentException e)
         {
             // CHECK: java.lang.IllegalArgumentException: Argument is not an array
+            System.out.println(e);
+        }
+    }
+
+    private static void getBoolean()
+    {
+        // CHECK: false
+        System.out.println(Array.getBoolean(new boolean[1], 0));
+
+        try
+        {
+            Array.getBoolean(null, 0);
+        }
+        catch (NullPointerException e)
+        {
+            // CHECK: java.lang.NullPointerException
+            System.out.println(e.getClass().getName());
+        }
+
+        try
+        {
+            Array.getBoolean(new Object(), 0);
+        }
+        catch (IllegalArgumentException e)
+        {
+            // CHECK: java.lang.IllegalArgumentException: Argument is not an array
+            System.out.println(e);
+        }
+
+        try
+        {
+            Array.getBoolean(new boolean[5], 6);
+        }
+        catch (ArrayIndexOutOfBoundsException e)
+        {
+            // CHECK: java.lang.ArrayIndexOutOfBoundsException
             System.out.println(e);
         }
     }

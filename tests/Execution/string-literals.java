@@ -21,5 +21,8 @@ class Test
         // CHECK: 1
         var hello2 = "Hello World";
         print(hello1 == hello2);
+
+        // CHECK: 1
+        print(hello1.intern() == hello2.intern());
     }
 }

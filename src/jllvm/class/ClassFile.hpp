@@ -547,6 +547,11 @@ public:
         return (m_accessFlags & AccessFlag::Super) != AccessFlag::None;
     }
 
+    AccessFlag getAccessFlags() const
+    {
+        return m_accessFlags;
+    }
+
     /// Returns the fields of this class.
     llvm::ArrayRef<FieldInfo> getFields() const
     {
