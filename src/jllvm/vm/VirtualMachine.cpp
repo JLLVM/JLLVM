@@ -32,7 +32,7 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
         [&] { return reinterpret_cast<void**>(m_gc.allocateStatic().data()); }),
       m_runtime(*this, {&m_jit, &m_interpreter, &m_jni}),
       m_jit(*this),
-      m_interpreter(*this, /*enableOSR=*/bootOptions.executionMode != ExecutionMode::Interpreter),
+      m_interpreter(*this, /*backEdgeThreshold=*/bootOptions.backEdgeThreshold),
       m_jni(*this, m_jniEnv.get()),
       m_gc(/*random value for now*/ 1 << 20),
       // Seed from the C++ implementations entropy source.
@@ -299,6 +299,12 @@ void jllvm::VirtualMachine::throwNullPointerException()
 
 jllvm::VirtualMachine jllvm::VirtualMachine::create(BootOptions&& options)
 {
+    // Disable OSR into the JIT if the JIT is disabled.
+    if (options.executionMode == ExecutionMode::Interpreter)
+    {
+        options.backEdgeThreshold = 0;
+    }
+
     // Setup the global state in LLVM as is required by our VM.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
