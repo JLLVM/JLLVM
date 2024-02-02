@@ -22,6 +22,13 @@ class Test
         var hello2 = "Hello World";
         print(hello1 == hello2);
 
+        var str1 = new StringBuilder("start").append("end").toString();
+        var str2 = new StringBuilder("start").append("end").toString();
+
+        // CHECK: 0
+        print(str1 == str2);
+        // CHECK: 1
+        print(str1.equals(str2));
         // CHECK: 1
         print(hello1.intern() == hello2.intern());
     }

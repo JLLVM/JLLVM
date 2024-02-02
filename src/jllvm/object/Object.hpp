@@ -130,7 +130,7 @@ public:
         return offsetof(Array<T>, m_trailing);
     }
 
-    constexpr operator llvm::ArrayRef<T>()
+    constexpr llvm::ArrayRef<T> toArrayRef()
     {
         return {m_trailing, m_length};
     }

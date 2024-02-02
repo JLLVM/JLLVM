@@ -599,7 +599,8 @@ public:
 
     String* intern()
     {
-        return virtualMachine.getStringInterner().intern(javaThis->getValue(), CompactEncoding{javaThis->getCoder()});
+        return virtualMachine.getStringInterner().intern(javaThis->getValue().toArrayRef(),
+                                                         CompactEncoding{javaThis->getCoder()});
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/String";
