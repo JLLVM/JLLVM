@@ -99,7 +99,7 @@ void jllvm::UnwindFrame::resumeExecutionAtFunctionImpl(std::uintptr_t functionPo
     {
         UnwindFrame frame;
 
-        explicit ForcedException(const UnwindFrame& frame, void (*cleanupFn)(_Unwind_Reason_Code, _Unwind_Exception*))
+        ForcedException(const UnwindFrame& frame, void (*cleanupFn)(_Unwind_Reason_Code, _Unwind_Exception*))
             : _Unwind_Exception{0}, frame(frame)
         {
             // Identifier used by personality functions to identify the kind of exception object being thrown.
