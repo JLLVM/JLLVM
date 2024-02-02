@@ -74,7 +74,7 @@ jobs:
         run: |
           $sanitizer_arg = ''
           if ('${{matrix.sanitizer}}') {
-            $sanitizer_arg = '-DCMAKE_CXX_FLAGS="-g1 -fsanitize=${{matrix.sanitizer}} -fno-sanitize-recover=all"'
+            $sanitizer_arg = '-DCMAKE_CXX_FLAGS=-g1 -fsanitize=${{matrix.sanitizer}} -fno-sanitize-recover=all'
           }
           
           # Don't use LLD in a fully optimized build as it currently contains bugs related to exception handling.
