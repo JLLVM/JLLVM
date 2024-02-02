@@ -43,6 +43,38 @@ public:
         return static_cast<GCRootRef<AbstractArray>>(array)->size();
     }
 
+    static bool getBoolean(VirtualMachine& virtualMachine, GCRootRef<ClassObject>, GCRootRef<ObjectInterface> object,
+                           std::int32_t index)
+    {
+        if (!object)
+        {
+            virtualMachine.throwNullPointerException();
+        }
+        if (!object->getClass()->isArray())
+        {
+            String* message = virtualMachine.getStringInterner().intern("Argument is not an array");
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "(Ljava/lang/String;)V", message);
+        }
+
+        auto array = static_cast<GCRootRef<AbstractArray>>(object);
+        if (index < 0 || index >= array->size())
+        {
+            virtualMachine.throwException("Ljava/lang/ArrayIndexOutOfBoundsException;", "()V");
+        }
+        if (!array->getClass()->getComponentType()->isPrimitive())
+        {
+            String* message = virtualMachine.getStringInterner().intern("Argument is not an array of primitive type");
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "(Ljava/lang/String;)V", message);
+        }
+        if (array->getClass()->getClassName() != "[Z")
+        {
+            String* message = virtualMachine.getStringInterner().intern("argument type mismatch");
+            virtualMachine.throwException("Ljava/lang/IllegalArgumentException;", "(Ljava/lang/String;)V", message);
+        }
+
+        return (*static_cast<GCRootRef<Array<bool>>>(array))[index];
+    }
+
     static ObjectInterface* newArray(VirtualMachine& virtualMachine, GCRootRef<ClassObject>,
                                      GCRootRef<ClassObject> componentType, std::int32_t length)
     {
@@ -109,8 +141,8 @@ public:
     }
 
     constexpr static llvm::StringLiteral className = "java/lang/reflect/Array";
-    constexpr static auto methods =
-        std::make_tuple(&ArrayModel::getLength, &ArrayModel::newArray, &ArrayModel::multiNewArray);
+    constexpr static auto methods = std::make_tuple(&ArrayModel::getLength, &ArrayModel::getBoolean,
+                                                    &ArrayModel::newArray, &ArrayModel::multiNewArray);
 };
 
 /// Model implementation for the native methods of Javas 'Object' class.
@@ -558,6 +590,21 @@ public:
 
     constexpr static llvm::StringLiteral className = "java/lang/ref/Reference";
     constexpr static auto methods = std::make_tuple(&ReferenceModel::refersTo0);
+};
+
+class StringModel : public ModelBase<ModelState, String>
+{
+public:
+    using Base::Base;
+
+    String* intern()
+    {
+        return virtualMachine.getStringInterner().intern(javaThis->getValue().toArrayRef(),
+                                                         CompactEncoding{javaThis->getCoder()});
+    }
+
+    constexpr static llvm::StringLiteral className = "java/lang/String";
+    constexpr static auto methods = std::make_tuple(&StringModel::intern);
 };
 
 class StringUTF16Model : public ModelBase<>

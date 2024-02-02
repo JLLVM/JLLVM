@@ -28,5 +28,6 @@ void jllvm::registerJavaClasses(VirtualMachine& virtualMachine)
     addModels<ArrayModel, ObjectModel, ClassModel, ClassLoaderModel, ThrowableModel, FloatModel, DoubleModel,
               SystemModel, ReflectionModel, CDSModel, UnsafeModel, VMModel, ReferenceModel, SystemPropsRawModel,
               RuntimeModel, FileDescriptorModel, ScopedMemoryAccessModel, SignalModel, ThreadModel,
-              AccessControllerModel, FileInputStreamModel, FileOutputStreamModel, StringUTF16Model>(virtualMachine);
+              AccessControllerModel, FileInputStreamModel, FileOutputStreamModel, StringModel, StringUTF16Model>(
+        virtualMachine);
 }

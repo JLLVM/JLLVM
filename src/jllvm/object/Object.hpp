@@ -130,6 +130,11 @@ public:
         return offsetof(Array<T>, m_trailing);
     }
 
+    constexpr llvm::ArrayRef<T> toArrayRef()
+    {
+        return {m_trailing, m_length};
+    }
+
     /// Returns the array element with the given index.
     T& operator[](std::uint32_t index)
     {
@@ -197,6 +202,11 @@ public:
     Array<std::uint8_t>& getValue()
     {
         return *m_value;
+    }
+
+    std::uint8_t getCoder()
+    {
+        return m_coder;
     }
 
     std::string toUTF8() const

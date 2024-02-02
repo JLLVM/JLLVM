@@ -26,8 +26,14 @@ public:
 
     static const ClassObject* getCallerClass(VirtualMachine& virtualMachine, GCRootRef<ClassObject> classObject);
 
+    static std::int32_t getClassAccessFlags(GCRootRef<ClassObject>, GCRootRef<ClassObject> classObject)
+    {
+        return std::int32_t(classObject->getClassFile()->getAccessFlags());
+    }
+
     constexpr static llvm::StringLiteral className = "jdk/internal/reflect/Reflection";
-    constexpr static auto methods = std::make_tuple(&ReflectionModel::getCallerClass);
+    constexpr static auto methods =
+        std::make_tuple(&ReflectionModel::getCallerClass, &ReflectionModel::getClassAccessFlags);
 };
 
 class CDSModel : public ModelBase<>

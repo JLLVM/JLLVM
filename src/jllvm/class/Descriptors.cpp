@@ -56,6 +56,7 @@ std::string jllvm::FieldType::pretty() const
     std::string result;
     if (m_name)
     {
+        result.reserve(m_size);
         std::replace_copy_if(
             m_name, m_name + m_size, std::back_inserter(result), [](char c) { return c == '/'; }, '.');
     }
