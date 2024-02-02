@@ -46,6 +46,8 @@ class GarbageCollector;
 template <class T>
 class GCUniqueRoot : public GCRootRef<T>
 {
+    using Base = GCRootRef<T>;
+
     friend class GarbageCollector;
 
     GarbageCollector* m_gc = nullptr;
@@ -53,13 +55,6 @@ class GCUniqueRoot : public GCRootRef<T>
     explicit GCUniqueRoot(GarbageCollector* gc, GCRootRef<T> object) : GCRootRef<T>(object), m_gc(gc) {}
 
 public:
-    /// Allows assignment from a valid pointer to an object.
-    GCUniqueRoot& operator=(T* object)
-    {
-        GCRootRef<T>::operator=(object);
-        return *this;
-    }
-
     ~GCUniqueRoot()
     {
         reset();
@@ -69,30 +64,30 @@ public:
     GCUniqueRoot& operator=(const GCUniqueRoot&) = delete;
 
     /// Transfers ownership of the root from 'rhs' to this newly constructed root.
-    /// 'rhs' is left in an invalid state on which no methods but the destructor, 'data' and the move assignment
-    /// operator are valid.
-    GCUniqueRoot(GCUniqueRoot&& rhs) noexcept
-        : GCRootRef<T>(std::exchange(rhs.m_object, nullptr)), m_gc(std::exchange(rhs.m_gc, nullptr))
-    {
-    }
+    /// 'rhs' is an empty root afterwards.
+    GCUniqueRoot(GCUniqueRoot&& rhs) noexcept : Base(rhs.release()), m_gc(rhs.m_gc) {}
 
-    /// Assignment version of the move constructor. See the move constructor.
     GCUniqueRoot& operator=(GCUniqueRoot&& rhs) noexcept
     {
-        reset();
+        // Reuse move constructor for move assignment.
+        this->~GCUniqueRoot();
+        return *new (this) GCUniqueRoot(std::move(rhs));
+    }
 
-        this->m_object = std::exchange(rhs.m_object, nullptr);
-        m_gc = std::exchange(rhs.m_gc, nullptr);
+    /// Assignment from nullptr.
+    /// Equivalent to calling 'reset'.
+    GCUniqueRoot& operator=(std::nullptr_t) noexcept
+    {
+        reset();
         return *this;
     }
 
     /// Releases ownership of the root from this object, returning it as 'GCRootRef'.
-    /// The object is left in an invalid state as described in the move constructor description.
+    /// The object is contains an empty root afterwards.
     GCRootRef<T> release()
     {
         GCRootRef<T> copy = *this;
-        m_gc = nullptr;
-        this->m_object = nullptr;
+        static_cast<Base&>(*this) = nullptr;
         return copy;
     }
 
@@ -283,7 +278,7 @@ public:
     GCUniqueRoot<T> root(T* object = nullptr)
     {
         GCUniqueRoot<T> uniqueRoot(this, static_cast<GCRootRef<T>>(m_localRoots.back().allocate()));
-        uniqueRoot = object;
+        uniqueRoot.assign(object);
         return uniqueRoot;
     }
 
@@ -370,13 +365,12 @@ public:
 template <class T>
 void GCUniqueRoot<T>::reset()
 {
-    if (!m_gc)
+    if (!this->hasRoot())
     {
         return;
     }
-    m_gc->deleteRoot(*this);
-    m_gc = nullptr;
-    this->m_object = nullptr;
+
+    m_gc->deleteRoot(release());
 }
 
 } // namespace jllvm

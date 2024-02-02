@@ -38,13 +38,13 @@ TEST_CASE("Free, optimised pattern", "[RootFreeList]")
 
     // Allocate some more roots to require more than one slab.
     GCRootRef first = list.allocate();
-    first = reinterpret_cast<ObjectInterface*>(1);
+    first.assign(reinterpret_cast<ObjectInterface*>(1));
     GCRootRef second = list.allocate();
-    second = reinterpret_cast<ObjectInterface*>(2);
+    second.assign(reinterpret_cast<ObjectInterface*>(2));
     GCRootRef third = list.allocate();
-    third = reinterpret_cast<ObjectInterface*>(3);
+    third.assign(reinterpret_cast<ObjectInterface*>(3));
     GCRootRef fourth = list.allocate();
-    fourth = reinterpret_cast<ObjectInterface*>(4);
+    fourth.assign(reinterpret_cast<ObjectInterface*>(4));
 
     list.free(fourth);
     list.free(third);
@@ -64,13 +64,13 @@ TEST_CASE("Free, not optimal pattern", "[RootFreeList]")
 
     // Allocate some more roots to require more than one slab.
     GCRootRef first = list.allocate();
-    first = reinterpret_cast<ObjectInterface*>(1);
+    first.assign(reinterpret_cast<ObjectInterface*>(1));
     GCRootRef second = list.allocate();
-    second = reinterpret_cast<ObjectInterface*>(2);
+    second.assign(reinterpret_cast<ObjectInterface*>(2));
     GCRootRef third = list.allocate();
-    third = reinterpret_cast<ObjectInterface*>(3);
+    third.assign(reinterpret_cast<ObjectInterface*>(3));
     GCRootRef fourth = list.allocate();
-    fourth = reinterpret_cast<ObjectInterface*>(4);
+    fourth.assign(reinterpret_cast<ObjectInterface*>(4));
 
     list.free(third);
     list.free(second);
@@ -91,7 +91,7 @@ TEST_CASE("Free, not optimal pattern", "[RootFreeList]")
     list.allocate();
     list.allocate();
     GCRootRef last = list.allocate();
-    last = reinterpret_cast<ObjectInterface*>(8);
+    last.assign(reinterpret_cast<ObjectInterface*>(8));
 
     CHECK(std::distance(list.begin(), list.end()) == 7);
 }

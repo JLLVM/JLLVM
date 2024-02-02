@@ -104,12 +104,12 @@ jllvm::VirtualMachine::VirtualMachine(BootOptions&& bootOptions)
 
     ClassObject& threadGroup = m_classLoader.forName("Ljava/lang/ThreadGroup;");
     initialize(threadGroup);
-    m_mainThreadGroup = m_gc.allocate(&threadGroup);
+    m_mainThreadGroup.assign(m_gc.allocate(&threadGroup));
     executeObjectConstructor(m_mainThreadGroup, "()V");
 
     ClassObject& thread = m_classLoader.forName("Ljava/lang/Thread;");
     initialize(thread);
-    m_mainThread = m_gc.allocate(&thread);
+    m_mainThread.assign(m_gc.allocate(&thread));
 
     // These have to be set prior to the constructor for the constructor not to fail.
     thread.getInstanceField<std::int32_t>("priority", "I")(m_mainThread) = 1;

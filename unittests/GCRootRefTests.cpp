@@ -21,6 +21,8 @@ using namespace jllvm;
 
 SCENARIO("GCRootRef Behaviour", "[GCRootRef]")
 {
+    STATIC_CHECK(std::is_trivially_copyable_v<GCRootRef<ObjectInterface>>);
+
     GIVEN("A newly created GCRootRef")
     {
         RootFreeList list(/*slabSize=*/2);
@@ -36,7 +38,7 @@ SCENARIO("GCRootRef Behaviour", "[GCRootRef]")
         AND_WHEN("assigned an object")
         {
             Object object(nullptr);
-            ref = &object;
+            ref.assign(&object);
 
             THEN("it can be retrieved")
             {
@@ -61,6 +63,25 @@ SCENARIO("GCRootRef Behaviour", "[GCRootRef]")
                 CHECK(nullptr != ref);
             }
         }
+
+        AND_WHEN("assigned null")
+        {
+            GCRootRef copy = ref;
+            Object object(nullptr);
+            copy.assign(&object);
+            ref = nullptr;
+            THEN("it does not write to the root")
+            {
+                CHECK(copy == &object);
+                CHECK(ref == nullptr);
+            }
+            THEN("it no longer refers to the root")
+            {
+                CHECK(ref != copy);
+                CHECK(ref.data() != copy.data());
+                CHECK(ref.data() == nullptr);
+            }
+        }
     }
 
     GIVEN("Two roots to the same object")
@@ -69,8 +90,8 @@ SCENARIO("GCRootRef Behaviour", "[GCRootRef]")
         GCRootRef first = list.allocate();
         GCRootRef second = list.allocate();
         Object object(nullptr);
-        first = &object;
-        second = &object;
+        first.assign(&object);
+        second.assign(&object);
 
         THEN("They compare equal")
         {
@@ -105,6 +126,40 @@ SCENARIO("GCRootRef Behaviour", "[GCRootRef]")
         {
             root = array;
             CHECK(array == root);
+        }
+    }
+
+    GIVEN("An empty GCRootRef")
+    {
+        RootFreeList list(/*slabSize=*/2);
+
+        GCRootRef<ObjectInterface> root;
+        THEN("It implicitly converts to null")
+        {
+            CHECK(root == nullptr);
+        }
+        THEN("It compares equal with other null roots")
+        {
+            CHECK(root == root);
+            CHECK(root == GCRootRef<ObjectInterface>());
+        }
+        THEN("It compares equal with roots to null")
+        {
+            GCRootRef<ObjectInterface> other = list.allocate();
+            CHECK(other == root);
+        }
+        THEN("It evaluates to false")
+        {
+            CHECK_FALSE(root);
+            CHECK(!root);
+        }
+        THEN("Its address is null")
+        {
+            CHECK(root.address() == nullptr);
+        }
+        THEN("Its data is null")
+        {
+            CHECK(root.data() == nullptr);
         }
     }
 }
