@@ -101,7 +101,7 @@ SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoo
 
         AND_WHEN("reassigned")
         {
-            root = nullptr;
+            root.assign(nullptr);
             THEN("refers to the new reference")
             {
                 CHECK(root == nullptr);
@@ -129,6 +129,47 @@ SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoo
             {
                 gc.garbageCollect();
                 CHECK(ref->getClass() == &emptyTestObject);
+            }
+            THEN("it no longer has a root")
+            {
+                CHECK(root.data() == nullptr);
+            }
+        }
+
+        AND_WHEN("moved from through assignment")
+        {
+            GCUniqueRoot other = gc.root(object);
+            other = std::move(root);
+            THEN("it no longer has a root")
+            {
+                // NOLINTNEXTLINE(*-use-after-move)
+                CHECK_FALSE(root.hasRoot());
+            }
+            AND_WHEN("reassigned")
+            {
+                root = std::move(other);
+                THEN("the root refers to the object again")
+                {
+                    CHECK(root == object);
+                }
+            }
+        }
+
+        AND_WHEN("moved through construction")
+        {
+            GCUniqueRoot other = std::move(root);
+            THEN("it no longer has a root")
+            {
+                // NOLINTNEXTLINE(*-use-after-move)
+                CHECK_FALSE(root.hasRoot());
+            }
+            AND_WHEN("reassigned")
+            {
+                root = std::move(other);
+                THEN("the root refers to the object again")
+                {
+                    CHECK(root == object);
+                }
             }
         }
     }
