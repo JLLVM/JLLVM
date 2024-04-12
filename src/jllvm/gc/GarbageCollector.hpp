@@ -74,13 +74,6 @@ public:
         return *new (this) GCUniqueRoot(std::move(rhs));
     }
 
-    /// Assignment from nullptr.
-    /// Equivalent to calling 'reset'.
-    GCUniqueRoot& operator=(std::nullptr_t) noexcept
-    {
-        reset();
-        return *this;
-    }
 
     /// Releases ownership of the root from this object, returning it as 'GCRootRef'.
     /// The object is contains an empty root afterwards.

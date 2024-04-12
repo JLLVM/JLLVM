@@ -136,15 +136,6 @@ SCENARIO_METHOD(GarbageCollectorFixture, "GCUniqueRoot Behaviour", "[GCUniqueRoo
             }
         }
 
-        AND_WHEN("assigned null")
-        {
-            root = nullptr;
-            THEN("it no longer has a root")
-            {
-                CHECK(root.data() == nullptr);
-            }
-        }
-
         AND_WHEN("moved from through assignment")
         {
             GCUniqueRoot other = gc.root(object);
