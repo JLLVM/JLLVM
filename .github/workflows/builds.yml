@@ -20,7 +20,7 @@ jobs:
           - { os: ubuntu-24.04, cxx_compiler: clang++-15, c_compiler: clang-15, sanitizer: "address,undefined" }
           - { os: ubuntu-24.04, cxx_compiler: clang++-15, c_compiler: clang-15, shared_libs: "ON" }
           - { os: ubuntu-24.04, cxx_compiler: g++-14, c_compiler: gcc-14 }
-          - { os: macos-12, cxx_compiler: clang++, c_compiler: clang }
+          - { os: macos-14, cxx_compiler: clang++, c_compiler: clang }
 
     runs-on: ${{matrix.os}}
     defaults:
