@@ -34,7 +34,7 @@ extern int jllvm__unw_resume(jllvm_unw_cursor_t *);
 
 #ifdef __arm__
 /* Save VFP registers in FSTMX format (instead of FSTMD). */
-extern void __unw_save_vfp_as_X(unw_cursor_t *);
+extern void jllvm__unw_save_vfp_as_X(jllvm_unw_cursor_t *);
 #endif
 
 extern const char *jllvm__unw_regname(jllvm_unw_cursor_t *, unw_regnum_t);
@@ -44,7 +44,7 @@ extern int jllvm__unw_is_signal_frame(jllvm_unw_cursor_t *);
 extern int jllvm__unw_get_proc_name(jllvm_unw_cursor_t *, char *, size_t, unw_word_t *);
 
 #if defined(_AIX)
-extern uintptr_t __unw_get_data_rel_base(unw_cursor_t *);
+extern uintptr_t jllvm__unw_get_data_rel_base(jllvm_unw_cursor_t *);
 #endif
 
 // SPI

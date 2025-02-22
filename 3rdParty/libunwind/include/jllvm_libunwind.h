@@ -51,21 +51,19 @@
 
 /* error codes */
 enum {
-  jllvm_UNW_ESUCCESS = 0,         /* no error */
-  jllvm_UNW_EUNSPEC = -6540,      /* unspecified (general) error */
-  jllvm_UNW_ENOMEM = -6541,       /* out of memory */
-  jllvm_UNW_EBADREG = -6542,      /* bad register number */
-  jllvm_UNW_EREADONLYREG = -6543, /* attempt to write read-only register */
-  jllvm_UNW_ESTOPUNWIND = -6544,  /* stop unwinding */
-  jllvm_UNW_EINVALIDIP = -6545,   /* invalid IP */
-  jllvm_UNW_EBADFRAME = -6546,    /* bad frame */
-  jllvm_UNW_EINVAL = -6547,       /* unsupported operation or bad value */
-  jllvm_UNW_EBADVERSION = -6548,  /* unwind info has unsupported version */
-  jllvm_UNW_ENOINFO = -6549       /* no unwind info found */
+  jllvm_UNW_ESUCCESS      = 0,     /* no error */
+  jllvm_UNW_EUNSPEC       = -6540, /* unspecified (general) error */
+  jllvm_UNW_ENOMEM        = -6541, /* out of memory */
+  jllvm_UNW_EBADREG       = -6542, /* bad register number */
+  jllvm_UNW_EREADONLYREG  = -6543, /* attempt to write read-only register */
+  jllvm_UNW_ESTOPUNWIND   = -6544, /* stop unwinding */
+  jllvm_UNW_EINVALIDIP    = -6545, /* invalid IP */
+  jllvm_UNW_EBADFRAME     = -6546, /* bad frame */
+  jllvm_UNW_EINVAL        = -6547, /* unsupported operation or bad value */
+  jllvm_UNW_EBADVERSION   = -6548, /* unwind info has unsupported version */
+  jllvm_UNW_ENOINFO       = -6549  /* no unwind info found */
 #if defined(JLLVM_LIBUNWIND_TARGET_AARCH64) && !defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
-  ,
-  jllvm_UNW_ECROSSRASIGNING =
-      -6550 /* cross unwind with return address signing */
+  , jllvm_UNW_ECROSSRASIGNING = -6550 /* cross unwind with return address signing */
 #endif
 };
 
@@ -109,37 +107,28 @@ extern "C" {
 #endif
 
 extern int jllvm_unw_getcontext(jllvm_unw_context_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_init_local(jllvm_unw_cursor_t *,
-                                jllvm_unw_context_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_init_local(jllvm_unw_cursor_t *, jllvm_unw_context_t *) LIBUNWIND_AVAIL;
 extern int jllvm_unw_step(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_get_reg(jllvm_unw_cursor_t *, unw_regnum_t,
-                             unw_word_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_get_fpreg(jllvm_unw_cursor_t *, unw_regnum_t,
-                               unw_fpreg_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_set_reg(jllvm_unw_cursor_t *, unw_regnum_t,
-                             unw_word_t) LIBUNWIND_AVAIL;
-extern int jllvm_unw_set_fpreg(jllvm_unw_cursor_t *, unw_regnum_t,
-                               unw_fpreg_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_reg(jllvm_unw_cursor_t *, unw_regnum_t, unw_word_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_fpreg(jllvm_unw_cursor_t *, unw_regnum_t, unw_fpreg_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_set_reg(jllvm_unw_cursor_t *, unw_regnum_t, unw_word_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_set_fpreg(jllvm_unw_cursor_t *, unw_regnum_t, unw_fpreg_t)  LIBUNWIND_AVAIL;
 extern int jllvm_unw_resume(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
 
 #ifdef __arm__
 /* Save VFP registers in FSTMX format (instead of FSTMD). */
-extern void unw_save_vfp_as_X(unw_cursor_t *) LIBUNWIND_AVAIL;
+extern void unw_save_vfp_as_X(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
 #endif
 
 #ifdef _AIX
-extern uintptr_t unw_get_data_rel_base(unw_cursor_t *) LIBUNWIND_AVAIL;
+extern uintptr_t unw_get_data_rel_base(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
 #endif
 
-extern const char *jllvm_unw_regname(jllvm_unw_cursor_t *,
-                                     unw_regnum_t) LIBUNWIND_AVAIL;
-extern int jllvm_unw_get_proc_info(jllvm_unw_cursor_t *,
-                                   jllvm_unw_proc_info_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_is_fpreg(jllvm_unw_cursor_t *,
-                              unw_regnum_t) LIBUNWIND_AVAIL;
+extern const char *jllvm_unw_regname(jllvm_unw_cursor_t *, unw_regnum_t) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_proc_info(jllvm_unw_cursor_t *, jllvm_unw_proc_info_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_is_fpreg(jllvm_unw_cursor_t *, unw_regnum_t) LIBUNWIND_AVAIL;
 extern int jllvm_unw_is_signal_frame(jllvm_unw_cursor_t *) LIBUNWIND_AVAIL;
-extern int jllvm_unw_get_proc_name(jllvm_unw_cursor_t *, char *, size_t,
-                                   unw_word_t *) LIBUNWIND_AVAIL;
+extern int jllvm_unw_get_proc_name(jllvm_unw_cursor_t *, char *, size_t, unw_word_t *) LIBUNWIND_AVAIL;
 //extern int       unw_get_save_loc(unw_cursor_t*, int, unw_save_loc_t*);
 
 extern jllvm_unw_addr_space_t jllvm_unw_local_addr_space;

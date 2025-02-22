@@ -9,7 +9,7 @@
 #ifndef JLLVM____LIBUNWIND_CONFIG_H__
 #define JLLVM____LIBUNWIND_CONFIG_H__
 
-#define _LIBUNWIND_VERSION 15000
+#define JLLVM_LIBUNWIND_VERSION 15000
 
 #if defined(__arm__) && !defined(__USING_SJLJ_EXCEPTIONS__) && \
     !defined(__ARM_DWARF_EH__) && !defined(__SEH__)
@@ -33,34 +33,37 @@
 #define JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_LOONGARCH 64
 
 #if defined(JLLVM_LIBUNWIND_IS_NATIVE_ONLY)
-# if defined(__linux__)
+#if defined(__linux__)
 #define JLLVM_LIBUNWIND_TARGET_LINUX 1
-# endif
-# if defined(__HAIKU__)
+#endif
+#if defined(__HAIKU__)
 #define JLLVM_LIBUNWIND_TARGET_HAIKU 1
-# endif
-# if defined(__i386__)
+#endif
+#if defined(__i386__)
 #define JLLVM_LIBUNWIND_TARGET_I386
 #define JLLVM_LIBUNWIND_CONTEXT_SIZE 8
 #define JLLVM_LIBUNWIND_CURSOR_SIZE 15
 #define JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER                                 \
   JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_X86
-# elif defined(__x86_64__)
+#elif defined(__x86_64__)
 #define JLLVM_LIBUNWIND_TARGET_X86_64 1
-#  if defined(_WIN64)
+#if defined(_WIN64)
 #define JLLVM_LIBUNWIND_CONTEXT_SIZE 54
 #ifdef __SEH__
 #define JLLVM_LIBUNWIND_CURSOR_SIZE 204
 #else
 #define JLLVM_LIBUNWIND_CURSOR_SIZE 66
 #endif
-#  else
+#elif defined(__ILP32__)
+#define JLLVM_LIBUNWIND_CONTEXT_SIZE 21
+#define JLLVM_LIBUNWIND_CURSOR_SIZE 28
+#else
 #define JLLVM_LIBUNWIND_CONTEXT_SIZE 21
 #define JLLVM_LIBUNWIND_CURSOR_SIZE 33
-#  endif
+#endif
 #define JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER                                 \
   JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_X86_64
-# elif defined(__powerpc64__)
+#elif defined(__powerpc64__)
 #define JLLVM_LIBUNWIND_TARGET_PPC64 1
 #define JLLVM_LIBUNWIND_CONTEXT_SIZE 167
 #define JLLVM_LIBUNWIND_CURSOR_SIZE 179
@@ -193,9 +196,13 @@
 #endif
 #define JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER                                 \
   JLLVM_LIBUNWIND_HIGHEST_DWARF_REGISTER_LOONGARCH
+#elif defined(__wasm__)
+// Unused
+#define JLLVM_LIBUNWIND_CONTEXT_SIZE 0
+#define JLLVM_LIBUNWIND_CURSOR_SIZE 0
 #else
 #error "Unsupported architecture."
-# endif
+#endif
 #else // !JLLVM_LIBUNWIND_IS_NATIVE_ONLY
 #define JLLVM_LIBUNWIND_TARGET_I386
 #define JLLVM_LIBUNWIND_TARGET_X86_64 1
