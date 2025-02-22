@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload clang-tidy fixes.yml
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: fixes.yml
           path: ${{github.workspace}}/fixes.yml
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload clang-format patch
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: clang-format.patch
           path: ${{github.workspace}}/clang-format.patch
